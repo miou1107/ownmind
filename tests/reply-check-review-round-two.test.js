@@ -34,6 +34,9 @@ import { DEFAULT_TIMEOUT_MS } from '../hooks/lib/local-judge.js';
 import { redact, toReason } from '../hooks/lib/redact.js';
 import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 _logPathForTests(path.join(tempDir('om-round-two-log-'), 'check-failures.jsonl'));
 

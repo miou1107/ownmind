@@ -36,6 +36,28 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.34 修改（登入過期的提醒；每台電腦可選判官、可只記錄）
+
+新增檔：
+```
+hooks/lib/judge-config.js            — 讀 ~/.ownmind/judge.json：cli（claude/agy）、model、silent
+tests/judge-config.test.js
+```
+
+修改檔：
+```
+hooks/lib/local-judge.js             — OAuth 過期算沒登入（只對 claude）；可改用 agy（plan 模式、沙盒、
+                                       自己的空暫存資料夾）；失敗原因寫實際執行的程式名稱
+hooks/lib/run-local-judge.js         — 依 judge.json 選判官與模型
+hooks/lib/verdict-collect.js         — silent 時照常收結果、記失敗，但不顯示任何提醒
+hooks/lib/compliance-step.js         — silent 時「沒檢查到」這類提醒也不顯示
+tests/local-judge.test.js, tests/verdict-collect.test.js, tests/enforcement-compliance-step.test.js
+                                     — 新增登入過期、agy、silent 的測試
+tests/*（八個回話檢查相關檔）         — 指定不讀開發者自己的 judge.json
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.34
+```
+
 ## v1.30.33 修改（讀安裝腳本不算安裝）
 
 修改檔：

@@ -17,6 +17,9 @@ import { tempDir } from './helpers/temp-dir.js';
 import { collectVerdict } from '../hooks/lib/verdict-collect.js';
 import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 // Every case here injects its own logFailure, so nothing should reach the real file — but a
 // case added later would, and the target is the developer's own diagnosis log.
 _logPathForTests(path.join(tempDir('om-verdict-collect-log-'), 'check-failures.jsonl'));
@@ -77,6 +80,33 @@ test('a violation tells the user, and tells the assistant to act on it', async (
     'the failure mode a bare finding produces is a paragraph of self-criticism');
   assert.match(out.forAssistant, /Do not restate the finding/,
     'the user has already been shown it; saying it twice is worse than once');
+});
+
+test('silent judging keeps the record and tells nobody', async () => {
+  // 2026-10-02: the owner found every way of being told useless - a turn late, or the reply
+  // sent twice. The verdict is still taken off the queue, so it is not delivered later either.
+  let removed = 0;
+  const out = await collectVerdict({
+    ...waiting({
+      outcome: 'violation',
+      violations: [{ ruleId: 795, ruleTitle: '先講結論', evidence: 'x', fix: 'y' }],
+    }),
+    remove: () => { removed += 1; },
+    silent: true,
+  });
+  assert.deepEqual(out, { action: 'none' });
+  assert.equal(removed, 1);
+});
+
+test('silent judging still writes down why a check did not run', async () => {
+  const logged = [];
+  const out = await collectVerdict({
+    ...waiting({ outcome: 'failed', failure: 'not-logged-in', reason: 'x' }),
+    logFailure: (e) => { logged.push(e); },
+    silent: true,
+  });
+  assert.deepEqual(out, { action: 'none' });
+  assert.equal(logged.length, 1);
 });
 
 test('a judge that did not run is loud, and the user line carries no jargon', async () => {

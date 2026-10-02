@@ -183,6 +183,52 @@ test('no claude on this machine is its own failure, with its own words', async (
   assert.notEqual(out.failure, 'exit', 'a missing CLI is not the same as a CLI that refused');
 });
 
+test('an expired Claude Code login is the signed-out failure, not a generic refusal', async () => {
+  // Seen on the owner's Mac from 2026-08-19 to 2026-10-02: 3,470 checks in a row came back
+  // "Failed to authenticate: OAuth session expired and could not be refreshed". None of them
+  // matched the signed-out wording, so every one was filed as a generic refusal and the user
+  // was told to run claude in a terminal - never that signing in again was the whole repair.
+  // Six weeks of replies went unchecked.
+  const expired = fakeClaude({
+    stdout: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+    exitCode: 1,
+  });
+  const out = await judgeLocally({ rules: RULES, assistantText: REPLY, claudeBin: expired.bin });
+  assert.equal(out.outcome, 'failed');
+  assert.equal(out.failure, 'not-logged-in');
+
+  // A bad API key prints the same first words, and signing in does not fix a key.
+  const badKey = fakeClaude({ stdout: 'Failed to authenticate. API Error: 401 invalid x-api-key', exitCode: 1 });
+  const keyOut = await judgeLocally({ rules: RULES, assistantText: REPLY, claudeBin: badKey.bin });
+  assert.equal(keyOut.failure, 'exit');
+});
+
+test('agy judges with the prompt on its command line, from an empty folder', async () => {
+  // agy reads its prompt from the -p value, not stdin, and it has no system-prompt flag, so the
+  // instructions travel in front of the prompt. Measured 2026-10-02 on the owner's Mac:
+  // gemini-3.8-flash-low answered in about 5 seconds and wrapped its JSON in a fence.
+  const fake = fakeClaude({
+    stdout: '```json\n' + verdictJson([{ ruleId: 795, violated: true, evidence: '我先看了 A 檔案', fix: '先講結論' }]) + '\n```',
+  });
+  const out = await judgeLocally({ rules: RULES, assistantText: REPLY, cli: 'agy', agyBin: fake.bin });
+  assert.equal(out.outcome, 'violation');
+  const { argv, stdin } = fake.invocation();
+  assert.equal(argv[argv.indexOf('--model') + 1], 'gemini-3.8-flash-low', 'the fast one, unless told otherwise');
+  const prompt = argv[argv.indexOf('-p') + 1];
+  assert.match(prompt, /RULE 795/, 'the rule is in the -p value');
+  assert.match(prompt, /verdicts/, 'and so are the judging instructions');
+  assert.equal(stdin, '');
+  assert.equal(argv[argv.indexOf('--mode') + 1], 'plan', 'the reply is untrusted text; the judge must not act on it');
+  assert.ok(argv.includes('--sandbox'));
+});
+
+test('an agy model can be chosen per machine', async () => {
+  const fake = fakeClaude({ stdout: verdictJson([]) });
+  await judgeLocally({ rules: RULES, assistantText: REPLY, cli: 'agy', agyBin: fake.bin, model: 'gemini-3.8-flash-medium' });
+  const { argv } = fake.invocation();
+  assert.equal(argv[argv.indexOf('--model') + 1], 'gemini-3.8-flash-medium');
+});
+
 test('nothing to judge is not a judgement', async () => {
   // No rules applied. Spending 18 seconds and a slice of the user's quota to be told so is
   // waste, and calling it "clean" claims a check that never happened.

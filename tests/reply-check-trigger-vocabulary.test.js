@@ -12,6 +12,9 @@ import {
   unknownTriggerTags,
 } from '../shared/helpers.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 /**
  * The reply check asked for words the rest of the system does not speak.
  *

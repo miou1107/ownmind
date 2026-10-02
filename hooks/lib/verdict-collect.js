@@ -28,6 +28,7 @@
  * the state directory until the seven-day sweep.
  */
 
+import { readJudgeConfig } from './judge-config.js';
 import {
   listVerdicts, readVerdict, removeVerdict, sweepStaleSessions, JUDGE_DEADLINE_MS,
 } from './verdict-store.js';
@@ -103,6 +104,7 @@ export async function collectVerdict({
   sweep = sweepStaleSessions,
   now = Date.now,
   deadlineMs = JUDGE_DEADLINE_MS,
+  silent = readJudgeConfig().silent,
 } = {}) {
   const decide = speak || ((key) => defaultSpeak(sessionId, key));
 
@@ -229,6 +231,10 @@ export async function collectVerdict({
   }
 
   try { sweep(); } catch { /* housekeeping never costs a verdict */ }
+
+  // The owner's choice on this machine: keep judging and recording, tell nobody. The verdicts
+  // above were still taken off the queue and failures still written to the diagnosis log.
+  if (silent) return { action: 'none' };
 
   if (!banners.length && !contexts.length) return { action: 'none' };
   return {
