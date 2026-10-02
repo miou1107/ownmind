@@ -183,6 +183,26 @@ test('no claude on this machine is its own failure, with its own words', async (
   assert.notEqual(out.failure, 'exit', 'a missing CLI is not the same as a CLI that refused');
 });
 
+test('an expired Claude Code login is the signed-out failure, not a generic refusal', async () => {
+  // Seen on the owner's Mac from 2026-08-19 to 2026-10-02: 3,470 checks in a row came back
+  // "Failed to authenticate: OAuth session expired and could not be refreshed". None of them
+  // matched the signed-out wording, so every one was filed as a generic refusal and the user
+  // was told to run claude in a terminal - never that signing in again was the whole repair.
+  // Six weeks of replies went unchecked.
+  const expired = fakeClaude({
+    stdout: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+    exitCode: 1,
+  });
+  const out = await judgeLocally({ rules: RULES, assistantText: REPLY, claudeBin: expired.bin });
+  assert.equal(out.outcome, 'failed');
+  assert.equal(out.failure, 'not-logged-in');
+
+  // A bad API key prints the same first words, and signing in does not fix a key.
+  const badKey = fakeClaude({ stdout: 'Failed to authenticate. API Error: 401 invalid x-api-key', exitCode: 1 });
+  const keyOut = await judgeLocally({ rules: RULES, assistantText: REPLY, claudeBin: badKey.bin });
+  assert.equal(keyOut.failure, 'exit');
+});
+
 test('nothing to judge is not a judgement', async () => {
   // No rules applied. Spending 18 seconds and a slice of the user's quota to be told so is
   // waste, and calling it "clean" claims a check that never happened.

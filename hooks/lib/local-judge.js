@@ -161,8 +161,13 @@ export async function judgeLocally({
     // with "Not logged in · Please run /login". Left in the general bucket the user is told to
     // re-run the OwnMind update script — which installs OwnMind and cannot log anybody in, so
     // they would be given a repair that cannot work, every tenth turn, indefinitely.
+    // A login that has expired is the same repair as no login at all. Measured 2026-10-02:
+    // from 2026-08-19 the owner's Mac answered "Failed to authenticate: OAuth session expired
+    // and could not be refreshed" 3,470 times, every one filed under the generic refusal.
+    // Matched on the OAuth wording only: "Failed to authenticate" alone is also what a bad API
+    // key or a 401 from a proxy prints, and signing in repairs neither.
     const said = `${result.stderr || ''}\n${result.stdout || ''}`;
-    const loggedOut = /not logged in|please run \/login/i.test(said);
+    const loggedOut = /not logged in|please run \/login|oauth session expired/i.test(said);
     return done({
       outcome: 'failed',
       failure: loggedOut ? 'not-logged-in' : 'exit',
