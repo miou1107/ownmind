@@ -27,6 +27,9 @@ src/public/dashboard/
 # v1.19.10：repo 公開後敏感資料外洩 incident 後加強
 # 任何含金鑰／密碼／證書／本機覆蓋設定的檔都不該進 repo
 .mcp.local.json
+# Claude Code reads a folder's .mcp.json ahead of the user's own ~/.claude.json entry,
+# so a committed one with placeholder values points every clone at a server that does not exist.
+.mcp.json
 credentials
 credentials.*
 *.pem
