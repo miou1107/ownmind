@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.34** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.35** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **有新的問題回報，AI 不會說，附的網址也打不開** — 開新對話時 OwnMind 會把問題回報的消息交給 AI，但沒要求 AI 講出來。2026-10-02 Vin 開的對話裡，「你回報的問題有 9 個已經修好」和一張新回報都沒被提到。現在 AI 第一句就會講，管理員會看到回報的編號和標題，網址會打開你自己伺服器上的 `/dashboard/admin/bugs`（一般成員是 `/dashboard/portal/reports`）。 `v1.30.35`
 - **Claude Code 登入過期，被當成一般拒絕，回話有六週沒被檢查** — 從 2026-08-19 起，Vin 電腦上的檢查有 3,470 次回「OAuth session expired」。以前只有「Not logged in」算沒登入，所以提醒只叫人去終端機跑 `claude`，沒說要重新登入。現在登入過期也會請你重新登入。另外，`~/.ownmind/judge.json` 可以讓一台電腦自己選誰來檢查：`"cli": "agy"` 改用 Gemini（預設 `gemini-3.8-flash-low`，以唯讀、沙盒方式執行）；`"silent": true` 照樣檢查和記錄，但不再顯示任何提醒。沒有這個檔的電腦一切照舊。 `v1.30.34`
 - **只是打開安裝腳本來看，也被當成在安裝** — 「安裝／金鑰」這類提醒，以前只要指令裡出現安裝腳本的檔名就會跳，所以 `cat install.sh`、`wc -l install.sh`、`sed -n 1,40p scripts/update.sh` 這種只是印出內容的指令，也會把 IR-001、IR-002 搬出來（v1.30.29、30 已經排除了「搜尋」，但沒排除「讀檔」）。現在要真的「執行」那支腳本才算：它是這段指令的第一個字，或是 `bash`、`sh`、`source`、`.`、`sudo`、`powershell -File`、`&`、`cmd /c` 後面接的那個檔。從網路下載直接丟給 shell 跑的（`curl …/install.sh | bash`、`iwr … | iex`）一樣算。 `v1.30.33`
 - **回覆檢查找規矩用的字，OwnMind 其他地方都不認得，所以在實測的帳號上一次都沒啟動過** — 回完話的時候，掛勾送出去的觸發字是 `respond` 和 `report`。檢查的兩端都拿這兩個字去跟規矩的標籤逐字比對：這台電腦決定要不要啟動裁判（`hooks/lib/compliance-step.js`），伺服器決定要讀哪幾條規矩（`src/lib/enforcement/select-rules.js`）。但這兩個字都不在觸發字對照表 `TRIGGER_TAG_ALIASES` 裡。結果是：規矩標成 `trigger:respond`，存的時候會被警告「沒有東西會觸發這個」；照一般人的習慣標成 `trigger:reply`、`trigger:language`，存的時候不會被擋，但永遠不會被挑中。在測試帳號存在電腦上的規矩實測：40 條裡面，回話時能被挑中的是 0 條，「回我話要用白話中文」也在其中。v1.30.11 搬到使用者自己訂閱的裁判本身沒有問題，只是從來沒被叫到。而且沒挑中的時候，回覆檢查回的是「沒事」，跟檢查過、沒問題的時候一模一樣，所以沒有人發現。現在對照表多了一組回話類的字（respond、reply、report、language、回覆、回話、回答、回報、語言），兩端都改成透過對照表比對。這裡不會把「每個指令都要看」的 `trigger:command` 算進來，因為每挑中一條，都要花使用者自己的額度。還沒更新的電腦送出去的內容跟以前一樣。 `v1.30.32`

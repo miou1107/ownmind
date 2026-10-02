@@ -36,6 +36,17 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.35 修改（新的問題回報由 AI 第一句告訴你，網址改對）
+
+修改檔：
+```
+hooks/lib/bug-report-notifications.js — 要求 AI 第一句轉述；管理員列出最多三張待處理回報的編號與標題；
+                                       網址改用這台電腦連的伺服器 + /dashboard/admin/bugs（成員是 portal/reports）
+tests/bug-report-notifications.test.js — 新增轉述、標題、網址、標題換行的測試
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.35
+```
+
 ## v1.30.34 修改（登入過期的提醒；每台電腦可選判官、可只記錄）
 
 新增檔：
