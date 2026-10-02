@@ -294,6 +294,8 @@ iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootst
 
 > **Windows 用戶請注意**：OwnMind 依賴 Windows 版 Git 隨附的 Shell 執行環境（sh.exe）跑 Git hook。請確保安裝完整版 Git for Windows、避免簡易版或精簡版、否則代碼提交時會報錯。
 
+> **在這個開發庫的副本裡工作**：安裝 OwnMind 時，記憶工具已經設定成每個資料夾都能用，這個資料夾也包括在內，所以這裡不需要另外放 `.mcp.json`。如果想讓這個資料夾改連另一台 OwnMind 伺服器，再把 `.mcp.json.example` 複製成 `.mcp.json`，填上自己的網址與金鑰。這份複本不會進 git，只會留在自己的電腦上。
+
 ### 3. 驗證安裝成功
 
 裝完後打開新對話、跟 AI 說：

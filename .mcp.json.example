@@ -1,0 +1,16 @@
+{
+  "_comment": "You normally do not need this. Every OwnMind installer registers the ownmind MCP server in ~/.claude.json at user scope, which covers every folder, this clone included. To point only this folder at a different OwnMind server, the simplest way is `claude mcp add --scope local ownmind ...`, which stores nothing in the clone. If you prefer a file, copy this one to .mcp.json (gitignored): Claude Code reads a folder's .mcp.json and it takes precedence over the user-scope entry of the same name, but only after you approve it in the prompt Claude Code shows the first time. Fill in OWNMIND_API_URL with your server base URL and OWNMIND_API_KEY with the key your admin issued you. A placeholder left in place makes the ownmind tools in this folder talk to a server that does not exist.",
+  "mcpServers": {
+    "ownmind": {
+      "command": "node",
+      "args": [
+        "${HOME}/.ownmind/mcp/index.js"
+      ],
+      "env": {
+        "OWNMIND_API_URL": "https://YOUR_OWNMIND_URL/ownmind",
+        "OWNMIND_API_KEY": "YOUR_API_KEY",
+        "OWNMIND_TOOL": "claude-code"
+      }
+    }
+  }
+}

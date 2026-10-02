@@ -295,6 +295,8 @@ iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootst
 
 > **Windows 注意**：OwnMind は Git for Windows 同梱の Bash シェル（sh.exe）に依存して Git hook を実行します。フル版の Git for Windows をインストール（Lite や Portable は不可）、さもないと commit 時にエラー発生。
 
+> **このリポジトリのクローンで作業する場合**：OwnMind をインストールした時点で、メモリーツールはこのフォルダを含むすべてのフォルダで使えるよう設定されているため、ここに `.mcp.json` を置く必要はありません。このフォルダだけ別の OwnMind サーバーにつなぎたい場合は、`.mcp.json.example` を `.mcp.json` にコピーして自分の URL とキーを入力してください。このコピーは git に含まれず、手元のマシンにだけ残ります。
+
 ### 3. インストール検証
 
 インストール後、新しい会話を開いて AI に：

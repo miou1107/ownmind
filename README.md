@@ -296,6 +296,8 @@ iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootst
 
 > **Windows note**: OwnMind depends on the Bash shell (sh.exe) bundled with Git for Windows to run Git hooks. Install the full Git for Windows installer (not Lite or Portable), or commits will error out.
 
+> **Working inside a clone of this repository**: the installer already makes OwnMind's memory tools available in every folder, this one included, so you do not need a `.mcp.json` here. Only if you want this one folder to use a different OwnMind server, copy `.mcp.json.example` to `.mcp.json` and fill in your own URL and key. That copy is ignored by git and stays on your machine.
+
 ### 3. Verify installation
 
 After installing, open a new conversation and ask AI:

@@ -1,5 +1,16 @@
 # OwnMind 檔案結構
 
+## 開發庫設定修改（在這個庫裡工作時，記憶工具連到不存在的伺服器）
+
+沒有版號：只動開發庫自己的設定與 README，裝好的 OwnMind 一個字都沒有變。
+
+刪除檔：`.mcp.json`（裡面是佔位網址與佔位金鑰；Claude Code 打開這個資料夾時會先讀它，
+蓋掉使用者在 `~/.claude.json` 設好的那一份）。
+改名：`.mcp.local.json.example` → `.mcp.json.example`（Claude Code 不讀 `.mcp.local.json`，
+照舊名複製出來的檔案不會生效；說明改成「平常不需要，只有這個資料夾要連別台伺服器才複製」）。
+修改檔：`.gitignore`（加 `.mcp.json`）、`README.md`、`docs/README.zh-TW.md`、`docs/README.ja.md`
+（安裝那一節補一段：在這個庫的副本裡工作不需要 `.mcp.json`）。
+
 ## 測試工具修改（測試用的資料庫搶不到連接埠）
 
 沒有版號：只動測試工具，使用者看到的東西一個字都沒有變。
