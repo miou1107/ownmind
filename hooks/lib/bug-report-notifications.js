@@ -40,16 +40,36 @@ export function bugReportNotificationLines(notif) {
   const segments = [];
   if (notif.admin && notif.admin.unhandled_count > 0) {
     segments.push(`As admin: ${notif.admin.unhandled_count} unhandled bug reports`);
+    // Name them. "1 unhandled" tells the person something is waiting; "#32 <title>" tells them
+    // whether it is worth opening now.
+    const waiting = Array.isArray(notif.admin.recent_unhandled) ? notif.admin.recent_unhandled : [];
+    for (const r of waiting.slice(0, 3)) {
+      if (r && r.id != null) segments.push(`  - #${r.id} ${String(r.title || '').replace(/[\r\n]+/g, ' ').slice(0, 120)}`);
+    }
   }
   if (notif.reporter && notif.reporter.unread_resolved_count > 0) {
     segments.push(`${notif.reporter.unread_resolved_count} of your reports have been resolved`);
   }
   if (segments.length === 0) return [];
 
+  // The dashboard route is /admin/bugs. Until 2026-10-02 this line said /admin/bug-reports,
+  // a page that does not exist. The full address comes from the server this machine talks to.
+  // A member who is not an admin cannot open /admin/bugs; their own reports are /portal/reports.
+  const page = notif.admin && notif.admin.unhandled_count > 0 ? 'admin/bugs' : 'portal/reports';
+  const where = typeof notif.dashboard_base === 'string' && notif.dashboard_base
+    ? `open ${notif.dashboard_base}/${page}`
+    : 'open the dashboard';
+
   return [
     '## Bug report notifications',
-    ...segments.map((s) => `- ${s}`),
-    '(Say "list my reports" or open /admin/bug-reports for details)',
+    ...segments.map((s) => (s.startsWith('  ') ? s : `- ${s}`)),
+    `(Say "list my reports" or ${where} for details)`,
+    // Without this the section sat in the AI's context and was never said: on 2026-10-02 a
+    // session opened with "9 of your reports have been resolved" and the owner heard nothing.
+    // The broadcasts above carry the same instruction; this one had none.
+    '> **[SYSTEM] Action required:** In your first response sentence, tell the user what this '
+      + 'section says, translated into the language you are speaking with them, including the '
+      + 'report numbers and titles and the address to open. Do not wait for them to ask.',
     '',
   ];
 }
@@ -75,7 +95,8 @@ export async function fetchBugReportNotifications({ apiUrl, apiKey, role, httpGe
       { Authorization: `Bearer ${apiKey}` },
     );
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return { ...parsed, dashboard_base: `${String(apiUrl).replace(/\/+$/, '')}/dashboard` };
   } catch {
     return null;
   }
