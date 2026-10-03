@@ -305,23 +305,29 @@ const fit = (t: string, max: number) => {
 // The pane follows the app's light or dark theme; the picture follows the system's.
 const DARK = '<style>@media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#a8a8a8}}</style>'
 
-const checklistSvg = (rows: WrapupRow[], handling: boolean) => {
+// Shown at the bottom once the wrap-up is done and every item is green.
+const PASSED = '成功通過所有收工檢查，可安心關閉此對話'
+
+const checklistSvg = (rows: WrapupRow[], handling: boolean, passed = false) => {
   const done = rows.filter(r => r.state === 'clean').length
-  const head = 64, rh = 58
-  const h = head + rows.length * rh
+  const head = 84, rh = 80
+  const banner = passed ? 100 : 0
+  const h = head + rows.length * rh + banner
   const bar = Math.round((W * done) / Math.max(rows.length, 1))
-  const top = `<text class="t" x="0" y="24" font-size="19" font-weight="700" fill="#333">收工檢查</text>`
-    + `<text class="s" x="${W}" y="24" text-anchor="end" font-size="15" fill="#666">完成 ${done} / ${rows.length}</text>`
-    + `<rect x="0" y="38" width="${W}" height="8" rx="4" fill="#888" fill-opacity="0.18"/>`
-    + (bar ? `<rect x="0" y="38" width="${bar}" height="8" rx="4" fill="${HEX.clean}"/>` : '')
+  const top = `<text class="t" x="0" y="30" font-size="26" font-weight="700" fill="#333">收工檢查</text>`
+    + `<text class="s" x="${W}" y="30" text-anchor="end" font-size="21" fill="#666">完成 ${done} / ${rows.length}</text>`
+    + `<rect x="0" y="48" width="${W}" height="10" rx="5" fill="#888" fill-opacity="0.18"/>`
+    + (bar ? `<rect x="0" y="48" width="${bar}" height="10" rx="5" fill="${HEX.clean}"/>` : '')
   const body = rows.map((r, i) => {
     const s = shown(r, handling), y = head + i * rh
-    return `<circle cx="14" cy="${y + 22}" r="12" fill="${s.color}" fill-opacity="${r.state === 'clean' ? 1 : 0.15}" stroke="${s.color}" stroke-width="2"/>`
-      + `<text x="14" y="${y + 27}" text-anchor="middle" font-size="14" font-weight="700" fill="${r.state === 'clean' ? '#fff' : s.color}">${s.mark}</text>`
-      + `<text class="t" x="38" y="${y + 18}" font-size="16" fill="#333">${esc(r.name)}</text>`
-      + `<text${r.state === 'clean' ? ' class="s"' : ''} x="38" y="${y + 39}" font-size="13" fill="${r.state === 'clean' ? '#666' : s.color}">${esc(fit(s.text, 44))}</text>`
-      + (i < rows.length - 1 ? `<line x1="38" y1="${y + rh - 6}" x2="${W}" y2="${y + rh - 6}" stroke="#888" stroke-opacity="0.2"/>` : '')
+    return `<circle cx="18" cy="${y + 30}" r="16" fill="${s.color}" fill-opacity="${r.state === 'clean' ? 1 : 0.15}" stroke="${s.color}" stroke-width="2"/>`
+      + `<text x="18" y="${y + 37}" text-anchor="middle" font-size="19" font-weight="700" fill="${r.state === 'clean' ? '#fff' : s.color}">${s.mark}</text>`
+      + `<text class="t" x="50" y="${y + 24}" font-size="22" fill="#333">${esc(r.name)}</text>`
+      + `<text${r.state === 'clean' ? ' class="s"' : ''} x="50" y="${y + 53}" font-size="18" fill="${r.state === 'clean' ? '#666' : s.color}">${esc(fit(s.text, 28))}</text>`
+      + (i < rows.length - 1 ? `<line x1="50" y1="${y + rh - 8}" x2="${W}" y2="${y + rh - 8}" stroke="#888" stroke-opacity="0.2"/>` : '')
   }).join('')
+    + (passed ? `<rect x="0" y="${h - 84}" width="${W}" height="84" rx="12" fill="${HEX.clean}"/>`
+      + `<text x="${W / 2}" y="${h - 33}" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">${esc(PASSED)}</text>` : '')
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" font-family="-apple-system, 'PingFang TC', sans-serif">${DARK}${top}${body}</svg>`
 }
 
@@ -428,9 +434,14 @@ export const register: Register = on => {
     const barW = Math.min(cols - 2, 40)
     const filled = r.rows.length ? Math.round((barW * done) / r.rows.length) : 0
     const toggle = (i: number) => update($, openRows, list => list.includes(i) ? list.filter(x => x !== i) : [...list, i])
+    // In progress while the checks run or the AI is still working through the wrap-up; done at
+    // the time of the last check once both have finished.
+    const inProgress = busy || r.rows.some(x => x.state === 'running')
+    const passed = !inProgress && r.rows.length === NAMES.length && r.rows.every(x => x.state === 'clean')
+    const status = !r.at ? '還沒查過' : inProgress ? '收工狀態：進行中' : `收工狀態：${clock(r.at)} 完成`
     const header = (
       <Box flexDirection="row" gap={1}>
-        <Text dimColor>{r.at ? `${clock(r.at)} 查的` : '還沒查過'}</Text>
+        <Text dimColor={!inProgress} bold={inProgress}>{status}</Text>
         <Box flexGrow={1} />
         <Button key="wrapup-rerun" label="再查一次" dimColor onPress={() => { void runChecks($) }} />
         <Button key="wrapup-close" label="關閉" role="dismiss" dimColor onPress={() => $.ui.close({ id: PANE })} />
@@ -446,7 +457,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           {header}
-          <Svg source={checklistSvg(r.rows, busy)} alt={`收工檢查，${progress}。${r.rows.map(x => `${x.name}：${shown(x, busy).text}`).join('；')}`} />
+          <Svg source={checklistSvg(r.rows, busy, passed)} alt={`收工檢查，${progress}。${r.rows.map(x => `${x.name}：${shown(x, busy).text}`).join('；')}${passed ? `。${PASSED}` : ''}`} />
           {left.length > 0 && (
             <Box flexDirection="column">
               <Text bold>還沒打勾的項目</Text>
@@ -489,6 +500,7 @@ export const register: Register = on => {
             {open.includes(i) && row.lines.map(l => <Text dimColor wrap="wrap">　{l}</Text>)}
           </Box>
         ))}
+        {passed && <Text bold color="black" backgroundColor="green">{` ${PASSED} `}</Text>}
       </Box>
     )
   })
