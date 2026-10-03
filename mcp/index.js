@@ -20,6 +20,7 @@ import { appendCompliance, readComplianceEvents } from '../shared/compliance.js'
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
+import { buildUpgradeNotice, stripUpgradeAction } from './lib/upgrade-notice.js';
 import { describeFetchFailure } from './lib/fetch-failure.js';
 import { makeNoticeHelpers } from './lib/offline-notices.js';
 import { localDateOnly } from '../shared/local-date.js';
@@ -907,9 +908,12 @@ async function handleTool(name, args) {
         currentInvocableHints = hintsFromStandards(data.invocable_standards);
       }
       if (data.server_version) serverVersion = data.server_version;
-      if (data.upgrade_action?.required) {
-        data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\nRun: ${data.upgrade_action.command}`;
-      }
+      // The update command is fixed on this side (mcp/lib/upgrade-notice.js). The server's
+      // own command and message are dropped before `data` reaches the AI or the cache, so the
+      // AI sees one command — ours — and not a server-supplied one beside it.
+      const upgradeNotice = buildUpgradeNotice(data.upgrade_action, data.server_version);
+      if (upgradeNotice) data._upgrade_notice = upgradeNotice;
+      data.upgrade_action = stripUpgradeAction(data.upgrade_action);
       data._client_version = CLIENT_VERSION;
       // Enforcement Alerts are already embedded in iron_rules_digest by the server — no need to re-format on the client.
       // E4: Sync verifiable rules to local cache
