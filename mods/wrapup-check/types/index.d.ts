@@ -25,11 +25,25 @@ export type WrapupReport = {
   rows: WrapupRow[]
 }
 
+/** A yellow row the model looked into and handled, reported through the resolve tool. */
+export type WrapupResolution = {
+  /** The row's name. */
+  name: string
+  /** One sentence, written by the model: what it did about the row. */
+  done: string
+  /** When the model reported it, in milliseconds. */
+  at: number
+  /** The row's detail lines when it was handled; a row that now says something else is yellow again. */
+  seen: string
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'wrapup-check': {
       baseline: WrapupBaseline
       report: WrapupReport
+      /** Yellow rows handled since the user last typed a wrap-up word. */
+      resolved: WrapupResolution[]
       /** How many test commands and background commands this session ran. */
       counts: { tests: number; background: number }
       /** The rows whose detail is expanded on the terminal (0 to 5). */

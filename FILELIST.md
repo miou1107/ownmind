@@ -44,13 +44,18 @@ mods/wrapup-check/hooks/register.tsx
                                        跟黃的；終端機：一列一項，點名稱展開），並把文字版
                                        塞進 prompt 的 context 給 AI 回話用；殘留那一項跟
                                        session 開始時的快照比，別的專案 docker compose 起的
-                                       container 不算
+                                       container 和 OwnMind 回話檢查的 agy 不算；註冊
+                                       mcp__wrapup-check__resolve：AI 處理完一格黃的就呼叫它，
+                                       那一格變綠並顯示 AI 寫的一句話，紅的會被退回；
+                                       再打一次收工就從頭算
 mods/wrapup-check/hooks/pane.test.tsx
-                                     — 3 條：打收工會跑六項、開面板、把結果交給 AI；沒有
-                                       關鍵字什麼都不做；乾淨的 repo 六格都是綠的
+                                     — 11 條：打收工會跑六項、開面板、把結果交給 AI；沒有
+                                       關鍵字什麼都不做；乾淨的 repo 六格都是綠的；黃的處理完
+                                       變綠、紅的退回、再收工從頭算；agy 的 port 不算殘留
 mods/wrapup-check/types/index.d.ts   — 面板資料的型別
 mods/wrapup-check/tsconfig.json      — 編輯器用的型別設定
 openspec/changes/v1.31.4-wrapup-check-mod/{proposal,spec,tasks}.md
+openspec/changes/v1.31.7-wrapup-handle-to-green/{proposal,spec,tasks}.md
 ```
 
 修改檔：
