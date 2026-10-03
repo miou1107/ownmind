@@ -28,12 +28,15 @@ const CREDENTIAL_DIRS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.azure',
  * @returns {{ ok: true, realPath: string, size: number, content: string } | { ok: false, error: string }}
  */
 export function checkStandardFile(filePath, { home = os.homedir() } = {}) {
+  // A network share is somebody else's machine, and on Windows `\\localhost\c$\…` is this one
+  // under a name the folder check below does not recognise. A standard lives on local disk.
+  // First, so the answer is the same on every platform: POSIX does not call `\\x` absolute.
+  if (typeof filePath === 'string' && /^[\\/]{2}/.test(filePath)) {
+    return { ok: false, error: `Network paths are not accepted: ${filePath}` };
+  }
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
     return { ok: false, error: 'file_path must be an absolute path to a Markdown file' };
   }
-  // A network share is somebody else's machine, and on Windows `\\localhost\c$\…` is this one
-  // under a name the folder check below does not recognise. A standard lives on local disk.
-  if (/^[\\/]{2}/.test(filePath)) return { ok: false, error: `Network paths are not accepted: ${filePath}` };
   let realPath;
   try {
     // .native: on Windows it expands 8.3 short names (`SSH~1` back to `.ssh`), which the

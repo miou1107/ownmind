@@ -80,7 +80,9 @@ describe('client: which files ownmind_upload_standard may read', () => {
     const p = write('docs/standard.md');
     const r = checkStandardFile(p, { home });
     assert.equal(r.ok, true, r.error);
-    assert.equal(r.realPath, fs.realpathSync(p));
+    // .native, as the guard uses: on a Windows runner the temp folder is `RUNNER~1`, and the
+    // guard expands short names on purpose (that is how `SSH~1` gets recognised as `.ssh`).
+    assert.equal(r.realPath, fs.realpathSync.native(p));
   });
 
   it('refuses anything that is not Markdown: key files, configs, .env', () => {
