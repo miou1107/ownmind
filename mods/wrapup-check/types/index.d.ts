@@ -15,6 +15,14 @@ export type WrapupBaseline = {
   containers: string[]
   ports: string[]
   worktrees: string[]
+  /** Each local branch as `name commit`. This and the three below are missing in a baseline taken before they were recorded. */
+  branches?: string[]
+  /** The stash entries' commit ids. */
+  stashes?: string[]
+  /** The commit HEAD pointed at. */
+  head?: string
+  /** The paths `git status` listed as changed. */
+  dirty?: string[]
   /** When it was taken, in milliseconds; 0 until the snapshot has finished. */
   takenAt: number
 }
