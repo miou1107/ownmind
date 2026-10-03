@@ -1,0 +1,1 @@
+{ "name": "wrapup-check", "version": "0.1.0", "description": "Wrap-up self-check: on 收工 / 收尾 / 下班 / 交接 / wrap up, runs the six checks of team standard 723 and opens the result in a pane", "author": { "name": "Vin (miou1107)" }, "types": "./types/index.d.ts" }
