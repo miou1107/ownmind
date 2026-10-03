@@ -41,6 +41,14 @@ described.
 7. **Overlapping runs cannot overwrite a newer result.** Each run is numbered and only the
    newest one writes the pane.
 
+8. **The pane is a checklist of the six items** (Vin approved a mockup on 2026-10-03: "我覺得你那些
+   kpi label 應該是要對應 6 項自檢，有點像 check list，每完成一樣就打勾"). The three number cards
+   are gone. On top: "完成 n / 6" and a progress bar. Each item is one line: a tick and what was
+   found or done; while the AI is still answering the wrap-up, an open item says "AI 處理中";
+   after the answer (`turn.complete` of the main conversation, not a subagent's), it says
+   "等你決定：…" (yellow) or "還沒處理：…" (red), and the desktop lists their detail below.
+   The desktop picture switches its text colors with the system's dark mode.
+
 ## Not in scope
 
 - Reading the handoff list from the mod. Still not reachable from a plugin; the model checks

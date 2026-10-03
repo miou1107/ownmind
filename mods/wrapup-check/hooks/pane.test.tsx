@@ -40,6 +40,7 @@ const setup = (on: any, git: Record<string, string>, w: World) => {
   on('env.get', () => ({ value: '/home/v' }))
   on('fs.read', (_: any, e: any) => (e.path in w.files ? { value: w.files[e.path] } : { deny: 'missing' }))
   on('ui.toast', () => ({ value: undefined }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   on('command.register', () => ({ value: { command: 'wrapup' } }))
   on('tool.register', (_: any, e: any) => { w.tools = [...(w.tools ?? []), e]; return { value: { tool: `mcp__wrapup-check__${e.name}` } } })
   on('agent.list', () => ({ value: w.agents }))
@@ -83,12 +84,11 @@ test('typing 收工 runs the six checks, opens the pane and hands the model the 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui: any = await mountPane($, surface)
     if (surface === 'terminal') {
-      // The terminal draws the summary as text; the desktop puts it in the picture's alt text.
-      expect(await ui.find({ type: 'Text', text: /項乾淨/ })).toBeDefined()
+      // While the AI is answering, the open items say it is handling them.
+      expect(await ui.find({ type: 'Text', text: /收工檢查　完成 0 \/ 6/ })).toBeDefined()
       expect((await ui.find({ key: 'wrapup-row-0' }))?.props?.label).toBe('分支')
-      expect(await ui.find({ type: 'Text', text: /3 個檔沒 commit/ })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: /2 個 commit 沒推/ })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: /1 個 container 還在跑/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /AI 處理中/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /還沒處理/ })).toBeUndefined()
       // The detail opens on press and closes on the next press.
       expect(await ui.find({ type: 'Text', text: /還沒 commit 的改動：3 個檔/ })).toBeUndefined()
       await ui.press({ key: 'wrapup-row-0' })
@@ -97,15 +97,34 @@ test('typing 收工 runs the six checks, opens the pane and hands the model the 
       expect(await ui.find({ type: 'Text', text: /還沒 commit 的改動：3 個檔/ })).toBeUndefined()
     } else {
       const svg = await ui.find({ type: 'Svg' })
-      expect(svg).toBeDefined()
-      expect(svg?.props?.source).toMatch(/✗ 分支/)
-      expect(svg?.props?.source).toMatch(/？ 版號/)
-      expect(svg?.props?.alt).toMatch(/項乾淨/)
-      expect(svg?.props?.alt).toMatch(/分支：3 個檔沒 commit/)
-      expect(await ui.find({ type: 'Text', text: /待處理事項/ })).toBeDefined()
+      expect(svg?.props?.source).toMatch(/收工檢查/)
+      expect(svg?.props?.source).toMatch(/完成 0 \/ 6/)
+      expect(svg?.props?.source).toMatch(/>分支</)
+      expect(svg?.props?.source).toMatch(/AI 處理中/)
+      expect(svg?.props?.alt).toMatch(/分支：AI 處理中/)
+      // The open items are listed underneath only once the AI is done.
+      expect(await ui.find({ type: 'Text', text: /還沒打勾的項目/ })).toBeUndefined()
     }
     await ui.unmount()
   }
+
+  // The AI's answer is complete: open items say who has to act, and their detail is listed.
+  // A subagent finishing does not end it.
+  await ($ as any).turn.complete({ answer: '查完了', durationMs: 1, isAborted: false, turnId: 't0', agentId: 'sub1', reason: 'answer' })
+  const mid: any = await mountPane($, 'terminal')
+  expect(await mid.find({ type: 'Text', text: /AI 處理中/ })).toBeDefined()
+  await mid.unmount()
+  await ($ as any).turn.complete({ answer: '好了', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const term: any = await mountPane($, 'terminal')
+  expect(await term.find({ type: 'Text', text: /AI 處理中/ })).toBeUndefined()
+  expect(await term.find({ type: 'Text', text: /還沒處理：3 個檔沒 commit/ })).toBeDefined()
+  expect(await term.find({ type: 'Text', text: /還沒處理：1 個 container 還在跑/ })).toBeDefined()
+  expect(await term.find({ type: 'Text', text: /等你決定：/ })).toBeDefined()
+  await term.unmount()
+  const desk: any = await mountPane($, 'desktop')
+  expect((await desk.find({ type: 'Svg' }))?.props?.source).toMatch(/還沒處理：3 個檔沒 commit/)
+  expect(await desk.find({ type: 'Text', text: /還沒打勾的項目/ })).toBeDefined()
+  await desk.unmount()
 })
 
 test('an unstaged README counts as a doc change, and .cjs / .ps1 count as code (issue #158)', async ($, on) => {
@@ -154,7 +173,7 @@ test('a clean repo shows green tiles and no red mark', async ($, on) => {
   const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
   expect(r.text).toMatch(/已乾淨/)
   const ui: any = await mountPane($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /5 項乾淨/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /完成 5 \/ 6/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /都併了，目錄乾淨/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /沒有殘留/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /✗/ })).toBeUndefined()
@@ -278,4 +297,30 @@ test('agy listening while it judges a reply is not residue', async ($, on) => {
   const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
   expect(r.text).toMatch(/port 還開著：node 127\.0\.0\.1:5173/)
   expect(r.text).not.toMatch(/agy/)
+})
+
+test('a wrap-up typed during a running turn waits for its own answer; a blocked one does not stay busy', async ($, on) => {
+  const w = world()
+  setup(on, GIT, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  let block = false
+  ;(on as any)('prompt.submit', (_: any, e: any) => (block ? { drop: 'blocked' } : { text: e.text }))
+  await start($)
+  // Typed over turn t9: t9 ending is not the answer to the wrap-up.
+  await ($ as any).prompt.submit({ text: '收工', wait: false, turnId: 't9' })
+  await ($ as any).turn.complete({ answer: 'earlier work', durationMs: 1, isAborted: false, turnId: 't9', reason: 'answer' })
+  let ui: any = await mountPane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /AI 處理中/ })).toBeDefined()
+  await ui.unmount()
+  await ($ as any).turn.complete({ answer: '好了', durationMs: 1, isAborted: false, turnId: 't10', reason: 'answer' })
+  ui = await mountPane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /AI 處理中/ })).toBeUndefined()
+  await ui.unmount()
+  // Blocked beneath: no turn will run, so the items say who acts right away.
+  block = true
+  await ($ as any).prompt.submit({ text: '收工', wait: false })
+  ui = await mountPane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /AI 處理中/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /還沒處理：3 個檔沒 commit/ })).toBeDefined()
+  await ui.unmount()
 })

@@ -7,4 +7,5 @@
 - [x] Broke the refusal, the resolution guard and the agy noise once; both new tests went red
 - [x] `claude plugin validate mods/wrapup-check` and `claude plugin test mods/wrapup-check`
 - [x] FILELIST, README ×3
-- [ ] CHANGELOG and version at release (release commit)
+- [x] Checklist pane: drawing, terminal rows, handling flag set on a wrap-up word and cleared on the main turn's completion; tests for both states and for a subagent's completion; each broken once and seen red
+- [x] CHANGELOG, package.json 1.31.7

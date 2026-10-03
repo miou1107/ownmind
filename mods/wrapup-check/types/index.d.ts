@@ -42,6 +42,8 @@ declare module 'claude-code' {
     'wrapup-check': {
       baseline: WrapupBaseline
       report: WrapupReport
+      /** True while the AI is still answering the wrap-up the user asked for. */
+      handling: boolean
       /** Yellow rows handled since the user last typed a wrap-up word. */
       resolved: WrapupResolution[]
       /** How many test commands and background commands this session ran. */

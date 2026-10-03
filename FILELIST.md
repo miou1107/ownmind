@@ -40,8 +40,10 @@ mods/wrapup-check/hooks/register.tsx
                                      — 使用者打收工、收尾、下班、交接、wrap up 或 /wrapup 時，
                                        跑團隊規範 723 的六項檢查（git、docker ps、lsof、
                                        session 自己的紀錄），開面板「OwnMind 收工自我檢查」
-                                       （桌面：三張數字卡加六個方塊畫成一張 SVG，下面列紅的
-                                       跟黃的；終端機：一列一項，點名稱展開），並把文字版
+                                       （六項打勾清單：上面「完成 n / 6」和進度條，每一項
+                                       打勾或寫等你決定、還沒處理；AI 回話完成之前，沒打勾的
+                                       寫 AI 處理中；桌面畫成一張 SVG、跟著深色模式換字色，
+                                       終端機一列一項、點名稱展開），並把文字版
                                        塞進 prompt 的 context 給 AI 回話用；殘留那一項跟
                                        session 開始時的快照比，別的專案 docker compose 起的
                                        container 和 OwnMind 回話檢查的 agy 不算；註冊
@@ -49,9 +51,10 @@ mods/wrapup-check/hooks/register.tsx
                                        那一格變綠並顯示 AI 寫的一句話，紅的會被退回；
                                        再打一次收工就從頭算
 mods/wrapup-check/hooks/pane.test.tsx
-                                     — 11 條：打收工會跑六項、開面板、把結果交給 AI；沒有
+                                     — 12 條：打收工會跑六項、開面板、把結果交給 AI；沒有
                                        關鍵字什麼都不做；乾淨的 repo 六格都是綠的；黃的處理完
-                                       變綠、紅的退回、再收工從頭算；agy 的 port 不算殘留
+                                       變綠、紅的退回、再收工從頭算；agy 的 port 不算殘留；
+                                       清單在 AI 回話完成前後的字、子代理結束不算；回話途中打收工、被擋下的收工不會卡在處理中
 mods/wrapup-check/types/index.d.ts   — 面板資料的型別
 mods/wrapup-check/tsconfig.json      — 編輯器用的型別設定
 openspec/changes/v1.31.4-wrapup-check-mod/{proposal,spec,tasks}.md
