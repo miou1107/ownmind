@@ -4,6 +4,7 @@ import auth from '../middleware/auth.js';
 import adminAuth from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
 import { enrichActivityDetails } from '../utils/enrich-activity.js';
+import { buildReadableWhere } from '../utils/memory-visibility.js';
 import { bucketLabel } from '../utils/session-buckets.js';
 import { insertActivityLog, normalizeClientEventId } from '../utils/activity-insert.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../../shared/lint-event-types.js';
@@ -23,10 +24,14 @@ import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../../shared/lint-eve
 // disable/update events. In practice a batch usually carries 1–3 events,
 // so the impact is negligible. If batches grow much larger (>50 events) we
 // can switch to a single IN (...) query (v1.17.90 backlog).
-async function memoryLookup(id) {
+//
+// Only rows the reporting user may read: their own, and team standards. An event can name any
+// memory id, so an unscoped lookup let any member read the title and code of anyone's private
+// iron rule by reporting "memory_disable" for id after id.
+async function memoryLookup(id, userId) {
   const r = await query(
-    `SELECT type, code, title FROM memories WHERE id = $1`,
-    [id]
+    `SELECT m.type, m.code, m.title FROM memories m WHERE m.id = $1 AND ${buildReadableWhere({ alias: 'm', userParam: '$2' })}`,
+    [id, userId]
   );
   return r.rows[0] || null;
 }
@@ -113,8 +118,8 @@ export async function autoEmitObservedTrigger(userId, event) {
   // memory_disable: need to look up memories.type to know if it's an iron_rule.
   if (event.event === 'memory_disable' && event.details?.id) {
     const r = await query(
-      `SELECT type, code, title FROM memories WHERE id = $1`,
-      [event.details.id]
+      `SELECT m.type, m.code, m.title FROM memories m WHERE m.id = $1 AND ${buildReadableWhere({ alias: 'm', userParam: '$2' })}`,
+      [event.details.id, userId]
     );
     if (r.rows[0]?.type === 'iron_rule') {
       return {
@@ -129,8 +134,8 @@ export async function autoEmitObservedTrigger(userId, event) {
   // memory_update with iron_rule type.
   if (event.event === 'memory_update' && event.details?.id) {
     const r = await query(
-      `SELECT type, code FROM memories WHERE id = $1`,
-      [event.details.id]
+      `SELECT m.type, m.code FROM memories m WHERE m.id = $1 AND ${buildReadableWhere({ alias: 'm', userParam: '$2' })}`,
+      [event.details.id, userId]
     );
     if (r.rows[0]?.type === 'iron_rule') {
       return {
@@ -183,7 +188,7 @@ router.post('/batch', auth, async (req, res) => {
         // show full context without JOINing memories. Enrich failure swallows
         // its own errors (pure function with built-in try/catch) and returns
         // the original details.
-        const enrichedDetails = await enrichActivityDetails(e, memoryLookup);
+        const enrichedDetails = await enrichActivityDetails(e, (id) => memoryLookup(id, req.user.id));
 
         // Use the v1.17.99 shared helper — internally it splits into two paths
         // (pure INSERT for NULL client id; ON CONFLICT path for present id).

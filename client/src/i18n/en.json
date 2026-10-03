@@ -243,7 +243,7 @@
   "narrative.s.insights": "Observations for administrators",
   "narrative.s.next_actions": "Suggested next steps",
   "pitfalls.title": "Pitfall Log",
-  "pitfalls.subtitle": "Problems found in the system and in AI behaviour. Shared by everyone, because these patterns only show up when you look across all members",
+  "pitfalls.subtitle": "Problems found in the system and in AI behaviour. Admins see every member's rows, because the patterns only show across people; members see their own.",
   "pitfalls.window.7d": "Last 7 days",
   "pitfalls.window.30d": "Last 30 days",
   "pitfalls.window.90d": "Last 90 days",

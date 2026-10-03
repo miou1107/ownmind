@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { buildMessages, callLLMSwitch, computeDataHash, requestBytes } from '../lib/llm-narrative.js';
 import { condenseSections } from '../lib/narrative-condense.js';
 import { createNarrativeCache } from '../lib/narrative-cache.js';
+import { hideOthersRuleTitles } from '../utils/pitfalls-scope.js';
 
 export function createNarrativeRouter({
   query, auth,
@@ -19,7 +20,7 @@ export function createNarrativeRouter({
   router.get('/', async (req, res) => {
     try {
       const range = String(req.query.range || '14d');
-      const sections = await collectSections({ query, range });
+      const sections = hideOthersRuleTitles(await collectSections({ query, range }), req.user);
       res.json({
         range,
         generated_at: new Date().toISOString(),
@@ -41,7 +42,9 @@ export function createNarrativeRouter({
     }
     try {
       const range = String(req.query.range || '14d');
-      const sections = await collectSections({ query, range });
+      // Before the LLM sees it, so the prose cannot name another member's rule either. The
+      // cache key is a hash of what the model gets, so a member and an admin never share prose.
+      const sections = hideOthersRuleTitles(await collectSections({ query, range }), req.user);
       const redacted = redactPIIDeep(sections);
       // The gateway refuses on capacity rather than on size (v1.26.140 corrects the 40 KiB
       // ceiling this comment used to claim), and a bigger body is refused more often: at 14

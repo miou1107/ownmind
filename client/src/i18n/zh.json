@@ -243,7 +243,7 @@
   "narrative.s.insights": "給管理者的觀察",
   "narrative.s.next_actions": "建議的下一步",
   "pitfalls.title": "踩坑紀錄",
-  "pitfalls.subtitle": "系統跟 AI 行為上被發現的問題。全體成員共用同一份、因為這些狀況只有橫著看才看得出模式",
+  "pitfalls.subtitle": "系統跟 AI 行為上被發現的問題。管理員看得到全體成員的紀錄，因為這些狀況要橫著看才看得出模式；一般成員只看得到自己的。",
   "pitfalls.window.7d": "近 7 天",
   "pitfalls.window.30d": "近 30 天",
   "pitfalls.window.90d": "近 90 天",

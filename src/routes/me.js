@@ -20,6 +20,7 @@ import { RULE_FULL_LAYER_SYNC } from '../../shared/lint-event-types.js';
 import { noPasswordLoginResponse, LOGIN_REJECTED } from '../utils/setup-recovery.js';
 import { loginResponseFor, firstPasswordRefusal } from '../utils/first-password.js';
 import { writeAuditLog } from '../utils/audit-log.js';
+import { scopePitfallRows } from '../utils/pitfalls-scope.js';
 
 // v1.26.32: personal rule codes are no longer hardcoded. The compliance loop
 // keys on the neutral event constant; the legacy IR-006 literal below is kept
@@ -1005,7 +1006,7 @@ router.get('/pitfalls', async (req, res) => {
             (a.event = 'memory_disable'
               AND COALESCE(
                 a.details->>'disabled_type',
-                (SELECT type FROM memories WHERE id = (CASE WHEN a.details->>'id' ~ '^\d+$' THEN (a.details->>'id')::int END))
+                (SELECT type FROM memories WHERE id = (CASE WHEN a.details->>'id' ~ '^\\d{1,9}$' THEN (a.details->>'id')::int END) AND user_id = a.user_id)
               ) = 'iron_rule')
             OR (a.event = 'memory_save' AND a.details->>'type' = 'iron_rule')
           )
@@ -1020,11 +1021,11 @@ router.get('/pitfalls', async (req, res) => {
         -- pre-v1.17.88 data, which naturally expires in 14 days.
         COALESCE(
           s.details->>'disabled_title',
-          (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
+          (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\\d{1,9}$' THEN (s.details->>'id')::int END) AND user_id = s.user_id)
         ) AS disabled_title,
         COALESCE(
           s.details->>'disabled_code',
-          (SELECT code FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
+          (SELECT code FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\\d{1,9}$' THEN (s.details->>'id')::int END) AND user_id = s.user_id)
         ) AS disabled_code
       FROM sensitive s
       JOIN users u ON u.id = s.user_id
@@ -1053,7 +1054,7 @@ router.get('/pitfalls', async (req, res) => {
             (a.event = 'memory_disable'
               AND COALESCE(
                 a.details->>'disabled_type',
-                (SELECT type FROM memories WHERE id = (CASE WHEN a.details->>'id' ~ '^\d+$' THEN (a.details->>'id')::int END))
+                (SELECT type FROM memories WHERE id = (CASE WHEN a.details->>'id' ~ '^\\d{1,9}$' THEN (a.details->>'id')::int END) AND user_id = a.user_id)
               ) = 'iron_rule')
             OR (a.event = 'memory_save' AND a.details->>'type' = 'iron_rule')
           )
@@ -1066,7 +1067,7 @@ router.get('/pitfalls', async (req, res) => {
         -- v1.17.89: prefer details snapshot; fall back to JOIN memories.
         COALESCE(
           s.details->>'disabled_title',
-          (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
+          (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\\d{1,9}$' THEN (s.details->>'id')::int END) AND user_id = s.user_id)
         ) AS disabled_title
       FROM sensitive s
       JOIN users u ON u.id = s.user_id
@@ -1171,21 +1172,28 @@ router.get('/pitfalls', async (req, res) => {
       },
     });
 
+    // Admins see the whole team (auditing it is what this page is for); a member sees their
+    // own rows. The rows carry other people's iron-rule titles, names and session summaries,
+    // which nowhere else in OwnMind lets one member read of another (src/utils/pitfalls-scope.js).
+    const unobserved = scopePitfallRows(unobservedQ.rows, req.user);
+    const unverified = scopePitfallRows(unverifiedQ.rows, req.user);
+    const orphans = scopePitfallRows(orphanQ.rows, req.user);
+
     res.json({
       window,
       generated_at: new Date().toISOString(),
       sections: {
         unobserved: {
-          count: unobservedQ.rows.length,
-          rows: unobservedQ.rows.map(fmtUnobs),
+          count: unobserved.length,
+          rows: unobserved.map(fmtUnobs),
         },
         unverified: {
-          count: unverifiedQ.rows.length,
-          rows: unverifiedQ.rows.map(fmtUnverif),
+          count: unverified.length,
+          rows: unverified.map(fmtUnverif),
         },
         orphan_session: {
-          count: orphanQ.rows.length,
-          rows: orphanQ.rows.map(fmtOrphan),
+          count: orphans.length,
+          rows: orphans.map(fmtOrphan),
         },
       },
     });

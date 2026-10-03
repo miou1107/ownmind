@@ -243,7 +243,7 @@
   "narrative.s.insights": "管理者向けの観察",
   "narrative.s.next_actions": "次に取るべき行動",
   "pitfalls.title": "つまずき記録",
-  "pitfalls.subtitle": "システムと AI の振る舞いで見つかった問題。全メンバーで共有します。こうしたパターンは横断して見ないと分からないからです",
+  "pitfalls.subtitle": "システムと AI の挙動で見つかった問題です。パターンは横断して見ないと分からないため管理者は全メンバーの記録を見られます。一般メンバーは自分の記録のみ表示されます。",
   "pitfalls.window.7d": "直近 7 日",
   "pitfalls.window.30d": "直近 30 日",
   "pitfalls.window.90d": "直近 90 日",
