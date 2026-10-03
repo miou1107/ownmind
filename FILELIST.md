@@ -1,5 +1,45 @@
 # OwnMind 檔案結構
 
+## v1.31.4 修改（打「收工」就先跑六項檢查，結果開在面板上，每位成員預設開啟）
+
+新增檔：
+```
+mods/wrapup-check/.claude-plugin/plugin.json
+                                     — Claude Code 外掛的名稱與版本
+mods/wrapup-check/hooks/hooks.json   — 指向 register.tsx
+mods/wrapup-check/hooks/register.tsx
+                                     — 使用者打收工、收尾、下班、交接、wrap up 或 /wrapup 時，
+                                       跑團隊規範 723 的六項檢查（git、docker ps、lsof、
+                                       session 自己的紀錄），開面板「OwnMind 收工自我檢查」
+                                       （桌面：三張數字卡加六個方塊畫成一張 SVG，下面列紅的
+                                       跟黃的；終端機：一列一項，點名稱展開），並把文字版
+                                       塞進 prompt 的 context 給 AI 回話用；殘留那一項跟
+                                       session 開始時的快照比，別的專案 docker compose 起的
+                                       container 不算
+mods/wrapup-check/hooks/pane.test.tsx
+                                     — 3 條：打收工會跑六項、開面板、把結果交給 AI；沒有
+                                       關鍵字什麼都不做；乾淨的 repo 六格都是綠的
+mods/wrapup-check/types/index.d.ts   — 面板資料的型別
+mods/wrapup-check/tsconfig.json      — 編輯器用的型別設定
+openspec/changes/v1.31.4-wrapup-check-mod/{proposal,spec,tasks}.md
+```
+
+修改檔：
+```
+scripts/install-helpers/ensure-monitor-mod.cjs
+                                     — 從管一個外掛改成管清單裡的每一個（ownmind-monitor、
+                                       wrapup-check）：各自的關閉檔（.no-monitor-mod、
+                                       .no-wrapup-mod）、資料夾不在就只移除自己那一筆、
+                                       輸出一行寫每個外掛的狀態；檔名不改，舊版的更新腳本
+                                       照樣叫得到；ensureMonitorMod 仍然匯出
+tests/ensure-monitor-mod.test.js     — 改成兩個外掛：各自關閉、各自不存在、已有監看外掛的
+                                       電腦只加收工外掛、Windows 路徑
+install.sh, scripts/update.sh, install.ps1, scripts/update.ps1
+                                     — 輸出字樣改成「OwnMind mods:」
+README.md, docs/README.zh-TW.md, docs/README.ja.md
+                                     — 說明收工外掛
+```
+
 ## 開發庫設定修改（在這個庫裡工作時，記憶工具連到不存在的伺服器）
 
 沒有版號：只動開發庫自己的設定與 README，裝好的 OwnMind 一個字都沒有變。

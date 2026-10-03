@@ -1,42 +1,49 @@
 #!/usr/bin/env node
 'use strict';
-// ensure-monitor-mod.cjs — make Claude Code load the OwnMind monitor mod from this OwnMind
-// checkout. One implementation, called from install.sh, update.sh, install.ps1 and update.ps1.
+// ensure-monitor-mod.cjs — make Claude Code load the OwnMind mods from this OwnMind checkout.
+// One implementation, called from install.sh, update.sh, install.ps1 and update.ps1.
 //
-// v1.30.45.
+// v1.30.45 wired one mod (ownmind-monitor). Since the wrap-up check (mods/wrapup-check) the
+// same helper manages every folder in MODS; the file keeps its name so older update scripts
+// that call it by name keep working.
 //
-// The mod (mods/ownmind-monitor) is a Claude Code plugin made of function hooks. Claude Code
-// loads such a folder when ~/.claude/settings.json has, in its "env" block:
+// Each mod is a Claude Code plugin made of function hooks. Claude Code loads such a folder
+// when ~/.claude/settings.json has, in its "env" block:
 //
 //   CLAUDE_CODE_PLUGIN_DIRS            one or more folders, joined by the platform's
 //                                      path-list separator (':' on macOS/Linux, ';' on Windows)
 //   CLAUDE_CODE_ENABLE_FUNCTION_HOOKS  "1"
 //
-// The folder we add is inside the OwnMind checkout, so every later `git pull` delivers the
-// newest mod with no further step. Whatever else the user lists in CLAUDE_CODE_PLUGIN_DIRS is
-// kept, in order. Entries that name this mod somewhere else — the hand-installed copy under
-// ~/.claude/mods/ownmind-monitor, in tilde or expanded form, or this same folder spelled
-// differently — are replaced by the one canonical path, so the mod is never loaded twice.
+// The folders we add are inside the OwnMind checkout, so every later `git pull` delivers the
+// newest mods with no further step. Whatever else the user lists in CLAUDE_CODE_PLUGIN_DIRS is
+// kept, in order. Entries that name one of our mods somewhere else — a hand-installed copy
+// under ~/.claude/mods/<name>, in tilde or expanded form, or this same folder spelled
+// differently — are replaced by the one canonical path, so a mod is never loaded twice.
 //
-// Opt out: create ~/.ownmind/.no-monitor-mod. The helper then removes its own entry and leaves
-// everything else alone.
+// Opt out of one mod: create its marker file in ~/.ownmind (see MODS). The helper then removes
+// that mod's entry and leaves everything else alone. A mod folder missing from the checkout
+// (an older checkout, a rollback) is treated the same way.
 //
 // Usage:  node ensure-monitor-mod.cjs [--settings <path>] [--ownmind-dir <path>]
 //                                     [--home <path>] [--platform <darwin|linux|win32>]
 //         (--home and --platform are for the tests only: they exercise another platform's
-//         paths, so --platform also skips the check that the mod folder exists on disk.)
-// Output: one machine-readable line —
-//         OK:monitor_mod:unchanged | OK:monitor_mod:installed | OK:monitor_mod:updated
-//         OK:monitor_mod:opted_out | OK:monitor_mod:missing (the checkout has no mod folder;
-//         our entry, if any, is removed)
-//         ERROR:monitor_mod:<why>
+//         paths, so --platform also skips the check that the mod folders exist on disk.)
+// Output: one machine-readable line, one status per mod —
+//         OK:mods:ownmind-monitor=unchanged,wrapup-check=installed
+//         statuses: unchanged | installed | updated | opted_out | missing
+//         ERROR:mods:<why>
 // Exit:   0 on any OK, 1 on error. Never throws.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const MOD_NAME = 'ownmind-monitor';
+// name: the folder under mods/ and under ~/.claude/mods/ (the hand-installed location);
+// optOut: the marker file under ~/.ownmind that turns that mod off.
+const MODS = [
+  { name: 'ownmind-monitor', optOut: '.no-monitor-mod' },
+  { name: 'wrapup-check', optOut: '.no-wrapup-mod' },
+];
 const DIRS_KEY = 'CLAUDE_CODE_PLUGIN_DIRS';
 const FLAG_KEY = 'CLAUDE_CODE_ENABLE_FUNCTION_HOOKS';
 
@@ -72,26 +79,34 @@ function comparable(entry, { home, platform }) {
   return platform === 'win32' ? p.toLowerCase() : p;
 }
 
-function modDir(ownmindDir, platform) {
-  return pathApi(platform).join(toNative(ownmindDir, platform), 'mods', MOD_NAME);
+function modDir(ownmindDir, platform, name = MODS[0].name) {
+  return pathApi(platform).join(toNative(ownmindDir, platform), 'mods', name);
 }
 
 /**
- * Pure transform. Returns the new settings object and whether anything changed.
- * @returns {{ status: string, changed: boolean, settings: object }}
+ * Pure transform over the settings object. `optOut` names the mods to drop (opted out, or
+ * missing from the checkout); every other managed mod is placed. `only` limits which mods are
+ * managed at all — an entry of a mod not listed there is left exactly as the user wrote it.
+ * @returns {{ statuses: Record<string, string>, changed: boolean, settings: object }}
  */
-function ensureMonitorMod(settings, { ownmindDir, home = os.homedir(), platform = process.platform, optOut = false }) {
+function ensureMods(settings, { ownmindDir, home = os.homedir(), platform = process.platform, optOut = [], only = null }) {
   const s = settings && typeof settings === 'object' ? settings : {};
   const before = JSON.stringify(s);
   const sep = separator(platform);
-  const target = modDir(ownmindDir, platform);
   const ctx = { home: toNative(home, platform), platform };
-  const targetKey = comparable(target, ctx);
-  // Every place this mod has been loaded from: this checkout, and the hand-installed copy.
-  const ours = new Set([
-    targetKey,
-    comparable(pathApi(platform).join(ctx.home, '.claude', 'mods', MOD_NAME), ctx),
-  ]);
+  const dropped = new Set(optOut);
+
+  // For each mod: its canonical folder, and every spelling that means "this mod".
+  const managed = only ? MODS.filter((m) => only.includes(m.name)) : MODS;
+  const plan = managed.map(({ name }) => {
+    const target = modDir(ownmindDir, platform, name);
+    const targetKey = comparable(target, ctx);
+    const ours = new Set([
+      targetKey,
+      comparable(pathApi(platform).join(ctx.home, '.claude', 'mods', name), ctx),
+    ]);
+    return { name, target, targetKey, ours, placed: false };
+  });
 
   // Anything other than an object / a string here is not ours to repair: refuse instead of
   // silently replacing what the user wrote.
@@ -107,36 +122,63 @@ function ensureMonitorMod(settings, { ownmindDir, home = os.homedir(), platform 
 
   const kept = [];
   const seen = new Set();
-  let placed = false;
   for (const raw of existing) {
     const entry = raw.trim();
     if (!entry) continue;
     const key = comparable(entry, ctx);
-    if (ours.has(key)) {
+    const mine = plan.find((m) => m.ours.has(key));
+    if (mine) {
       // The first entry that names this mod becomes the canonical path, in the same position.
-      if (!optOut && !placed) { kept.push(target); seen.add(targetKey); placed = true; }
+      if (!dropped.has(mine.name) && !mine.placed) { kept.push(mine.target); seen.add(mine.targetKey); mine.placed = true; }
       continue;
     }
     if (seen.has(key)) continue;
     seen.add(key);
     kept.push(entry);
   }
-  if (!optOut && !placed) kept.push(target);
-
-  if (optOut) {
-    if (!hadEnv || !(DIRS_KEY in env)) return { status: 'opted_out', changed: false, settings: s };
-    if (kept.length) env[DIRS_KEY] = kept.join(sep);
-    else delete env[DIRS_KEY];
-    return { status: 'opted_out', changed: JSON.stringify(s) !== before, settings: s };
+  for (const m of plan) {
+    if (!dropped.has(m.name) && !m.placed) { kept.push(m.target); m.placed = true; }
   }
 
-  const wasInstalled = existing.some((e) => e.trim() && comparable(e, ctx) === targetKey);
-  env[DIRS_KEY] = kept.join(sep);
-  env[FLAG_KEY] = '1';
-  if (!hadEnv) s.env = env;
+  const anyPlaced = plan.some((m) => m.placed);
+  if (anyPlaced) {
+    env[DIRS_KEY] = kept.join(sep);
+    env[FLAG_KEY] = '1';
+    if (!hadEnv) s.env = env;
+  } else if (hadEnv && DIRS_KEY in env) {
+    // Every mod is off: leave the user's other folders, or drop the key when none are left.
+    if (kept.length) env[DIRS_KEY] = kept.join(sep);
+    else delete env[DIRS_KEY];
+  }
+
   const changed = JSON.stringify(s) !== before;
-  const status = !changed ? 'unchanged' : wasInstalled ? 'updated' : 'installed';
-  return { status, changed, settings: s };
+  // Per-mod status, from how the mod was named before this run:
+  //   not named at all, or only by another spelling (a hand-installed copy)  -> installed
+  //   named once, by its canonical path, with nothing else to repair         -> unchanged
+  //   anything else that made the file change (another spelling too, a tilde
+  //   or trailing slash to normalise, the flag that was off)                  -> updated
+  const beforeDirs = existing.map((e) => e.trim()).filter(Boolean);
+  const flagWasOn = hadEnv && settings.env && JSON.parse(before).env?.[FLAG_KEY] === '1';
+  const statuses = {};
+  for (const m of plan) {
+    if (dropped.has(m.name)) { statuses[m.name] = 'opted_out'; continue; }
+    const mentions = beforeDirs.filter((e) => m.ours.has(comparable(e, ctx)));
+    const canonical = mentions.filter((e) => e === m.target);
+    if (mentions.length > 0 && canonical.length === 0 && !mentions.some((e) => comparable(e, ctx) === m.targetKey)) statuses[m.name] = 'installed';
+    else if (mentions.length === 0) statuses[m.name] = 'installed';
+    else if (mentions.length === 1 && canonical.length === 1 && (flagWasOn || !changed)) statuses[m.name] = 'unchanged';
+    else statuses[m.name] = 'updated';
+  }
+  return { statuses, changed, settings: s };
+}
+
+// Back-compat for callers of the single-mod transform (v1.30.45): manages the monitor mod only
+// and leaves every other mod's entry exactly as it is.
+function ensureMonitorMod(settings, opts) {
+  const { optOut = false, ...rest } = opts;
+  const monitor = MODS[0].name;
+  const r = ensureMods(settings, { ...rest, only: [monitor], optOut: optOut ? [monitor] : [] });
+  return { status: r.statuses[monitor], changed: r.changed, settings: r.settings };
 }
 
 function main() {
@@ -145,17 +187,21 @@ function main() {
   const home = args.home || os.homedir();
   const settingsPath = args.settings || path.join(os.homedir(), '.claude', 'settings.json');
   const ownmindDir = toNative(args.ownmindDir || path.join(os.homedir(), '.ownmind'), platform);
-  const optedOut = fs.existsSync(path.join(ownmindDir, '.no-monitor-mod'));
+
   // Pointing Claude Code at a folder that is not there would only produce a warning on every
   // start, so a missing mod folder (an older checkout, a rollback) removes our entry the same
   // way the opt-out does. Not checked when --platform is passed: that flag exists only for
-  // the tests, which hand in another platform's paths that are not on this disk. It used to
-  // be skipped only when the platform differed from the one running, which held on a Mac and
-  // failed on Windows, where `--platform win32` is the real platform and the fake
-  // C:\Users\amy checkout was reported missing. The installers never pass --platform.
-  const isMissing = !optedOut && !args.platform
-    && !fs.existsSync(path.join(ownmindDir, 'mods', MOD_NAME, '.claude-plugin', 'plugin.json'));
-  const optOut = optedOut || isMissing;
+  // the tests, which hand in another platform's paths that are not on this disk. The
+  // installers never pass --platform.
+  const optOut = [];
+  const missing = new Set();
+  for (const m of MODS) {
+    if (fs.existsSync(path.join(ownmindDir, m.optOut))) { optOut.push(m.name); continue; }
+    if (!args.platform && !fs.existsSync(path.join(ownmindDir, 'mods', m.name, '.claude-plugin', 'plugin.json'))) {
+      optOut.push(m.name);
+      missing.add(m.name);
+    }
+  }
 
   let settings = {};
   try {
@@ -165,19 +211,19 @@ function main() {
     }
   } catch (e) {
     // Never overwrite a file we could not read — that would destroy the user's other settings.
-    process.stdout.write(`ERROR:monitor_mod:settings unreadable (${e.message})\n`);
+    process.stdout.write(`ERROR:mods:settings unreadable (${e.message})\n`);
     process.exit(1);
   }
   if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) {
-    process.stdout.write('ERROR:monitor_mod:settings is not a JSON object\n');
+    process.stdout.write('ERROR:mods:settings is not a JSON object\n');
     process.exit(1);
   }
 
   let result;
   try {
-    result = ensureMonitorMod(settings, { ownmindDir, home, platform, optOut });
+    result = ensureMods(settings, { ownmindDir, home, platform, optOut });
   } catch (e) {
-    process.stdout.write(`ERROR:monitor_mod:${e.message}\n`);
+    process.stdout.write(`ERROR:mods:${e.message}\n`);
     process.exit(1);
   }
 
@@ -188,15 +234,16 @@ function main() {
       fs.writeFileSync(tmp, JSON.stringify(result.settings, null, 2));
       fs.renameSync(tmp, settingsPath);
     } catch (e) {
-      process.stdout.write(`ERROR:monitor_mod:cannot write settings (${e.message})\n`);
+      process.stdout.write(`ERROR:mods:cannot write settings (${e.message})\n`);
       process.exit(1);
     }
   }
 
-  process.stdout.write(`OK:monitor_mod:${isMissing ? 'missing' : result.status}\n`);
+  const line = MODS.map((m) => `${m.name}=${missing.has(m.name) ? 'missing' : result.statuses[m.name]}`).join(',');
+  process.stdout.write(`OK:mods:${line}\n`);
   process.exit(0);
 }
 
 if (require.main === module) main();
 
-module.exports = { ensureMonitorMod, parseArgs, comparable, modDir, toNative };
+module.exports = { ensureMods, ensureMonitorMod, parseArgs, comparable, modDir, toNative, MODS };

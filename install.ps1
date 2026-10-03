@@ -608,9 +608,9 @@ $EnsureMod = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-monitor-mod.c
 if (Test-Path $EnsureMod) {
   $modResult = & node $EnsureMod --ownmind-dir $OwnmindDir 2>&1
   if ($LASTEXITCODE -eq 0) {
-    Write-Host "[ OK ] OwnMind monitor mod: $modResult"
+    Write-Host "[ OK ] OwnMind mods: $modResult"
   } else {
-    Write-Host "[FAIL] OwnMind monitor mod: $modResult"
+    Write-Host "[FAIL] OwnMind mods: $modResult"
   }
 }
 

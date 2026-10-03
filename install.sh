@@ -663,9 +663,9 @@ fi
 ENSURE_MOD="$OWNMIND_DIR/scripts/install-helpers/ensure-monitor-mod.cjs"
 if [ -f "$ENSURE_MOD" ]; then
   if mod_result=$(node "$ENSURE_MOD" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
-    echo "[ OK ] OwnMind monitor mod: $mod_result"
+    echo "[ OK ] OwnMind mods: $mod_result"
   else
-    echo "[FAIL] OwnMind monitor mod: $mod_result"
+    echo "[FAIL] OwnMind mods: $mod_result"
   fi
 fi
 
