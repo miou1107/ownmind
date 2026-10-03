@@ -36,6 +36,33 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.46 修改（金鑰不再出現在程式的指令列上）
+
+新增檔：
+```
+tests/key-not-in-argv.test.js         — 先重現：6 支腳本都把金鑰放在指令列；修好後逐行檢查沒有 Bearer $KEY、
+                                       '$API_KEY'、--key "$API_KEY"、當參數傳；架本機伺服器確認 ownmind_curl_auth
+                                       真的送出金鑰（含引號、反斜線）；register-mcp-cli --key-env 真的寫進設定檔
+```
+
+修改檔：
+```
+install.sh, hooks/ownmind-session-start.sh, scripts/check-sync.sh, scripts/interactive-upgrade.sh,
+scripts/update.sh, scripts/verify-upgrade.sh
+                                     — 新增 ownmind_curl_auth；curl 改 `ownmind_curl_auth "$KEY" | curl -K -`
+install.sh                            — 金鑰可從 OWNMIND_INSTALL_KEY 來（第一個參數留空時）；export 給 node 程式讀；
+                                       register-mcp-cli 改 --key-env
+hooks/ownmind-session-start.sh, hooks/ownmind-session-start.js
+                                     — retrySpool、conditional-sync-cli 的金鑰改走 OWNMIND_HOOK_KEY
+hooks/lib/conditional-sync-cli.js     — 先讀 OWNMIND_HOOK_KEY，再退回舊的第 3 個參數
+scripts/install-helpers/register-mcp-cli.cjs — 新增 --key-env
+scripts/interactive-upgrade.sh, scripts/interactive-upgrade.ps1, install.ps1
+                                     — 重跑安裝／註冊時金鑰走環境變數
+tests/install-beacon-spool-fallback.test.js, tests/installer-key-update.test.js — 配合新寫法
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.46
+```
+
 ## v1.30.45 修改（Claude Code 輸入框下方的 OwnMind 按鈕，每位成員預設開啟）
 
 新增檔：
