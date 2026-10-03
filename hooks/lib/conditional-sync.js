@@ -216,14 +216,19 @@ export async function fetchInitFull(apiUrl, apiKey, fetchFn = globalThis.fetch) 
 export function writeCache(payload, cachePath = DEFAULT_CACHE_PATH, fsModule = fs, account) {
   try {
     const dir = path.dirname(cachePath);
-    if (!fsModule.existsSync(dir)) fsModule.mkdirSync(dir, { recursive: true });
+    if (!fsModule.existsSync(dir)) fsModule.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const wrapped = {
       sync_token: payload.sync_token || '',
       saved_at: new Date().toISOString(),
       ...(account ? { account: accountFingerprint(account) } : {}),
       data: payload.data || payload,
     };
-    fsModule.writeFileSync(cachePath, JSON.stringify(wrapped, null, 2));
+    // Owner-only: the file is every memory this account has. `mode` only applies when the
+    // file is created, so a cache from an older version is tightened afterwards too.
+    fsModule.writeFileSync(cachePath, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
+    if (process.platform !== 'win32' && typeof fsModule.chmodSync === 'function') {
+      try { fsModule.chmodSync(cachePath, 0o600); } catch { /* the write succeeded */ }
+    }
     return true;
   } catch {
     return false;

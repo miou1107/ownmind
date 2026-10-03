@@ -119,6 +119,10 @@ export async function judgeLocally({
     // Named, not left to the default. A judge that can edit files is not a judge, and an
     // empty tool list is also the fastest possible start: there is nothing to load.
     '--allowed-tools', '',
+    // --allowed-tools only pre-approves; the read-only tools (Read, Grep, Glob) need no
+    // approval and stayed available, so text in the judged reply could have asked the judge to
+    // read files. --tools '' removes the built-in tools themselves.
+    '--tools', '',
     // The flag this whole thing turned out to depend on. Without it the nested CLI loads the
     // user's own environment — their CLAUDE.md, their rules, their skills, and OwnMind's own
     // hooks. Measured on the first real run: asked to audit a reply against rule 795, it read
@@ -132,7 +136,7 @@ export async function judgeLocally({
     // The second half is worse and does not show up as an error at all: OwnMind's Stop hook
     // is registered globally, so a judge launched from a Stop hook would fire another Stop
     // hook, which would launch another judge. Safe mode is what keeps this from recursing.
-    // Auth, model selection and the built-in tools still work, which is all a judge needs.
+    // Auth and model selection still work, which is all a judge needs.
     '--safe-mode',
     // Nothing here is a conversation worth resuming, and one file per checked turn adds up.
     '--no-session-persistence',
@@ -166,7 +170,14 @@ export async function judgeLocally({
       }
     } else {
       const { command, prefixArgs } = resolveClaudeBin(claudeBin);
-      result = await run(spawnImpl, command, [...prefixArgs, ...argv], prompt, timeoutMs);
+      // Started from an empty folder of its own, like agy: with no tools it has nothing to read
+      // anyway, and the project it was launched beside is not where a judge belongs.
+      const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-judge-'));
+      try {
+        result = await run(spawnImpl, command, [...prefixArgs, ...argv], prompt, timeoutMs, workDir);
+      } finally {
+        try { fs.rmSync(workDir, { recursive: true, force: true }); } catch { /* temp folder */ }
+      }
     }
   } catch (err) {
     // Three different states, three different sentences. ENOENT and `not-found` are the CLI

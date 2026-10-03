@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { writePrivateFile } from '../../shared/private-file.js';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -98,8 +99,7 @@ export function writeEnforcementBundle(bundle, cachePath) {
   if (!mayReplaceBundle(bundle, existing.present ? existing : null)) return false;
 
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({
+    writePrivateFile(file, JSON.stringify({
       selectors: Array.isArray(bundle.selectors) ? bundle.selectors : [],
       guards: Array.isArray(bundle.guards) ? bundle.guards : [],
       injectables: Array.isArray(bundle.injectables) ? bundle.injectables : [],

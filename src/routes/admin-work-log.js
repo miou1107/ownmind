@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query as defaultQuery } from '../utils/db.js';
 import { superAdminAuth as defaultSuperAdminAuth } from '../middleware/adminAuth.js';
+import logger from '../utils/logger.js';
 
 /**
  * /api/admin/work-log — super_admin only.
@@ -50,7 +51,8 @@ export function createAdminWorkLogRouter(deps = {}) {
         event_types: events.rows.map((r) => r.event),
       });
     } catch (e) {
-      res.status(500).json({ error: 'filters_failed', detail: e.message });
+      logger.error('admin work-log filters failed', { error: e.message });
+      res.status(500).json({ error: 'filters_failed' });
     }
   });
 
@@ -148,7 +150,8 @@ export function createAdminWorkLogRouter(deps = {}) {
 
       res.json({ rows, total, limit, offset, from, to });
     } catch (e) {
-      res.status(500).json({ error: 'work_log_failed', detail: e.message });
+      logger.error('admin work-log query failed', { error: e.message });
+      res.status(500).json({ error: 'work_log_failed' });
     }
   });
 

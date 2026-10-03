@@ -28,6 +28,7 @@ import { filterCacheableRules } from '../shared/cacheable-rules.js';
 // v1.26.133 — a compact init response is not evidence that a collection is empty.
 import { pickRulesForCache, mergeOfflineCacheData, previousDataForAccount } from '../shared/init-cache.js';
 import { accountFingerprint } from '../shared/scanners/base.js';
+import { writePrivateFile } from '../shared/private-file.js';
 // v1.26.127: the tip list lives in shared/tips.js so this and INSTRUCTIONS_SOP cannot drift.
 import { getRandomTip } from '../shared/tips.js';
 import { hintsFromStandards } from '../shared/invocable-standards.js';
@@ -107,9 +108,7 @@ async function refreshIronRulesCache() {
     // reply check a no-op that reported nothing.
     const verifiable = filterCacheableRules(allRules);
     cachedVerifiableRules = verifiable;
-    const cacheDir = path.dirname(CACHE_PATH);
-    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(CACHE_PATH, JSON.stringify(verifiable, null, 2));
+    writePrivateFile(CACHE_PATH, JSON.stringify(verifiable, null, 2));
   } catch { /* silent fail — don't block the caller */ }
 }
 
@@ -204,6 +203,8 @@ const { faultPrefix, queueNotice } = makeNoticeHelpers({
   apiUrlConfigured: API_URL_CONFIGURED,
 });
 const API_KEY = process.env.OWNMIND_API_KEY || "";
+// Offline answers come only from a cache this account wrote (see readMemoryCache).
+const readOwnMemoryCache = () => readMemoryCache(accountFingerprint({ apiUrl: API_URL, apiKey: API_KEY }));
 
 // --- Version & Sync Token (in-memory, per session) ---
 const CLIENT_VERSION = (() => {
@@ -977,7 +978,7 @@ async function handleTool(name, args) {
         data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true${AUTO_PROJECT ? `&project=${encodeURIComponent(AUTO_PROJECT)}` : ''}`);
       } catch (initErr) {
         if (isNetworkError(initErr)) {
-          const cache = readMemoryCache();
+          const cache = readOwnMemoryCache();
           if (cache) {
             logEvent('init', { status: 'offline', details: { saved_at: cache.saved_at } });
             return {
@@ -1044,9 +1045,7 @@ async function handleTool(name, args) {
           const verifiableRules = filterCacheableRules(ironRules);
           cachedVerifiableRules = verifiableRules;
           const cachePath = path.join(os.homedir(), '.ownmind/cache/iron_rules.json');
-          const cacheDir = path.dirname(cachePath);
-          if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-          fs.writeFileSync(cachePath, JSON.stringify(verifiableRules, null, 2));
+          writePrivateFile(cachePath, JSON.stringify(verifiableRules, null, 2));
         } catch { /* silent fail */ }
       }
 
@@ -1074,7 +1073,7 @@ async function handleTool(name, args) {
       } catch { /* silent fail */ }
 
       // Queue replay: send any queued operations now that server is online
-      const replayResult = await replayQueue(callApi, currentSyncToken);
+      const replayResult = await replayQueue(callApi, currentSyncToken, accountFingerprint({ apiUrl: API_URL, apiKey: API_KEY }));
       if (replayResult.message) data._queue_replay = replayResult.message;
 
       // Eagerly load verification engine
@@ -1110,7 +1109,7 @@ async function handleTool(name, args) {
           // Caught in review of this release. The cache holds whole memories, so offline
           // the follow-up to a truncated search result still works.
           if (isNetworkError(err)) {
-            const idCache = readMemoryCache();
+            const idCache = readOwnMemoryCache();
             const cached = findCachedMemory(idCache, args.id);
             logEvent('memory_get', { by_id: true, offline: true });
             // v1.26.146: online, a team standard whose text lives in child fragments comes
@@ -1171,7 +1170,7 @@ async function handleTool(name, args) {
         return data;
       } catch (err) {
         if (isNetworkError(err)) {
-          const cache = readMemoryCache();
+          const cache = readOwnMemoryCache();
           const items = cache?.data?.[args.type] || [];
           logEvent('memory_get', { type: args.type, offline: true });
           return {
@@ -1190,7 +1189,7 @@ async function handleTool(name, args) {
       // read what the caller is told. Inline, the offline branch was unreachable from a test
       // and shipped a swallowed error for months.
       const result = await runMemorySearch(
-        { callApi, isNetworkError, readMemoryCache, localSearch, logEvent, formatCacheAge, apiUrl: API_URL, apiUrlConfigured: API_URL_CONFIGURED },
+        { callApi, isNetworkError, readMemoryCache: readOwnMemoryCache, localSearch, logEvent, formatCacheAge, apiUrl: API_URL, apiUrlConfigured: API_URL_CONFIGURED },
         { query: args.query, syncToken: currentSyncToken },
       );
       if (result._new_token) {
@@ -1253,7 +1252,7 @@ async function handleTool(name, args) {
       } catch (err) {
         if (isNetworkError(err)) {
           const queueLen = readQueue().length;
-          enqueueOperation({ method: 'POST', path: '/api/memory', body });
+          enqueueOperation({ method: 'POST', path: '/api/memory', body, account: accountFingerprint({ apiUrl: API_URL, apiKey: API_KEY }) });
           logEvent('memory_save', { type: args.type, title: args.title, queued: true });
           return { _queued: true, _queue_notice: queueNotice(err, queueLen + 1) };
         }
@@ -1270,7 +1269,7 @@ async function handleTool(name, args) {
       // v1.19: iron rule tiering — the server validates that non-iron-rule entries cannot change tier.
       if (args.tier !== undefined) body.tier = args.tier;
       try {
-        const data = await callApi("PUT", `/api/memory/${args.id}`, body);
+        const data = await callApi("PUT", `/api/memory/${encodeURIComponent(String(args.id))}`, body);
         if (data.sync_token) currentSyncToken = data.sync_token;
         logEvent('memory_update', { id: args.id, reason: args.update_reason });
         // Refresh cache if iron_rule was updated
@@ -1281,7 +1280,7 @@ async function handleTool(name, args) {
       } catch (err) {
         if (isNetworkError(err)) {
           const queueLen = readQueue().length;
-          enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}`, body });
+          enqueueOperation({ method: 'PUT', path: `/api/memory/${encodeURIComponent(String(args.id))}`, body, account: accountFingerprint({ apiUrl: API_URL, apiKey: API_KEY }) });
           logEvent('memory_update', { id: args.id, queued: true });
           return { _queued: true, _queue_notice: queueNotice(err, queueLen + 1) };
         }
@@ -1292,7 +1291,7 @@ async function handleTool(name, args) {
     case "ownmind_disable": {
       const disableBody = { reason: args.reason, sync_token: currentSyncToken };
       try {
-        const data = await callApi("PUT", `/api/memory/${args.id}/disable`, disableBody);
+        const data = await callApi("PUT", `/api/memory/${encodeURIComponent(String(args.id))}/disable`, disableBody);
         if (data.sync_token) currentSyncToken = data.sync_token;
         logEvent('memory_disable', { id: args.id, reason: args.reason });
         // Refresh cache if iron_rule was disabled
@@ -1303,7 +1302,7 @@ async function handleTool(name, args) {
       } catch (err) {
         if (isNetworkError(err)) {
           const queueLen = readQueue().length;
-          enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}/disable`, body: disableBody });
+          enqueueOperation({ method: 'PUT', path: `/api/memory/${encodeURIComponent(String(args.id))}/disable`, body: disableBody, account: accountFingerprint({ apiUrl: API_URL, apiKey: API_KEY }) });
           logEvent('memory_disable', { id: args.id, queued: true });
           return { _queued: true, _queue_notice: queueNotice(err, queueLen + 1) };
         }
@@ -1327,7 +1326,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_handoff_accept": {
-      const data = await callApi("PUT", `/api/handoff/${args.id}/accept`, {
+      const data = await callApi("PUT", `/api/handoff/${encodeURIComponent(String(args.id))}/accept`, {
         accepted_by: args.accepted_by,
         sync_token: currentSyncToken,
       });

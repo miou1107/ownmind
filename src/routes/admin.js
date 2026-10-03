@@ -8,6 +8,7 @@ import { generateRandomPassword } from '../../shared/random-password.js';
 import { requireFields } from '../utils/require-fields.js';
 import { writeAuditLog } from '../utils/audit-log.js';
 import { revokeUserSessions } from '../utils/web-session.js';
+import { safeEqual } from '../utils/safe-equal.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
@@ -35,7 +36,7 @@ router.post('/setup', async (req, res) => {
     if (!setupToken) {
       return res.status(403).json({ error: '/setup 端點已停用（伺服器未設定 SETUP_TOKEN）' });
     }
-    if (req.body.setup_token !== setupToken) {
+    if (!safeEqual(req.body.setup_token, setupToken)) {
       return res.status(403).json({ error: 'SETUP_TOKEN 不正確' });
     }
 

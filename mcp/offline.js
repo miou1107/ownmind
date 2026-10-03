@@ -5,6 +5,7 @@ import os from 'node:os';
 import { tokenize, itemMatchesTokens } from '../shared/memory-search-tokens.js';
 import { shapeSearchResults } from '../shared/memory-search-result.js';
 import { accountFingerprint } from '../shared/scanners/base.js';
+import { writePrivateFile, appendPrivateFile } from '../shared/private-file.js';
 
 /**
  * v1.26.138 — the MCP's offline cache has its own file.
@@ -118,10 +119,19 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     }
   }
 
-  function readMemoryCache() {
+  /**
+   * @param {string} [fingerprint] when given, a cache stamped for any other account — or not
+   *   stamped at all — reads as absent. Offline answers are served through this, so a key
+   *   swapped on this machine never answers from the previous account's memories (the
+   *   v1.26.82 rule the SessionStart cache already follows). Omitted only by the merge on
+   *   init, which makes the same check itself (previousDataForAccount).
+   */
+  function readMemoryCache(fingerprint) {
     try {
       if (!fs.existsSync(cachePath)) return null;
-      return JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      if (fingerprint !== undefined && (!cache || cache.account !== fingerprint)) return null;
+      return cache;
     } catch {
       return null;
     }
@@ -129,9 +139,7 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
 
   function writeMemoryCache(payload) {
     try {
-      const dir = path.dirname(cachePath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(cachePath, JSON.stringify(payload, null, 2));
+      writePrivateFile(cachePath, JSON.stringify(payload, null, 2));
     } catch { /* silent fail */ }
   }
 
@@ -176,10 +184,8 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
 
   function enqueueOperation(op) {
     try {
-      const dir = path.dirname(queuePath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const entry = JSON.stringify({ ...op, queued_at: new Date().toISOString() });
-      fs.appendFileSync(queuePath, entry + '\n');
+      const entry = JSON.stringify({ queued_at: new Date().toISOString(), ...op });
+      appendPrivateFile(queuePath, entry + '\n');
     } catch { /* silent fail */ }
   }
 
@@ -202,9 +208,38 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     } catch { /* silent fail */ }
   }
 
-  async function replayQueue(callApi, currentSyncToken) {
-    const ops = readQueue();
-    if (ops.length === 0) return { replayed: 0, remaining: 0, message: null };
+  /**
+   * @param {string} [fingerprint] the account now configured. A write queued under another
+   *   key is not sent with this one — it would land in somebody else's memories — and stays
+   *   queued for when that key is back. Entries from before v1.31.4 carry no stamp; they were
+   *   queued by whichever key was configured then, almost always this one, and are sent.
+   */
+  async function replayQueue(callApi, currentSyncToken, fingerprint) {
+    const all = readQueue();
+    const belongs = (op) => fingerprint === undefined || op.account === undefined || op.account === fingerprint;
+    const ops = all.filter(belongs);
+    const others = all.filter((op) => !belongs(op));
+    const othersNote = others.length
+      ? ` (${others.length} more queued under a different API key — sent when that key is configured again)`
+      : '';
+    if (ops.length === 0) {
+      return {
+        replayed: 0,
+        remaining: 0,
+        message: othersNote ? `[OwnMind] Nothing to replay for this account${othersNote}` : null,
+      };
+    }
+
+    // One rename, not delete-then-append: a crash between the two would drop every entry not
+    // yet written back.
+    const requeue = (rest) => {
+      try {
+        if (rest.length === 0) { clearQueue(); return; }
+        const tmp = `${queuePath}.${process.pid}.tmp`;
+        writePrivateFile(tmp, rest.map((r) => JSON.stringify(r)).join('\n') + '\n');
+        fs.renameSync(tmp, queuePath);
+      } catch { /* the old queue is still in place */ }
+    };
 
     let replayed = 0;
     for (const op of ops) {
@@ -214,21 +249,20 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
         replayed++;
       } catch {
         const remaining = ops.slice(replayed);
-        clearQueue();
-        for (const r of remaining) enqueueOperation(r);
+        requeue([...remaining, ...others]);
         return {
           replayed,
           remaining: remaining.length,
-          message: `[OwnMind] Queue replay partially failed — ${replayed} operations sent, ${remaining.length} still pending`,
+          message: `[OwnMind] Queue replay partially failed — ${replayed} operations sent, ${remaining.length} still pending${othersNote}`,
         };
       }
     }
 
-    clearQueue();
+    requeue(others);
     return {
       replayed,
       remaining: 0,
-      message: `[OwnMind] Queue replay complete — ${replayed} operations synced`,
+      message: `[OwnMind] Queue replay complete — ${replayed} operations synced${othersNote}`,
     };
   }
 

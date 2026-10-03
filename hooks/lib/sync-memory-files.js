@@ -331,6 +331,10 @@ export function syncMemoryFiles({ memoryDir, data, sync_failed = false } = {}) {
   const activeEntries = [];
   for (const mem of data.memories) {
     if (mem.status === 'disabled') continue;
+    // type and id come from the server and become part of a path. Only names the cleanup
+    // below would also recognise are written: a type such as `../../x` or an id with a
+    // slash in it would otherwise put a file outside this folder.
+    if (!SYNCABLE_TYPES.includes(mem.type) || !/^\d{1,15}$/.test(String(mem.id))) continue;
     activeEntries.push({ ...mem, filename: memoryFilename(mem) });
   }
 

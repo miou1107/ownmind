@@ -170,6 +170,7 @@ import complianceRoutes from './routes/compliance.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
 import adminAuth from './middleware/adminAuth.js';
+import { errorResponse } from './utils/error-response.js';
 
 // v1.19.8: setup wizard API endpoints (public, no auth needed)
 // must be mounted before /api/admin to avoid /api/admin swallowing them
@@ -257,9 +258,8 @@ app.get('/bootstrap.ps1', (req, res) => {
 // error-handling middleware
 app.use((err, req, res, next) => {
   logger.error('Uncaught error', { error: err.message, stack: err.stack });
-  res.status(err.status || 500).json({
-    error: err.message || '伺服器內部錯誤'
-  });
+  const { status, body } = errorResponse(err);
+  res.status(status).json(body);
 });
 
 export default app;

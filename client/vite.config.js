@@ -25,7 +25,9 @@ export default defineConfig({
   build: {
     outDir: '../src/public/dashboard',
     emptyOutDir: true,
-    sourcemap: true,
+    // Not published: a source map hands anyone who can load the console its full source,
+    // comments included. Debug against a local build instead.
+    sourcemap: false,
   },
   server: {
     port: 5173,

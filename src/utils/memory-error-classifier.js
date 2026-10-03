@@ -49,7 +49,8 @@ export function classifyMemoryError(err, options = {}) {
     return {
       status: err.status,
       body: {
-        error: err.message || baseErrorMessage,
+        // A thrown 5xx is still the server's own failure: its message stays in the log.
+        error: (err.status < 500 && err.message) || baseErrorMessage,
       },
       logLevel: err.status >= 500 ? 'error' : 'warn',
       logStack: err.status >= 500,

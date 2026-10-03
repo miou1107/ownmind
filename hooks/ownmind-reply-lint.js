@@ -60,6 +60,7 @@ process.on('unhandledRejection', () => { try { process.exit(0); } catch { /* ign
 // Only import Node built-ins (these are guaranteed not to fail at module load time).
 // shared/* modules are loaded via dynamic import wrapped in try/catch (v1.17.96 review A2).
 import fs from 'node:fs';
+import { appendPrivateFile } from '../shared/private-file.js';
 import path from 'node:path';
 import os from 'node:os';
 import https from 'node:https';
@@ -934,7 +935,7 @@ function writeFallback(block) {
       }
     } catch { /* file does not exist → skip */ }
     const record = { ts: new Date().toISOString(), block };
-    fs.appendFileSync(PENDING_FILE, JSON.stringify(record) + '\n');
+    appendPrivateFile(PENDING_FILE, JSON.stringify(record) + '\n');
   } catch { /* swallow */ }
 }
 
@@ -1014,7 +1015,7 @@ function spoolPendingForRetry(events) {
       }
     } catch { /* file does not exist → skip */ }
     const lines = events.map(e => JSON.stringify(e)).join('\n') + '\n';
-    fs.appendFileSync(COMPLIANCE_PENDING_FILE, lines);
+    appendPrivateFile(COMPLIANCE_PENDING_FILE, lines);
   } catch { /* swallow */ }
 }
 

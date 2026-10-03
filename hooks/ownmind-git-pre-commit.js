@@ -18,6 +18,7 @@ import { readJsonSafe, getChangedSourceFiles, getClientVersion, readCredentials 
 import { readComplianceEvents } from '../shared/compliance.js';
 import { detectSecretLike } from '../shared/secret-detect.js';
 import { filterCacheableRules } from '../shared/cacheable-rules.js';
+import { writePrivateFile } from '../shared/private-file.js';
 import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
 import { selectBlockFingerprint } from './lib/select-block-fingerprint.js';
 import { isSecretGuardRule } from './lib/secret-guard-rule.js';
@@ -352,9 +353,7 @@ async function fetchAndCacheRules() {
     // sync went wrong, and a stale cache still enforces something while an empty
     // one enforces nothing.
     if (shouldOverwriteCache(verifiable.length)) {
-      const cacheDir = path.dirname(CACHE_FILE);
-      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(CACHE_FILE, JSON.stringify(verifiable, null, 2));
+      writePrivateFile(CACHE_FILE, JSON.stringify(verifiable, null, 2));
     }
 
     return verifiable;

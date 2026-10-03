@@ -936,7 +936,7 @@ router.delete('/test-cleanup', async (req, res) => {
     res.json({ deleted: result.rowCount, titles: result.rows.map((r) => r.title) });
   } catch (err) {
     logger.error('test-cleanup failed', { error: err.message });
-    res.status(500).json({ error: 'Cleanup failed: ' + err.message });
+    res.status(500).json({ error: 'Cleanup failed' });
   }
 });
 

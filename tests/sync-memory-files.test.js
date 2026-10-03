@@ -205,7 +205,7 @@ describe('yaml quoting — frontmatter safety', () => {
     assert.match(md, /name: 'Foo: bar "baz"'/);
   });
 
-  it('non-numeric cloud_id → falls back to 0, no YAML injection', () => {
+  it('non-numeric cloud_id → not written at all (it would become part of a path)', () => {
     syncMemoryFiles({
       memoryDir: tmpDir,
       data: {
@@ -215,10 +215,24 @@ describe('yaml quoting — frontmatter safety', () => {
         ],
       },
     });
-    const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith('project_'));
-    // filename includes whatever id was, but cloud_id frontmatter should be 0
-    const md = fs.readFileSync(path.join(tmpDir, files[0]), 'utf8');
-    assert.match(md, /cloud_id: 0/);
+    assert.deepEqual(fs.readdirSync(tmpDir).filter((f) => f.startsWith('project_')), []);
+  });
+
+  it('a type or id that would leave the folder is skipped; ordinary memories still sync', () => {
+    const inner = path.join(tmpDir, 'inner');
+    syncMemoryFiles({
+      memoryDir: inner,
+      data: {
+        server_time: '2026-04-24T10:00:00Z',
+        memories: [
+          { id: 1, type: '../escaped', title: 'x', content: 'x', updated_at: '2026-04-20T00:00:00Z', status: 'active' },
+          { id: '2/../../escaped', type: 'project', title: 'x', content: 'x', updated_at: '2026-04-20T00:00:00Z', status: 'active' },
+          { id: 3, type: 'project', title: 'fine', content: 'x', updated_at: '2026-04-20T00:00:00Z', status: 'active' },
+        ],
+      },
+    });
+    assert.deepEqual(fs.readdirSync(tmpDir).sort(), ['inner']);
+    assert.deepEqual(fs.readdirSync(inner).filter((f) => f !== 'MEMORY.md'), ['project_3_fine.md']);
   });
 });
 

@@ -24,6 +24,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { fakeClaude } from './helpers/fake-claude.js';
 import { judgeLocally } from '../hooks/lib/local-judge.js';
 
@@ -79,6 +81,24 @@ test('it grants the judge no tools', async () => {
   const i = argv.findIndex((a) => a === '--allowed-tools' || a === '--allowedTools');
   assert.notEqual(i, -1, 'tools must be named, not left to the default');
   assert.equal(argv[i + 1], '', 'and the list must be empty');
+  // --allowed-tools only pre-approves. Read, Grep and Glob need no approval, so without
+  // --tools '' they stayed available to text inside the judged reply.
+  const t = argv.indexOf('--tools');
+  assert.notEqual(t, -1, 'the built-in tools themselves must be removed');
+  assert.equal(argv[t + 1], '');
+});
+
+test('the judge starts from an empty folder of its own, removed afterwards', async () => {
+  const fake = fakeClaude({ stdout: verdictJson([]) });
+  let opts = null;
+  await judgeLocally({
+    rules: RULES, assistantText: REPLY, claudeBin: fake.bin,
+    spawnImpl: (bin, argv, o) => { opts = o; return spawn(bin, argv, o); },
+  });
+  assert.ok(opts?.cwd, 'not the folder the hook was launched from');
+  assert.notEqual(path.resolve(opts.cwd), path.resolve(process.cwd()));
+  assert.match(path.basename(opts.cwd), /^ownmind-judge-/);
+  assert.equal(fs.existsSync(opts.cwd), false, 'removed once the judge is done');
 });
 
 test('it runs the judge in safe mode, which is load-bearing twice over', async () => {

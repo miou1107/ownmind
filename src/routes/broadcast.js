@@ -81,7 +81,7 @@ export function createBroadcastRouter(deps = {}) {
       res.status(201).json(result.rows[0]);
     } catch (err) {
       logger.error('broadcast create failed', { error: err.message });
-      res.status(500).json({ error: 'Failed to create broadcast: ' + err.message });
+      res.status(500).json({ error: 'Failed to create broadcast' });
     }
   });
 
@@ -148,7 +148,7 @@ export function createBroadcastRouter(deps = {}) {
       res.json(result.rows[0]);
     } catch (err) {
       logger.error('broadcast update failed', { error: err.message });
-      res.status(500).json({ error: 'Failed to update broadcast: ' + err.message });
+      res.status(500).json({ error: 'Failed to update broadcast' });
     }
   });
 
@@ -177,7 +177,7 @@ export function createBroadcastRouter(deps = {}) {
       res.json({ id, revoked: true });
     } catch (err) {
       logger.error('broadcast revoke failed', { error: err.message });
-      res.status(500).json({ error: 'Failed to revoke broadcast: ' + err.message });
+      res.status(500).json({ error: 'Failed to revoke broadcast' });
     }
   });
 
@@ -271,7 +271,7 @@ export function createBroadcastRouter(deps = {}) {
       });
     } catch (err) {
       logger.error('broadcast/dismiss failed', { error: err.message });
-      res.status(500).json({ error: 'dismiss failed: ' + err.message });
+      res.status(500).json({ error: 'dismiss failed' });
     }
   });
 
@@ -366,7 +366,7 @@ export function createBroadcastRouter(deps = {}) {
       });
     } catch (err) {
       logger.error('broadcast/inject failed', { error: err.message });
-      res.status(500).json({ error: 'inject failed: ' + err.message });
+      res.status(500).json({ error: 'inject failed' });
     }
   });
 
