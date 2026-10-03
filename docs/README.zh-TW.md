@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.47** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.48** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **每台電腦都會更新到 GitHub 主分支最新的提交** — 每天的自動更新、開場掛勾、AI 收到升級通知時執行的指令、兩支手動升級程式、安裝程式，全都 `git pull` 主分支，所以修到一半、或不小心推上去的提交，大家下次開對話就裝到了。現在一律只更新到「主分支上最新的版本號標籤」（`vX.Y.Z`；`shared/release-target.js`、`scripts/install-helpers/update-to-release.mjs`）；已經比它新的電腦停在原地，任何路線都不會把電腦退回舊版。抓標籤時以 GitHub 為準（`--force --prune --prune-tags`），標籤被移動或刪除都不會卡住更新。更新時的 `npm install` 加上 `--ignore-scripts`，同步腳本另外裝的兩個套件鎖定版本。伺服器給 AI 的自動更新說明和 `check-sync` 也改成跟正式版比對。這不能證明版本是誰發的（拍板不做簽章）。**影響使用者：** 修正要等推了版本號標籤才會到大家電腦上。電腦端；說明文字要部署伺服器。`v1.30.48`
 - **「OwnMind 按鈕」的測試在 Windows 上失敗，從 v1.30.45 起 GitHub 的檢查一直是紅的** — `ensure-monitor-mod.cjs` 只有在 `--platform` 跟實際系統不同時才跳過「功能資料夾在不在硬碟上」的檢查；在 Mac 上成立，在 Windows 上 `--platform win32` 就是實際系統，於是測試用的假路徑 `C:\Users\amy` 被判定不見、設定被移除。現在只要有傳 `--platform`（只有測試會用，安裝程式從不傳）就跳過。**影響使用者：** 沒有；真實安裝從來沒受影響。`v1.30.47`
 - **金鑰出現在程式的指令列上，Mac／Linux 同一台電腦的每個帳號用 `ps` 都看得到** — 腳本把金鑰當成 curl 的 `-H "Authorization: Bearer …"` 參數、直接寫進 `node -e` 的程式文字、當參數交給輔助程式；每次開對話的開場掛勾都這樣做。現在 curl 從標準輸入拿金鑰（`ownmind_curl_auth "$KEY" | curl -K -`），node 程式從環境變數拿（`OWNMIND_INSTALL_KEY`、`OWNMIND_HOOK_KEY`），`register-mcp-cli.cjs` 改用 `--key-env`，升級程式重跑安裝時也走環境變數；Windows 的掛勾和升級程式一起改。還沒改到的：使用者自己貼上執行的安裝指令（`bash -s -- 金鑰 網址`）。**影響使用者：** 沒有。只改電腦這一邊。`v1.30.46`
 - **看不到 OwnMind 在這次對話裡有沒有在運作** — 記憶有沒有載入、AI 查了幾次、規矩擋下了什麼，以前只能翻對話紀錄和 `~/.ownmind/logs`。Vin 做的 Claude Code 外掛 `ownmind-monitor` 收進 `mods/`，每個人預設開啟：輸入框下方多一個 🟢／🔴 OwnMind 按鈕，按下去是四格狀態和三張最近 7 天的圖（也可以輸入 `/ownmind`、`/ownmind-week`）。安裝和每次更新會在 `~/.claude/settings.json` 的 `env` 把這個資料夾加進 `CLAUDE_CODE_PLUGIN_DIRS`、設定 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`（原本列的其他外掛資料夾都保留，Windows 用分號分隔），手動裝在 `~/.claude/mods/ownmind-monitor` 的那一份會改指向新位置，不會載入兩次；之後外掛的修改跟著自動更新送到。Claude Code 要是有 function hooks 的新版才看得到按鈕。不想要的話建立 `~/.ownmind/.no-monitor-mod`。只要電腦更新，伺服器不用動。 `v1.30.45`

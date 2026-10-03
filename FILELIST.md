@@ -36,6 +36,36 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.48 修改（自動更新只更新到正式版本）
+
+新增檔：
+```
+shared/release-target.js              — fetchReleases（--force --prune --prune-tags，舊 git 退回 --force --tags）、
+                                       sortReleaseTags、findReleaseTarget（最新 20 個 vX.Y.Z 裡第一個在 origin/main 上的）
+scripts/install-helpers/update-to-release.mjs — 殼層／手動升級／AI 指令用：抓標籤、移到最新正式版（--autostash，
+                                       失敗退回 --ff-only）；--print 只回報；--print --no-fetch 用本機標籤（離線）
+tests/update-to-release-tag.test.js   — 真的 git：先重現「會更新到沒發布的提交」；只到標籤、不追 main、不跟非 main 的標籤、
+                                       比正式版新的不退回、--ignore-scripts、標籤被移動不卡死、刪掉的標籤會忘掉、離線、
+                                       保留未提交的修改；各路線都改用新程式；安裝程式、check-sync
+```
+
+修改檔：
+```
+shared/auto-update.js                 — fetchReleases + findReleaseTarget；pending 改看 HEAD..標籤；pull origin refs/tags/<標籤>；
+                                       改寫歷史的對齊改 reset 到標籤；npm install --ignore-scripts
+mcp/lib/upgrade-notice.js             — UPGRADE_COMMAND 改用 update-to-release.mjs、npm install --ignore-scripts
+hooks/ownmind-session-start.sh        — 自動更新改呼叫 update-to-release.mjs；錯誤寫進 update-err.log
+scripts/interactive-upgrade.sh, .ps1  — 一般與強制對齊都改到最新正式版；比正式版新的只丟修改不退回；npm --ignore-scripts
+install.sh, install.ps1               — 既有資料夾用 update-to-release.mjs（沒有就退回 git pull）；新 clone 退到最新正式版
+scripts/check-sync.sh, .ps1           — 跟最新正式版比對；離線用 --no-fetch
+scripts/update.sh, scripts/update.ps1 — js-yaml@4.3.2、node-machine-id@1.1.12 鎖定版本、--ignore-scripts
+src/routes/memory.js                  — 給 AI 的 Auto-Update Check 改用 update-to-release.mjs（要部署伺服器）
+tests/auto-update-shared.test.js, error-spool-mechanism.test.js, p3-update-event-semantics.test.js,
+tests/upgrade-dirty-tree-is-the-users.test.js, upgrade-notice-fixed-command.test.js — 配合新做法
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.48
+```
+
 ## v1.30.47 修改（「OwnMind 按鈕」的測試在 Windows 上失敗）
 
 修改檔：
