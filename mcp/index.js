@@ -267,6 +267,11 @@ const TYPE_MAP = {
   ownmind_disable: 'Memory write',
   ownmind_handoff_create: 'Handoff created',
   ownmind_handoff_accept: 'Handoff accepted',
+  ownmind_task_create: 'Task card created',
+  ownmind_task_list: 'Task cards',
+  ownmind_task_claim: 'Task card claimed',
+  ownmind_task_done: 'Task card finished',
+  ownmind_task_drop: 'Task card handed back',
   ownmind_dismiss_notice: 'Notice turned off',
   ownmind_log_session: 'Session logged',
   ownmind_get_secret: 'Secret management',
@@ -704,6 +709,69 @@ const TOOLS = [
       required: ["summary"],
     },
   },
+  // v1.31.3 — task cards an AI session can pick up. Five tools; none can mark a card
+  // reviewed, because the AI never closes its own work. See docs/task-runner.md.
+  {
+    name: "ownmind_task_create",
+    description: "Write a task card for one AI session to pick up later: a project, a title, and a body that is the whole brief (at most 4000 characters — a card that needs more is more than one session's work; split it). Use when the person says to queue, park, or hand off a piece of work rather than do it now. Set auto=true only when the person says it may be done unattended.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project name (the repository folder name)" },
+        title: { type: "string", description: "One line: what done looks like" },
+        body: { type: "string", description: "The brief: context, files, how to verify. At most 4000 characters" },
+        links: { type: "object", description: "(optional) name → URL, e.g. { issue: 'https://...' }", additionalProperties: { type: "string" } },
+        auto: { type: "boolean", description: "(optional) true when a scheduled session may pick it up with nobody watching" },
+        private: { type: "boolean", description: "(optional) true to hide the card from other members" },
+      },
+      required: ["project", "title"],
+    },
+  },
+  {
+    name: "ownmind_task_list",
+    description: "Open and claimed task cards. Pass project to see a project's queue, or mine=true for the cards this person owns or holds. Call this when the person says 'continue #N', 'what is queued', or 'pick a card'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Project name; the queue of that project" },
+        mine: { type: "boolean", description: "true: cards this person owns or has claimed, any project" },
+      },
+    },
+  },
+  {
+    name: "ownmind_task_claim",
+    description: "Take a task card for this session. Refused when someone else holds it. A card held by this person from another conversation moves to this one. A claim older than 24 hours is handed back by the server.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "number", description: "Card id" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "ownmind_task_done",
+    description: "Finish the card this session holds. result says what changed, where, and how to verify; links may add a branch, merge request or commit. The person reviews it in the console; this tool cannot mark it reviewed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Card id" },
+        result: { type: "string", description: "What was done, where to look, how to verify. At most 4000 characters" },
+        links: { type: "object", description: "(optional) name → URL", additionalProperties: { type: "string" } },
+      },
+      required: ["id", "result"],
+    },
+  },
+  {
+    name: "ownmind_task_drop",
+    description: "Hand back the card this session holds, with the reason it could not be finished (a question for the owner, a card too big, out of time). The reason is appended to the card.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Card id" },
+        reason: { type: "string", description: "Why it is handed back" },
+      },
+      required: ["id", "reason"],
+    },
+  },
   {
     name: "ownmind_get_secret",
     description: "Retrieve a secret's value. Requires the key.",
@@ -906,7 +974,7 @@ async function handleTool(name, args) {
       complianceEvents = [];
       let data;
       try {
-        data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true`);
+        data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true${AUTO_PROJECT ? `&project=${encodeURIComponent(AUTO_PROJECT)}` : ''}`);
       } catch (initErr) {
         if (isNetworkError(initErr)) {
           const cache = readMemoryCache();
@@ -1318,6 +1386,49 @@ async function handleTool(name, args) {
           lessons_notice: 'No lessons were recorded for this session. If the work got stuck anywhere, call ownmind_log_session again with `lessons` so the person can keep what was learned.',
         };
       }
+      return data;
+    }
+
+    case "ownmind_task_create": {
+      const data = await callApi("POST", "/api/tasks", { ...args, sync_token: currentSyncToken });
+      logEvent('task_create', { project: args.project, id: data?.id });
+      return data;
+    }
+
+    case "ownmind_task_list": {
+      const project = args.project || AUTO_PROJECT || '';
+      if (args.mine !== true && !project) {
+        throw new Error('ownmind_task_list: pass project (or mine=true); this session has no project directory to infer it from.');
+      }
+      const qs = args.mine === true ? 'mine=true' : `project=${encodeURIComponent(project)}`;
+      const data = await callApi("GET", `/api/tasks?${qs}`);
+      logEvent('task_list', { project: args.mine === true ? null : project, mine: args.mine === true, count: Array.isArray(data) ? data.length : 0 });
+      return data;
+    }
+
+    case "ownmind_task_claim": {
+      const data = await callApi("PUT", `/api/tasks/${args.id}/claim`, {
+        tool: CLIENT_TOOL,
+        session_id: sessionStartTime ? String(sessionStartTime) : '',
+        sync_token: currentSyncToken,
+      });
+      logEvent('task_claim', { id: args.id });
+      return data;
+    }
+
+    case "ownmind_task_done": {
+      const data = await callApi("PUT", `/api/tasks/${args.id}/done`, {
+        result: args.result, links: args.links, sync_token: currentSyncToken,
+      });
+      logEvent('task_done', { id: args.id });
+      return data;
+    }
+
+    case "ownmind_task_drop": {
+      const data = await callApi("PUT", `/api/tasks/${args.id}/drop`, {
+        reason: args.reason, sync_token: currentSyncToken,
+      });
+      logEvent('task_drop', { id: args.id });
       return data;
     }
 

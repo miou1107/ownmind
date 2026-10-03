@@ -5,7 +5,7 @@ import {
   FileText, TriangleAlert, CalendarDays, UsersRound, LineChart,
   UserCircle, Shield, Key, Users, AlertOctagon,
   Sliders, Megaphone, History, Sparkles,
-  Lightbulb,
+  Lightbulb, ClipboardList, ClipboardCheck,
 } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { NAV_SECTIONS, visibleSections } from './nav-sections';
@@ -18,11 +18,13 @@ const ICONS = {
   '/portal/project-history': FolderClock,
   '/portal/handoffs': GitBranch,
   '/portal/lessons': Lightbulb,
+  '/portal/tasks': ClipboardList,
   '/portal/reports': Bug,
   '/portal/narrative': FileText,
   '/portal/pitfalls': TriangleAlert,
   '/portal/periodic-reports': CalendarDays,
   '/team/usage': UsersRound,
+  '/team/tasks': ClipboardCheck,
   '/team/stats': LineChart,
   '/preference/profile': UserCircle,
   '/preference/security': Shield,

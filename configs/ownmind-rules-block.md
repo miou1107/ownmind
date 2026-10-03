@@ -48,7 +48,11 @@ user what contradicts it and let them decide.
 Credentials go through `ownmind_set_secret` / `ownmind_get_secret`; a server memory records
 where it is, not how to log in. Call `ownmind_log_session` before the conversation ends — no
 need to ask, and pass `lessons` when the work got stuck anywhere (where, what fixed it, what to
-do differently); the person decides on the console page whether each one becomes a memory. If no OwnMind context appeared at the start of this session, call `ownmind_init`
+do differently); the person decides on the console page whether each one becomes a memory.
+Task cards: when the user parks work for later ("queue it", "open a card"), write one with
+`ownmind_task_create`, small enough for one session. `ownmind_task_claim` before working a card,
+`ownmind_task_done` with what changed and how to verify, `ownmind_task_drop` with the reason when
+it cannot be finished. Never mark a card reviewed — that is the person's click in the console. If no OwnMind context appeared at the start of this session, call `ownmind_init`
 yourself. When you surface a memory, prefix it with the version tag the OwnMind tools put at
 the front of their own responses, so the user can tell what came from their memory and what
 came from you.

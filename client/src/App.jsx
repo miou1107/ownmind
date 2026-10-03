@@ -15,6 +15,8 @@ import UsagePage from './pages/Portal/UsagePage';
 import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
 import HandoffsPage from './pages/Portal/HandoffsPage';
 import LessonsPage from './pages/Portal/LessonsPage';
+import TasksPage from './pages/Portal/TasksPage';
+import TeamTasksPage from './pages/Team/TeamTasksPage';
 import ReportsPage from './pages/Portal/ReportsPage';
 import NarrativePage from './pages/Portal/NarrativePage';
 import PitfallsPage from './pages/Portal/PitfallsPage';
@@ -34,6 +36,7 @@ const REAL_PAGES = {
   '/portal/project-history': <ProjectHistoryPage />,
   '/portal/handoffs': <HandoffsPage />,
   '/portal/lessons': <LessonsPage />,
+  '/portal/tasks': <TasksPage />,
   '/portal/reports': <ReportsPage />,
   '/portal/narrative': <NarrativePage />,
   '/portal/pitfalls': <PitfallsPage />,
@@ -44,6 +47,7 @@ const REAL_PAGES = {
   '/admin/team': <TeamPage />,
   '/admin/bugs': <BugReportsPage />,
   '/team/stats': <StatsPage />,
+  '/team/tasks': <TeamTasksPage />,
   '/team/usage': <TeamUsagePage />,
   '/system/config': <SystemConfigPage />,
   '/system/broadcast': <BroadcastPage />,

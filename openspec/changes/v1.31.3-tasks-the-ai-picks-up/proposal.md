@@ -11,7 +11,7 @@ So the board OwnMind keeps is not for the team to drag cards around. It is a dis
 the person writes small, well-bounded cards; an AI session, started by a person or by a
 schedule, claims one, does it, reports back, and the person reviews. The card's life is the
 unit of accounting for everything else OwnMind does — the lessons of v1.31.0 attach to it,
-the release check of v1.31.3 reads it.
+the release check of v1.31.4 reads it.
 
 ## What changes
 
@@ -26,8 +26,9 @@ the release check of v1.31.3 reads it.
 3. **The session-start context names the open cards** of the current project (title and id,
    at most five) and the one this person has claimed, so a new conversation can say "continue
    #12" and the AI knows what that means. Reminder, declared as such.
-4. **A console page, 任務, under 我的 and a team view under 團隊** (admin+): the queue by
-   status, with "review" and "drop" buttons; a reviewed card is closed.
+4. **A console page, 任務卡, under 我的 and a team view under 團隊** (admin+): the queue by
+   status, with a "review" button; a reviewed card is closed. Dropping stays with the
+   session that holds the card, through `ownmind_task_drop`, so the reason is always written.
 5. **A runner recipe, not a runner.** `docs/task-runner.md` shows how a scheduled Claude Code
    routine (the `schedule` skill) claims and works open cards tagged `auto`. OwnMind ships the
    tools and the recipe; whether a team runs unattended sessions is their decision and their

@@ -39,6 +39,8 @@ export const NAV_SECTIONS = [
       { path: '/portal/handoffs', labelKey: 'nav.handoffs', minRole: 'user' },
       // v1.31.0: personal — GET /api/session/lessons filters WHERE user_id = $1.
       { path: '/portal/lessons', labelKey: 'nav.lessons', minRole: 'user' },
+      // v1.31.3: personal — GET /api/tasks?mine=true filters on the caller.
+      { path: '/portal/tasks', labelKey: 'nav.tasks', minRole: 'user' },
       { path: '/portal/reports', labelKey: 'nav.reports', minRole: 'user' },
       { path: '/portal/narrative', labelKey: 'nav.narrative', minRole: 'user' },
       { path: '/portal/pitfalls', labelKey: 'nav.pitfalls', minRole: 'user' },
@@ -56,6 +58,8 @@ export const NAV_SECTIONS = [
       // Both back onto adminAuth routes: /api/usage/team-stats and /api/activity/stats*.
       { path: '/team/usage', labelKey: 'nav.team_usage', minRole: 'admin' },
       { path: '/team/stats', labelKey: 'nav.team_stats', minRole: 'admin' },
+      // v1.31.3: GET /api/tasks?all=true answers 403 below admin.
+      { path: '/team/tasks', labelKey: 'nav.team_tasks', minRole: 'admin' },
     ],
   },
   {

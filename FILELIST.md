@@ -76,6 +76,68 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.31.3 修改（任務卡：寫一張小卡，讓之後的 AI 對話（或排程）來領）
+
+新增檔：
+```
+shared/task-body.js                        — normalizeTaskCreate／normalizeTaskDone／normalizeLinks：卡的上限（標題 500、正文 4000、連結 10）
+                                             與形狀；claimNote：交回或過期時寫進卡的註記；CLAIM_TTL_HOURS = 24
+db/030_tasks.sql                           — tasks 表：open／claimed／done／reviewed／dropped，誰領、哪個對話、結果、連結、誰審
+src/routes/tasks.js                        — createTasksRouter：開卡、列（專案／我的／全部）、領、做完、交回、審過；可見性一處決定；
+                                             expireStaleClaims
+src/jobs/task-claim-expiry.js              — 每天 03:20 把領了超過 24 小時沒做完的卡交回
+hooks/lib/fetch-project-tasks.js           — fetchProjectTasks：開場時另外跟伺服器要本專案的卡（不走快取，快取只在記憶表變動時更新）；
+                                             伺服器回的 held_by_me 決定「你領的」排前面
+client/src/pages/Portal/TasksPage.jsx      — 我的任務卡（TaskCard、useTaskList 也給團隊頁用）
+client/src/pages/Team/TeamTasksPage.jsx    — 團隊任務卡（管理者）
+docs/task-runner.md                        — 排程跑卡的食譜（auto 標記慣例、一次一張、不審自己的卡）
+openspec/changes/v1.31.3-tasks-the-ai-picks-up/ — proposal / spec / tasks
+tests/tasks.test.js                        — 30 條：正規化、六個端點對假資料庫（領卡搶先、可見性、審過權限、清單不帶正文）、每個敘述只帶用到的參數、
+                                             工具定義、開場區塊、開場補抓卡片、過期（含領卡人帳號已刪）
+```
+
+修改檔：
+```
+mcp/index.js                               — 五個 ownmind_task_* 工具；領卡帶 tool 與 session；init 帶 project
+src/routes/memory.js                       — init 多 tasks（MCP 直接呼叫時用；hook 那條路另外抓，見下）
+hooks/lib/render-session-context.js        — 多一段「Task cards」
+hooks/ownmind-session-start.js, hooks/lib/session-start-output.js
+                                           — 開場畫脈絡前先 fetchProjectTasks 併進去（Windows 與 Mac／Linux 各一處）
+src/app.js, src/index.js                   — 掛 /api/tasks、啟動過期排程
+client/src/App.jsx, components/common/nav-sections.js, components/common/Sidebar.jsx, i18n/{zh,en,ja}.json
+configs/CLAUDE.md, configs/ownmind-rules-block.md, docs/setup-claude-code.md
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
+## v1.31.2 修改（撞車預警：改檔前告訴你誰也在改同一個資料夾）
+
+新增檔：
+```
+shared/touch-report.js                     — touchOf：檔案路徑 → 專案名稱＋相對資料夾（不含檔名、不含絕對路徑、家目錄及其上層一律 null）；
+                                             isValidTouch：伺服器端同一條規則；renderOverlapLine：給 AI 的那一行；
+                                             mergeOverlapIntoEnvelope：把那一行併進改檔提醒的回應
+hooks/lib/touch-state.js                   — ~/.ownmind/state/touches.json：每個對話每個資料夾十分鐘問一次（失敗也算）、每個人只提一次、一天後清掉
+hooks/ownmind-touch-report.js              — touchReport：改檔前送出、收答案、印一行；連不上就記 touch_report_failed 並進入十分鐘冷卻；
+                                             .no-touch-report 就整個不做
+db/029_edit_touches.sql                    — edit_touches 表（user, project, dir, session 各一列，last_seen）＋兩個索引
+src/routes/activity-touch.js               — createActivityTouchRouter：POST 寫入並回兩小時內的其他人；GET /overlaps（管理者）最近一天的配對
+src/jobs/touch-cleanup.js                  — 每天 03:10 刪一天以前的列
+client/src/pages/Team/OverlapsBlock.jsx    — 團隊統計頁的「誰跟誰改到同一個資料夾」區塊
+openspec/changes/v1.31.2-collision-warning/ — proposal / spec / tasks
+tests/touch-report.test.js                 — 24 條：路徑對應（含家目錄）、伺服器檢查、那一行、併進回應、狀態檔視窗與去重、
+                                             hook 半邊（注入網路、失敗冷卻）、兩個端點對假資料庫、清理
+```
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.js           — 改檔分支：提醒和撞車查詢並行，那一行併進同一個回應；撞車模組在分支裡才載入
+src/app.js                                 — /api/activity/touch 掛在 /api/activity 前面
+src/index.js                               — 啟動 touch 清理排程
+client/src/pages/Team/StatsPage.jsx        — 全團隊檢視時顯示 OverlapsBlock
+client/src/i18n/{zh,en,ja}.json            — overlaps.*
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.31.1 修改（後台登入不再把永久金鑰交給瀏覽器；網頁安全政策打開）
 
 新增檔：

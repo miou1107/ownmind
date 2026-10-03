@@ -23,6 +23,7 @@ import { runConditionalSync } from './lib/conditional-sync.js';
 // the first place.
 import { syncEnforcementBundle } from './lib/conditional-sync-cli.js';
 import { renderSessionContext } from './lib/render-session-context.js';
+import { fetchProjectTasks } from './lib/fetch-project-tasks.js';
 import { missingSkillsFor, missingSkillNotice } from './lib/missing-skills.js';
 import { t } from './lib/i18n.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
@@ -370,6 +371,15 @@ async function main() {
     reportEvent(apiUrl, apiKey, 'init_fail', { status: 'api_timeout' });
     process.exit(0);
   }
+
+  // v1.31.3 — the project's task cards, asked for outside the cache: the init payload is
+  // served from disk whenever the memory table has not moved, and cards move without it.
+  // Nothing to say (no project, no server, no table) leaves the context without the block.
+  try {
+    const projectName = PROJECT_NAME;
+    const tasks = await fetchProjectTasks({ apiUrl, apiKey, project: projectName });
+    if (tasks) initData = { ...initData, tasks };
+  } catch { /* the block is a reminder; its absence must never cost the session its context */ }
 
   reportEvent(apiUrl, apiKey, 'init', { status: 'ok' });
 
