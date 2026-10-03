@@ -11,10 +11,11 @@ const GIT: Record<string, string> = {
   'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
   'git branch --show-current': 'main\n',
   'git branch --no-merged main': '  vin/old-fix\n',
-  'git status --porcelain': ' M src/a.ts\n M docs/README.md\n?? c.md\n',
-  'git rev-list --left-right --count @{u}...HEAD': '0\t2\n',
+  'git -c core.quotePath=false status --porcelain -uall': ' M src/a.ts\n M docs/README.md\n?? c.md\n',
+  'git rev-parse --abbrev-ref @{u}': 'origin/main\n',
+  'git rev-list --count @{u}..HEAD': '2\n',
   'git rev-list --left-right --count origin/main...main': '0\t0\n',
-  'git stash list': '',
+  'git stash list --format=%H': '',
   'git describe --tags --abbrev=0': 'rc0.35.124\n',
   'git rev-list --count rc0.35.124..HEAD': '2\n',
   'git merge-base main HEAD': 'abc\n',
@@ -24,13 +25,13 @@ const GIT: Record<string, string> = {
 const CLEAN: Record<string, string> = {
   ...GIT,
   'git branch --no-merged main': '',
-  'git status --porcelain': '',
-  'git rev-list --left-right --count @{u}...HEAD': '0\t0\n',
+  'git -c core.quotePath=false status --porcelain -uall': '',
+  'git rev-list --count @{u}..HEAD': '0\n',
   'git rev-list --count rc0.35.124..HEAD': '0\n',
   'git diff --name-only abc..HEAD': '',
 }
 
-type World = { containers: string; agents: any[]; files: Record<string, string>; ports?: string; tools?: any[] }
+type World = { containers: string; agents: any[]; files: Record<string, string>; ports?: string; tools?: any[]; procs?: string; cwds?: Record<string, string>; refs?: string; mtimes?: Record<string, number> }
 const world = (): World => ({ containers: '', agents: [], files: {} })
 
 const setup = (on: any, git: Record<string, string>, w: World) => {
@@ -38,6 +39,8 @@ const setup = (on: any, git: Record<string, string>, w: World) => {
   on('session.cwd', () => ({ value: CWD }))
   on('session.start', () => ({ cwd: CWD }))
   on('env.get', () => ({ value: '/home/v' }))
+  // Unless a test says otherwise, every file was written after the session started.
+  on('fs.stat', (_: any, e: any) => ({ value: { mtimeMs: w.mtimes?.[e.path] ?? T0 + 1 } }))
   on('fs.read', (_: any, e: any) => (e.path in w.files ? { value: w.files[e.path] } : { deny: 'missing' }))
   on('ui.toast', () => ({ value: undefined }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
@@ -48,7 +51,12 @@ const setup = (on: any, git: Record<string, string>, w: World) => {
     const argv: string[] = e.argv ?? []
     let stdout = ''
     if (argv[0] === 'docker') stdout = w.containers
+    else if (argv[0] === 'lsof' && argv.includes('cwd')) stdout = w.cwds?.[argv[argv.indexOf('-p') + 1]] ? `p1\nfcwd\nn${w.cwds[argv[argv.indexOf('-p') + 1]]}\n` : ''
     else if (argv[0] === 'lsof') stdout = `COMMAND PID USER FD TYPE DEVICE SIZE NODE NAME\n${w.ports ?? ''}`
+    // The session runs as pid 500; pid 777 is a dev server one of its commands started.
+    else if (argv[0] === 'sh' && argv[2] === 'echo $PPID') stdout = '500\n'
+    else if (argv[1] === 'for-each-ref') stdout = w.refs ?? ''
+    else if (argv[0] === 'ps') stdout = w.procs ?? '500 400 claude\n777 500 node\n'
     else stdout = git[argv.join(' ')] ?? ''
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -72,13 +80,14 @@ test('typing 收工 runs the six checks, opens the pane and hands the model the 
   let seen: any = null
   ;(on as any)('prompt.submit', (_: any, e: any) => { seen = e; return { text: e.text } })
   await start($)
+  w.refs = 'main aaa\nvin/old-fix bbb\n'
   w.containers = 'abc123 idaytour-test-db /w/idaytour\n'
   await ($ as any).prompt.submit({ text: '好，收工', wait: false })
   expect(opened.length).toBe(1)
   expect(opened[0].title).toBe('OwnMind 收工自我檢查')
   const ctx = (seen.context ?? []).join('\n')
   expect(ctx).toMatch(/收工自檢 18:42/)
-  expect(ctx).toMatch(/3 個檔/)
+  expect(ctx).toMatch(/檔案有 3 個/)
   expect(ctx).toMatch(/idaytour-test-db/)
   expect(ctx).toMatch(/正式機有沒有上這一版/)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -90,11 +99,11 @@ test('typing 收工 runs the six checks, opens the pane and hands the model the 
       expect(await ui.find({ type: 'Text', text: /AI 處理中/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /還沒處理/ })).toBeUndefined()
       // The detail opens on press and closes on the next press.
-      expect(await ui.find({ type: 'Text', text: /還沒 commit 的改動：3 個檔/ })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: /改過、還沒 commit 的檔案有 3 個/ })).toBeUndefined()
       await ui.press({ key: 'wrapup-row-0' })
-      expect(await ui.find({ type: 'Text', text: /還沒 commit 的改動：3 個檔/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /改過、還沒 commit 的檔案有 3 個/ })).toBeDefined()
       await ui.press({ key: 'wrapup-row-0' })
-      expect(await ui.find({ type: 'Text', text: /還沒 commit 的改動：3 個檔/ })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: /改過、還沒 commit 的檔案有 3 個/ })).toBeUndefined()
     } else {
       const svg = await ui.find({ type: 'Svg' })
       expect(svg?.props?.source).toMatch(/收工檢查/)
@@ -180,13 +189,13 @@ test('a clean repo shows green tiles and no red mark', async ($, on) => {
   await ui.unmount()
 })
 
-test('a local main that fell behind origin/main is reported even when the current branch is in sync', async ($, on) => {
+test('commits waiting on the remote are not something this session left undone', async ($, on) => {
   setup(on, { ...CLEAN, 'git rev-list --left-right --count origin/main...main': '10\t0\n' }, world())
   ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
   ;(on as any)('command.run', () => ({ text: '' }))
   await start($)
   const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
-  expect(r.text).toMatch(/本機的 main 落後 origin\/main 10 個 commit/)
+  expect(r.text).not.toMatch(/落後|沒拉/)
 })
 
 test('an rc tag that matches package.json is not a mismatch', async ($, on) => {
@@ -248,6 +257,7 @@ test('a yellow row the model handled turns green; a red row cannot be talked gre
   ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
   ;(on as any)('command.run', () => ({ text: '' }))
   await start($)
+  w.refs = 'vin/old-fix bbb\n'
   await ($ as any).prompt.submit({ text: '收工', wait: false })
   // The model can only call what the session declared, with the six names to pick from.
   const decl = (w.tools ?? []).find((x: any) => x.name === 'resolve')
@@ -256,7 +266,7 @@ test('a yellow row the model handled turns green; a red row cannot be talked gre
 
   // Red: refused, and the tile stays red.
   const red = await call('分支', '不用管')
-  expect(red.deny).toMatch(/還是紅色：還沒併進 main 的分支：vin\/old-fix/)
+  expect(red.deny).toMatch(/還是紅色：這個 session 動過的分支還沒併進 main：vin\/old-fix/)
 
   // Yellow: green, with the model's sentence as the tile text.
   const ok = await call('版號', '只改了註解，排進下一次發版')
@@ -293,7 +303,7 @@ test('agy listening while it judges a reply is not residue', async ($, on) => {
   ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
   ;(on as any)('command.run', () => ({ text: '' }))
   await start($)
-  w.ports = 'agy 22088 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:57259 (LISTEN)\nnode 1 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:5173 (LISTEN)\n'
+  w.ports = 'agy 22088 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:57259 (LISTEN)\nnode 777 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:5173 (LISTEN)\n'
   const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
   expect(r.text).toMatch(/port 還開著：node 127\.0\.0\.1:5173/)
   expect(r.text).not.toMatch(/agy/)
@@ -389,4 +399,75 @@ test('a wrap-up that ends with a yellow item left shows no closing banner', asyn
     if (surface === 'desktop') expect(((await ui.find({ type: 'Svg' }))?.props?.source ?? '')).not.toMatch(/可安心關閉此對話/)
     await ui.unmount()
   }
+})
+
+test('a port another window opened is not this session\'s residue; one left in the background from this folder is', async ($, on) => {
+  const w = world()
+  setup(on, CLEAN, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('command.run', () => ({ text: '' }))
+  await start($)
+  w.procs = '500 400 claude\n900 400 claude\n901 900 node\n910 1 node\n920 1 node\n'
+  w.cwds = { '910': CWD, '920': '/elsewhere/idaytour' }
+  w.ports = [
+    'claude 900 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:61340 (LISTEN)',
+    'node 901 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:5198 (LISTEN)',
+    'node 910 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:3000 (LISTEN)',
+    'node 920 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:4000 (LISTEN)',
+  ].join('\n') + '\n'
+  const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
+  expect(r.text).toMatch(/port 還開著：node 127\.0\.0\.1:3000/)
+  expect(r.text).not.toMatch(/61340|5198|4000/)
+})
+
+test('branches, stash entries and files another window left before the session started are not this session\'s', async ($, on) => {
+  const w = world()
+  const git: Record<string, string> = {
+    ...CLEAN, 'git rev-parse HEAD': 'h1\n', 'git rev-parse --verify --quiet h1^{commit}': 'h1\n',
+    'git branch --no-merged main': '  other/work\n  vin/new\n', 'git stash list --format=%H': 's1\n',
+    'git -c core.quotePath=false status --porcelain -uall': ' M old.ts\n',
+  }
+  setup(on, git, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('command.run', () => ({ text: '' }))
+  w.refs = 'main aaa\nother/work ccc\n'
+  w.mtimes = { [`${CWD}/old.ts`]: T0 - 1000 }
+  await start($)
+  w.refs = 'main aaa\nother/work ccc\nvin/new ddd\n'
+  git['git stash list --format=%H'] = 's2\ns1\n'
+  git['git -c core.quotePath=false status --porcelain -uall'] = ' M old.ts\n M new.ts\n'
+  git['git rev-list --count @{u}..HEAD ^h1'] = '0\n'
+  const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
+  expect(r.text).toMatch(/動過的分支還沒併進 main：vin\/new/)
+  expect(r.text).not.toMatch(/other\/work/)
+  expect(r.text).toMatch(/還沒 commit 的檔案有 1 個/)
+  expect(r.text).toMatch(/存進 stash 的改動有 1 份/)
+})
+
+test('the version row is skipped only when the session made no commit anywhere and left the version files alone', async ($, on) => {
+  const w = world()
+  w.files[`${CWD}/package.json`] = '{ "version": "0.35.125" }'
+  const git: Record<string, string> = { ...CLEAN, 'git rev-parse HEAD': 'h1\n', 'git rev-parse --verify --quiet h1^{commit}': 'h1\n' }
+  setup(on, git, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('command.run', () => ({ text: '' }))
+  await start($)
+  const run = async () => (await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })).text
+  expect(await run()).toMatch(/這個 session 沒有新的 commit，版號不用動/)
+  git['git -c core.quotePath=false status --porcelain -uall'] = ' M package.json\n'
+  expect(await run()).toMatch(/package\.json 0\.35\.125 跟 tag rc0\.35\.124 對不上/)
+})
+
+test('a changed file whose name git quotes, or that sits in a new folder, is found', async ($, on) => {
+  const w = world()
+  const git: Record<string, string> = { ...CLEAN, 'git -c core.quotePath=false status --porcelain -uall': ' M "a b.ts"\n?? 說明/新的.ts\n' }
+  setup(on, git, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('command.run', () => ({ text: '' }))
+  w.mtimes = { [`${CWD}/a b.ts`]: T0 - 1000 }
+  await start($)
+  w.mtimes = {}
+  const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
+  expect(r.text).toMatch(/還沒 commit 的檔案有 2 個/)
+  expect(r.text).toMatch(/改了 2 個程式檔/)
 })

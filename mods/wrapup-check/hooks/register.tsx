@@ -25,7 +25,7 @@ const CODE_FILE = /\.(ts|tsx|cts|mts|js|jsx|cjs|mjs|py|go|rs|vue|svelte|sql|sh|p
 // while it judges and exits by itself, so a wrap-up taken mid-judge would always see it.
 const PORT_NOISE = /^(ControlCe|rapportd|com\.docke|Docker|ollama|Google|Chrome|Safari|Dropbox|Nextcloud|OneDrive|Spotify|Slack|zoom|agy\s)/i
 
-const EMPTY_BASELINE: WrapupBaseline = { containers: [], ports: [], worktrees: [], takenAt: 0 }
+const EMPTY_BASELINE: WrapupBaseline = { containers: [], ports: [], worktrees: [], branches: [], stashes: [], head: '', dirty: [], takenAt: 0 }
 const EMPTY_REPORT: WrapupReport = { at: 0, rows: [] }
 
 const baseline = atom({ plugin: 'wrapup-check', key: 'baseline' } as const, EMPTY_BASELINE)
@@ -42,11 +42,20 @@ const handling = atom({ plugin: 'wrapup-check', key: 'handling' } as const, fals
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = (ms: number) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}` }
 const lines = (s: string) => s.split('\n').map(l => l.trim()).filter(Boolean)
-// Paths out of `git status --porcelain`. The two status columns are followed by one space, and
-// the first column is a space for an unstaged change, so the lines must not be trimmed first
-// (that cut the first letter off `docs/README.md`, issue #158). A rename shows `old -> new`.
-const porcelainPaths = (stdout: string) =>
-  stdout.split('\n').filter(l => l.length > 3).map(l => l.slice(3).trim()).map(l => l.includes(' -> ') ? l.split(' -> ').pop()! : l)
+// `git status --porcelain` with every file listed (not just an untracked folder's name) and
+// non-ASCII names left as they are, so `docs/說明.md` comes back as itself.
+const STATUS = ['git', '-c', 'core.quotePath=false', 'status', '--porcelain', '-uall']
+// A name with a space or a quote still comes back in double quotes, with \" and \\ escaped.
+const unquote = (p: string) => (/^".*"$/.test(p) ? p.slice(1, -1).replace(/\\(["\\])/g, '$1') : p)
+// Each changed file as `XY path`. The two status columns are followed by one space, and the first
+// column is a space for an unstaged change, so the lines must not be trimmed first (that cut the
+// first letter off `docs/README.md`, issue #158). A rename shows `old -> new`; the new name counts.
+const porcelainEntries = (stdout: string) =>
+  stdout.split('\n').filter(l => l.length > 3).map(l => {
+    const rest = l.slice(3).trim()
+    return `${l.slice(0, 2)} ${unquote(rest.includes(' -> ') ? rest.split(' -> ').pop()! : rest)}`
+  })
+const porcelainPaths = (stdout: string) => porcelainEntries(stdout).map(e => e.slice(3))
 
 // Run one command; a failure, a missing binary or a timeout all read as "no output".
 const sh = async ($: any, argv: string[], cwd?: string) => {
@@ -69,21 +78,101 @@ const isOurs = (c: string, cwd: string) => {
   return !dir || under(dir, cwd) || under(cwd, dir)
 }
 // macOS / Linux only (lsof); on Windows the list is empty and the port check is skipped.
+// Each entry is `command address pid`; the pid is dropped before anything is shown.
 const listenPorts = async ($: any) =>
   lines(await sh($, ['lsof', '-nP', '-iTCP', '-sTCP:LISTEN']))
     .slice(1)
-    .map(l => { const c = l.split(/\s+/); return `${c[0]} ${c[8] ?? ''}` })
+    .map(l => { const c = l.split(/\s+/); return `${c[0]} ${c[8] ?? ''} ${c[1] ?? ''}` })
     .filter(p => !PORT_NOISE.test(p))
+const portLabel = (p: string) => p.split(' ').slice(0, 2).join(' ')
+const portPid = (p: string) => Number(p.split(' ')[2])
+// A port only counts when this session opened it: its process descends from the session's own
+// process (every command the session runs is a child of it), or it was left running in the
+// background (adopted by pid 1) from inside this session's folder. Other windows open ports all
+// the time; showing theirs as this session's residue sends the user hunting for nothing.
+const sessionPorts = async ($: any, ports: string[], cwd: string) => {
+  if (!ports.length) return []
+  const parent = new Map<number, number>()
+  const name = new Map<number, string>()
+  for (const l of lines(await sh($, ['ps', '-A', '-o', 'pid=,ppid=,comm=']))) {
+    const [pid, ppid, ...comm] = l.split(/\s+/)
+    parent.set(Number(pid), Number(ppid))
+    name.set(Number(pid), comm.join(' ').split('/').pop() ?? '')
+  }
+  // The session's own process: the nearest `claude` above the shell this runs, or the shell's
+  // parent when none is found.
+  const shellParent = Number((await sh($, ['sh', '-c', 'echo $PPID'])).trim())
+  let self = shellParent
+  for (let p = shellParent, hops = 0; p > 1 && hops < 64; p = parent.get(p) ?? 0, hops++) {
+    if (name.get(p) === 'claude') { self = p; break }
+  }
+  // Ports the session process itself holds are its own plumbing, not something it left running.
+  const descends = (pid: number) => {
+    if (pid === self) return false
+    for (let p = pid, hops = 0; p > 1 && hops < 64; p = parent.get(p) ?? 0, hops++) if (p === self) return true
+    return false
+  }
+  const under = async (pid: number) => {
+    const dir = lines(await sh($, ['lsof', '-a', '-p', String(pid), '-d', 'cwd', '-Fn'])).find(l => l.startsWith('n'))?.slice(1)
+    return !!dir && (dir === cwd || dir.startsWith(`${cwd}/`))
+  }
+  const out: string[] = []
+  for (const p of ports) {
+    const pid = portPid(p)
+    if (self > 1 && descends(pid)) out.push(p)
+    else if (parent.get(pid) === 1 && await under(pid)) out.push(p)
+  }
+  return out
+}
+// Every local branch with the commit it points at, so a branch another window made or moved
+// can be told apart from one this session made or moved.
+const branchTips = async ($: any, cwd: string) =>
+  lines(await sh($, ['git', 'for-each-ref', '--format=%(refname:lstrip=2) %(objectname)', 'refs/heads'], cwd))
+const stashIds = async ($: any, cwd: string) => lines(await sh($, ['git', 'stash', 'list', '--format=%H'], cwd))
+const headId = async ($: any, cwd: string) => (await sh($, ['git', 'rev-parse', 'HEAD'], cwd)).trim()
+// The commit HEAD pointed at when the session started, when this checkout still has it. A commit
+// git cannot find (another repo, pruned) would make every comparison against it come back empty.
+const startCommit = async ($: any, cwd: string, b: WrapupBaseline) =>
+  b.head && (await sh($, ['git', 'rev-parse', '--verify', '--quiet', `${b.head}^{commit}`], cwd)).trim() ? b.head : ''
 const worktrees = async ($: any, cwd: string) =>
   lines(await sh($, ['git', 'worktree', 'list', '--porcelain'], cwd)).filter(l => l.startsWith('worktree ')).map(l => l.slice(9))
 
-// What the machine looks like when the session starts. The residue check compares against it,
-// so only what this session added counts.
+// What the machine and the checkout look like when the session starts. Every check compares
+// against it, so only what this session added or changed counts: other windows work in the same
+// folders, and their branches, commits and stash entries are not this session's to wrap up.
 const snapshot = async ($: any) => {
   const cwd = await $.session.cwd()
-  const [containers, ports, trees] = await Promise.all([dockerIds($), listenPorts($), worktrees($, cwd)])
+  const [containers, ports, trees, branches, stashes, head, status] = await Promise.all([
+    dockerIds($), listenPorts($), worktrees($, cwd), branchTips($, cwd), stashIds($, cwd), headId($, cwd),
+    sh($, STATUS, cwd),
+  ])
   const takenAt = await $.clock.now()
-  await update($, baseline, () => ({ containers, ports, worktrees: trees, takenAt }))
+  await update($, baseline, () => ({ containers, ports, worktrees: trees, branches, stashes, head, dirty: porcelainEntries(status), takenAt }))
+}
+
+// A baseline taken before a field was recorded knows nothing about it; the checks then fall
+// back to looking at everything, as they did before.
+const known = (b: WrapupBaseline) => !!b.takenAt && Array.isArray(b.branches)
+
+// Uncommitted files this session touched: not changed when it started, changed in another way
+// since (modified, then deleted), or written after it started.
+const sessionDirty = async ($: any, cwd: string, b: WrapupBaseline, stdout: string) => {
+  const entries = porcelainEntries(stdout)
+  if (!known(b)) return entries.map(e => e.slice(3))
+  const out: string[] = []
+  for (const e of entries) {
+    const p = e.slice(3)
+    let mtime = -1
+    try { mtime = Number((await $.fs.stat(`${cwd}/${p}`))?.mtimeMs ?? -1) } catch { /* deleted */ }
+    if (!b.dirty?.includes(e) || mtime >= b.takenAt) out.push(p)
+  }
+  return out
+}
+
+// Branches this session made or moved: absent from the baseline, or pointing at another commit.
+const touchedBranches = async ($: any, cwd: string, b: WrapupBaseline) => {
+  const before = new Set(b.branches ?? [])
+  return new Set((await branchTips($, cwd)).filter(t => !before.has(t)).map(t => t.split(' ')[0]))
 }
 
 const mainBranch = async ($: any, cwd: string) => {
@@ -95,45 +184,57 @@ const mainBranch = async ($: any, cwd: string) => {
   return 'main'
 }
 
-// 1. Branches: anything not merged into main, and an unclean working tree.
+// 1. Branches: the branches this session made or moved that are not merged into main, and the
+// files it changed without committing.
 const checkBranches = async ($: any, cwd: string): Promise<WrapupRow> => {
   const name = '分支'
+  const b = await read($, baseline)
+  const scoped = known(b)
   const main = await mainBranch($, cwd)
   const current = (await sh($, ['git', 'branch', '--show-current'], cwd)).trim()
-  const unmerged = lines(await sh($, ['git', 'branch', '--no-merged', main], cwd)).map(b => b.replace(/^[*+]?\s*/, '')).filter(b => b && b !== main)
-  const dirty = lines(await sh($, ['git', 'status', '--porcelain'], cwd))
+  const touched = scoped ? await touchedBranches($, cwd, b) : null
+  const ours = (br: string) => !touched || touched.has(br)
+  const unmerged = lines(await sh($, ['git', 'branch', '--no-merged', main], cwd)).map(l => l.replace(/^[*+]?\s*/, '')).filter(br => br && br !== main && ours(br))
+  const dirty = await sessionDirty($, cwd, b, await sh($, STATUS, cwd))
+  const who = scoped ? '這個 session ' : ''
   const out: string[] = []
-  if (current && current !== main) out.push(`現在在 ${current}，不在 ${main}`)
-  if (unmerged.length) out.push(`還沒併進 ${main} 的分支：${unmerged.slice(0, 6).join('、')}${unmerged.length > 6 ? ` 等 ${unmerged.length} 條` : ''}`)
-  if (dirty.length) out.push(`還沒 commit 的改動：${dirty.length} 個檔`)
-  const short = dirty.length ? `${dirty.length} 個檔沒 commit` : unmerged.length ? `${unmerged.length} 條分支沒併` : current && current !== main ? `還在 ${current}` : '都併了，目錄乾淨'
-  return { name, short, state: out.length ? 'dirty' : 'clean', lines: out.length ? out : [`都併進 ${main} 了，工作目錄乾淨`] }
+  if (current && current !== main && ours(current)) out.push(`現在在 ${current}，不在 ${main}`)
+  if (unmerged.length) out.push(`${who}動過的分支還沒併進 ${main}：${unmerged.slice(0, 6).join('、')}${unmerged.length > 6 ? ` 等 ${unmerged.length} 條` : ''}`)
+  if (dirty.length) out.push(`${who}改過、還沒 commit 的檔案有 ${dirty.length} 個`)
+  const short = dirty.length ? `${dirty.length} 個檔沒 commit` : unmerged.length ? `${unmerged.length} 條分支沒併` : out.length ? `還在 ${current}` : '都併了，目錄乾淨'
+  const clean = scoped ? `這個 session 動過的分支都併進 ${main} 了，改過的檔案也都 commit 了` : `都併進 ${main} 了，工作目錄乾淨`
+  return { name, short, state: out.length ? 'dirty' : 'clean', lines: out.length ? out : [clean] }
 }
 
 // 2. Push / pull / stash: commits not pushed, commits not pulled, stash entries.
 const checkSync = async ($: any, cwd: string): Promise<WrapupRow> => {
   const name = '推拉與 stash'
+  // Only what this session left: its own commits that are not pushed and its own stash entries.
+  // Commits waiting on the remote, or a main that fell behind, are not something it left undone.
+  const b = await read($, baseline)
+  const scoped = known(b)
   const out: string[] = []
-  const lr = (await sh($, ['git', 'rev-list', '--left-right', '--count', '@{u}...HEAD'], cwd)).trim()
-  if (lr) {
-    const [behind, ahead] = lr.split(/\s+/).map(Number)
-    if (ahead > 0) out.push(`有 ${ahead} 個 commit 還沒推上去`)
-    if (behind > 0) out.push(`遠端有 ${behind} 個 commit 還沒拉下來`)
-  } else {
+  const current = (await sh($, ['git', 'branch', '--show-current'], cwd)).trim()
+  const touched = scoped ? await touchedBranches($, cwd, b) : null
+  const hasUpstream = !!(await sh($, ['git', 'rev-parse', '--abbrev-ref', '@{u}'], cwd)).trim()
+  let noUpstream = false
+  if (hasUpstream) {
+    const start = scoped ? await startCommit($, cwd, b) : ''
+    const argv = ['git', 'rev-list', '--count', '@{u}..HEAD', ...(start ? [`^${start}`] : [])]
+    const ahead = Number((await sh($, argv, cwd)).trim() || 0)
+    if (ahead > 0) out.push(`${scoped ? '這個 session 做的 commit 有' : '有'} ${ahead} 個還沒推上去`)
+  } else if (current && (!touched || touched.has(current))) {
+    noUpstream = true
     out.push('這條分支沒有對應的遠端分支，推不推要你決定')
   }
-  // The local main can fall behind origin/main while another branch is checked out; a session
-  // that then branches off it starts from stale code (issue #158).
-  const main = await mainBranch($, cwd)
-  const mainLr = (await sh($, ['git', 'rev-list', '--left-right', '--count', `origin/${main}...${main}`], cwd)).trim()
-  const mainBehind = mainLr ? Number(mainLr.split(/\s+/)[0]) : 0
-  if (mainBehind > 0) out.push(`本機的 ${main} 落後 origin/${main} ${mainBehind} 個 commit，開新分支前要先拉`)
-  const stash = lines(await sh($, ['git', 'stash', 'list'], cwd))
-  if (stash.length) out.push(`stash 裡還躺著 ${stash.length} 份改動`)
+  const stash = (await stashIds($, cwd)).filter(id => !(scoped && b.stashes?.includes(id)))
+  if (stash.length) out.push(`${scoped ? '這個 session 存進 stash 的改動有' : 'stash 裡還躺著'} ${stash.length} 份`)
   const isDirty = out.length > 0
-  const onlyNoUpstream = !lr && out.length === 1
-  const short = out.find(l => /沒推/.test(l)) ? out.find(l => /沒推/.test(l))!.replace(/還沒推上去/, '沒推') : !lr ? '沒有遠端分支' : mainBehind > 0 ? `${main} 落後 ${mainBehind} 個 commit` : stash.length ? `stash 有 ${stash.length} 份` : out.length ? '有東西沒拉' : '都對齊了'
-  return { name, short, state: isDirty ? (onlyNoUpstream ? 'judge' : 'dirty') : 'clean', lines: isDirty ? out : ['推拉都對齊了，stash 是空的'] }
+  const onlyNoUpstream = noUpstream && out.length === 1
+  const unpushed = out.find(l => /沒推上去/.test(l))
+  const short = unpushed ? `${unpushed.replace(/\D+/g, ' ').trim()} 個 commit 沒推` : noUpstream ? '沒有遠端分支' : stash.length ? `stash 有 ${stash.length} 份` : '都對齊了'
+  const clean = scoped ? '這個 session 做的 commit 都推上去了，也沒有留下 stash' : '推拉都對齊了，stash 是空的'
+  return { name, short, state: isDirty ? (onlyNoUpstream ? 'judge' : 'dirty') : 'clean', lines: isDirty ? out : [clean] }
 }
 
 // 3. Version and deploy: the version files against the newest tag, and commits since it.
@@ -149,6 +250,15 @@ const checkVersion = async ($: any, cwd: string): Promise<WrapupRow> => {
   const vf = (await readFile($, `${cwd}/VERSION`)).split('\n')[0].trim()
   if (vf) versions.push(`VERSION ${vf}`)
   if (!tag && versions.length === 0) return { name, short: '沒有版號，略過', state: 'clean', lines: ['這個 repo 沒有版號也沒有 tag，不用對'] }
+  // A session that made no commit anywhere and left the version files alone has nothing to tag;
+  // the tag state is someone else's.
+  const b = await read($, baseline)
+  const untouched = known(b) && !!b.head && b.head === await headId($, cwd)
+    && (await touchedBranches($, cwd, b)).size === 0
+    && !(await sessionDirty($, cwd, b, await sh($, STATUS, cwd))).some(f => /^(package\.json|pyproject\.toml|VERSION)$/.test(f))
+  if (untouched) {
+    return { name, short: '沒有新的 commit', state: 'clean', lines: ['這個 session 沒有新的 commit，版號不用動'] }
+  }
   const out: string[] = []
   if (tag) {
     const since = Number((await sh($, ['git', 'rev-list', '--count', `${tag}..HEAD`], cwd)).trim() || 0)
@@ -171,15 +281,20 @@ const checkVersion = async ($: any, cwd: string): Promise<WrapupRow> => {
 // 4. Verification and docs: did this session run a test command, did the docs move with the code.
 const checkDocs = async ($: any, cwd: string, tests: number): Promise<WrapupRow> => {
   const name = '驗證與文件'
+  // What this session changed: its commits since it started, and the files it left uncommitted.
+  const b = await read($, baseline)
   const main = await mainBranch($, cwd)
-  const base = (await sh($, ['git', 'merge-base', main, 'HEAD'], cwd)).trim()
-  const changed = base ? lines(await sh($, ['git', 'diff', '--name-only', `${base}..HEAD`], cwd)) : []
-  const dirty = porcelainPaths(await sh($, ['git', 'status', '--porcelain'], cwd))
+  const start = known(b) ? await startCommit($, cwd, b) : ''
+  // Commits this session made on any branch it moved count too, not only the one checked out now.
+  const refs = start ? ['HEAD', ...(await touchedBranches($, cwd, b))] : ['HEAD']
+  const base = start || (await sh($, ['git', 'merge-base', main, 'HEAD'], cwd)).trim()
+  const changed = base ? (await Promise.all(refs.map(async r => lines(await sh($, ['git', 'diff', '--name-only', `${base}..${r}`], cwd))))).flat() : []
+  const dirty = await sessionDirty($, cwd, b, await sh($, STATUS, cwd))
   const all = Array.from(new Set([...changed, ...dirty]))
   const code = all.filter(f => CODE_FILE.test(f) && !/\.(test|spec)\./.test(f))
   const docs = all.filter(f => /CHANGELOG|README|docs\/|openspec\//i.test(f))
   const out: string[] = []
-  if (code.length === 0) return { name, short: '沒改程式', state: 'clean', lines: ['這一輪沒改程式，不用補驗證'] }
+  if (code.length === 0) return { name, short: '沒改程式', state: 'clean', lines: ['這個 session 沒改程式，不用補驗證'] }
   out.push(tests > 0 ? `這個 session 跑過 ${tests} 次測試指令` : `改了 ${code.length} 個程式檔，這個 session 沒跑過測試`)
   out.push(docs.length > 0 ? `文件有跟著動：${docs.slice(0, 4).join('、')}` : 'CHANGELOG、README、docs 都沒動，要不要補你看一下')
   const state = tests > 0 && docs.length > 0 ? 'clean' : tests === 0 ? 'dirty' : 'judge'
@@ -197,7 +312,7 @@ const checkResidue = async ($: any, cwd: string, background: number): Promise<Wr
   const newContainers = nowContainers.filter(c => !b.containers.includes(c) && isOurs(c, cwd))
   if (newContainers.length) out.push(`這個 session 起的 container 還在跑：${newContainers.map(c => c.split(' ')[1] ?? c).join('、')}`)
   const nowPorts = await listenPorts($)
-  const newPorts = nowPorts.filter(p => !b.ports.includes(p))
+  const newPorts = (await sessionPorts($, nowPorts.filter(p => !b.ports.includes(p)), cwd)).map(portLabel)
   if (newPorts.length) out.push(`這個 session 開的 port 還開著：${newPorts.join('、')}`)
   const nowTrees = await worktrees($, cwd)
   const newTrees = nowTrees.filter(w => !b.worktrees.includes(w))

@@ -51,11 +51,12 @@ mods/wrapup-check/hooks/register.tsx
                                        那一格變綠並顯示 AI 寫的一句話，紅的會被退回；
                                        再打一次收工就從頭算
 mods/wrapup-check/hooks/pane.test.tsx
-                                     — 15 條：打收工會跑六項、開面板、把結果交給 AI；沒有
+                                     — 19 條：打收工會跑六項、開面板、把結果交給 AI；沒有
                                        關鍵字什麼都不做；乾淨的 repo 六格都是綠的；黃的處理完
                                        變綠、紅的退回、再收工從頭算；agy 的 port 不算殘留；
                                        清單在 AI 回話完成前後的字、子代理結束不算；回話途中打收工、被擋下的收工不會卡在處理中；
-                                       標題列寫進行中或幾點完成；六項全綠而且 AI 回完話才出現結尾橫幅
+                                       標題列寫進行中或幾點完成；六項全綠而且 AI 回完話才出現結尾橫幅；
+                                       別的視窗留下的分支、stash、檔案、port 不算這個視窗的（v1.31.9）
 mods/wrapup-check/types/index.d.ts   — 面板資料的型別
 mods/wrapup-check/tsconfig.json      — 編輯器用的型別設定
 openspec/changes/v1.31.4-wrapup-check-mod/{proposal,spec,tasks}.md
