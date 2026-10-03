@@ -21,7 +21,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 // security and basic middleware
-// v1.31.1: on. See src/utils/content-security-policy.js.
+// v1.31.2: on. See src/utils/content-security-policy.js.
 app.use(helmet({ contentSecurityPolicy: CONTENT_SECURITY_POLICY }));
 // CORS: only allow the origin specified by the CORS_ORIGIN env var; if unset, block cross-origin
 app.use(cors({ origin: process.env.CORS_ORIGIN || false }));
@@ -111,7 +111,7 @@ app.use('/dashboard', createSpaShellHandler(
 app.get('/setup', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'setup.html'));
 });
-// v1.31.1: the wizard's script, out of the page so the content security policy allows it.
+// v1.31.2: the wizard's script, out of the page so the content security policy allows it.
 // Both addresses: the wizard is also served at /setup/, where a relative src resolves here.
 app.get(['/setup.js', '/setup/setup.js'], (req, res) => {
   res.type('application/javascript; charset=utf-8');
@@ -144,6 +144,7 @@ app.use((req, res, next) => {
 import memoryRoutes from './routes/memory.js';
 import sessionRoutes from './routes/session.js';
 import { createSessionLessonsRouter } from './routes/session-lessons.js';
+import { createActivityTouchRouter } from './routes/activity-touch.js';
 import handoffRoutes from './routes/handoff.js';
 import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';
@@ -166,6 +167,7 @@ import { createChangelogRouter } from './routes/changelog.js';
 import complianceRoutes from './routes/compliance.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
+import adminAuth from './middleware/adminAuth.js';
 
 // v1.19.8: setup wizard API endpoints (public, no auth needed)
 // must be mounted before /api/admin to avoid /api/admin swallowing them
@@ -197,6 +199,8 @@ app.use('/api/admin/iron-rules', adminIronRuleUpgradeRoutes);  // v1.18.0 upgrad
 app.use('/api/admin', adminRoutes);
 app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
+// v1.31.2: before /api/activity, so /api/activity/touch is answered here.
+app.use('/api/activity/touch', createActivityTouchRouter({ query, auth, adminAuth, logger }));
 app.use('/api/activity', activityRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/broadcast', broadcastRoutes);

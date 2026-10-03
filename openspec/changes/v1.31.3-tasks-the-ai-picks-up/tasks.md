@@ -1,6 +1,6 @@
-# Tasks — v1.31.2 tasks the AI picks up
+# Tasks — v1.31.3 tasks the AI picks up
 
-- [ ] `db/029_tasks.sql` — table, status check, indexes on (project, status), (claimed_by)
+- [ ] `db/030_tasks.sql` — table, status check, indexes on (project, status), (claimed_by)
 - [ ] `shared/task-body.js` — one normaliser for create/done bodies (caps, links shape)
 - [ ] `src/routes/tasks.js` — factory router: create / list / claim / done / drop / review;
       visibility predicate in one place
@@ -16,4 +16,4 @@
 - [ ] tests: normaliser, every route against a fake query (claim races, visibility), schema,
       context block, nav structure
 - [ ] CHANGELOG, FILELIST, README ×3, version
-- [ ] Deploy: migration 029, then tag
+- [ ] Deploy: migration 030, then tag

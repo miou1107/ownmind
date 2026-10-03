@@ -13,7 +13,8 @@ THEN nothing is posted; the cached answer is reused.
 GIVEN `~/.ownmind/.no-touch-report` exists
 THEN nothing is posted and nothing is printed.
 
-GIVEN the file is outside any git repository, or the project name resolves to null
+GIVEN the file is outside the project directory, the project directory is the home directory or
+above it, or the project name resolves to null
 THEN nothing is posted.
 
 ## What the server keeps
@@ -52,8 +53,9 @@ GIVEN the same (Amiee, src/order) pair was already printed in this session
 THEN no line is printed again.
 
 GIVEN the server answers anything but 200, or does not answer within 3 seconds
-THEN the edit proceeds, nothing is printed about collisions, and
-`~/.ownmind/logs/<day>.jsonl` carries an event `touch_report_failed` with the reason.
+THEN the edit proceeds, nothing is printed about collisions,
+`~/.ownmind/logs/<day>.jsonl` carries an event `touch_report_failed` with the reason, and the
+next edits in that directory within ten minutes post nothing (the failure opened the window).
 
 ## The team page
 

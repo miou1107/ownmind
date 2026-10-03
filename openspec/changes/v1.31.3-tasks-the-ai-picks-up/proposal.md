@@ -11,7 +11,7 @@ So the board OwnMind keeps is not for the team to drag cards around. It is a dis
 the person writes small, well-bounded cards; an AI session, started by a person or by a
 schedule, claims one, does it, reports back, and the person reviews. The card's life is the
 unit of accounting for everything else OwnMind does — the lessons of v1.31.0 attach to it,
-the release check of v1.31.3 reads it.
+the release check of v1.31.4 reads it.
 
 ## What changes
 

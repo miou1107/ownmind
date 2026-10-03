@@ -8,7 +8,7 @@ test before a bug fix, verify that a deploy actually landed. Each is a rule the 
 reminded of; none is a list anyone reads before pressing tag. The moment before a release is
 the one time all of them matter at once, and it is answered by memory.
 
-With v1.31.2 the cards of a milestone are in OwnMind, and with v1.31.0 their lessons are. The
+With v1.31.3 the cards of a milestone are in OwnMind, and with v1.31.0 their lessons are. The
 release check reads both and the repository, and prints the list.
 
 ## What changes
@@ -45,7 +45,7 @@ release check reads both and the repository, and prints the list.
 - **The base branch is read from the repository**, `origin/HEAD` first, then `main`, then
   `master`; `--base` overrides. Guessing it wrong would block a release for a reason that is
   not real.
-- **Works without v1.31.2.** With no cards, that section says "no cards for this project";
+- **Works without v1.31.3.** With no cards, that section says "no cards for this project";
   the git and standards halves stand on their own.
 - **Fail-open on the server half, fail-closed on the git half.** The server being down must
   not stop a release; the branch being behind must.

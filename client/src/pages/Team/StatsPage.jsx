@@ -11,6 +11,7 @@ import { apiGet } from '../../api';
 import { makeRequestGate } from '../../utils/request-gate.js';
 import StatsOverview from './StatsOverview.jsx';
 import StatsDetail from './StatsDetail.jsx';
+import OverlapsBlock from './OverlapsBlock.jsx';
 
 // Same three the legacy select offered. Not free-form: the endpoint clamps at
 // 365 anyway, and every extra option is another range nobody has looked at.
@@ -139,6 +140,8 @@ export default function StatsPage() {
           {t('stats.load_failed')}: {loadError}
         </div>
       )}
+
+      {!loadError && !userId && <OverlapsBlock />}
 
       {!loadError && !userId && overview && (
         <StatsOverview users={overview.users} nowMs={nowMs} />

@@ -248,10 +248,31 @@ async function main() {
 
     // editReminder takes the credentials as it finds them: the guard runs either way, and
     // the parts that do need the network return nothing without a key.
-    const out = await editReminder({
-      version: VERSION, apiKey, apiUrl, now: Date.now(), sessionId, filePath, content,
-    });
-    if (out) console.log(out);
+    // v1.31.2: the collision warning runs beside the reminder, not after it — each may wait
+    // on the network, and an edit should pay that once. It never blocks, fails open with a
+    // logged event, and is loaded here rather than at the top so a machine whose copy of the
+    // hooks lacks the module (a partial update, a staged test tree) still runs the guard.
+    const overlapPromise = (async () => {
+      try {
+        const { touchReport } = await import('./ownmind-touch-report.js');
+        return await touchReport({
+          apiKey, apiUrl, sessionId, filePath, now: Date.now(), version: VERSION,
+          projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
+        });
+      } catch { return ''; }
+    })();
+    const [out, overlap] = await Promise.all([
+      editReminder({ version: VERSION, apiKey, apiUrl, now: Date.now(), sessionId, filePath, content }),
+      overlapPromise,
+    ]);
+    let merged = out;
+    if (overlap) {
+      try {
+        const { mergeOverlapIntoEnvelope } = await import('../shared/touch-report.js');
+        merged = mergeOverlapIntoEnvelope(out, overlap);
+      } catch { merged = out; }
+    }
+    if (merged) console.log(merged);
     process.exit(0);
   }
 
