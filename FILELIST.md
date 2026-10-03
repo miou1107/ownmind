@@ -36,6 +36,53 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.45 修改（Claude Code 輸入框下方的 OwnMind 按鈕，每位成員預設開啟）
+
+新增檔：
+```
+mods/ownmind-monitor/.claude-plugin/plugin.json
+                                     — Claude Code 外掛的名稱與版本
+mods/ownmind-monitor/hooks/hooks.json
+                                     — 指向 register.tsx
+mods/ownmind-monitor/hooks/register.tsx
+                                     — 輸入框下方的 🟢／🔴 OwnMind 按鈕、運作狀況面板、
+                                       /ownmind 與 /ownmind-week；家目錄在 Windows 改讀
+                                       USERPROFILE（HOME 不存在或是 Git Bash 的 /c/ 寫法時）；
+                                       警告訊息顯示 5 秒後自動收起
+mods/ownmind-monitor/hooks/pane.test.tsx
+                                     — 3 條：面板與按鈕在桌面版、終端機都畫得出來；Windows
+                                       沒有 HOME、HOME 是 /c/Users/x 時都從 USERPROFILE 讀日誌
+mods/ownmind-monitor/types/index.d.ts
+                                     — 面板資料的型別
+mods/ownmind-monitor/tsconfig.json   — 編輯器用的型別設定
+scripts/install-helpers/ensure-monitor-mod.cjs
+                                     — 在 ~/.claude/settings.json 的 env 加入
+                                       CLAUDE_CODE_PLUGIN_DIRS 與
+                                       CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1；保留其他外掛資料
+                                       夾、去重複、改掉 ~/.claude/mods/ownmind-monitor 的舊
+                                       設定；沒有變動就不寫檔；~/.ownmind/.no-monitor-mod
+                                       或外掛資料夾不存在時，移除自己那一筆
+tests/ensure-monitor-mod.test.js     — 26 條：新檔、既有 env、其他外掛資料夾、連跑兩次、
+                                       舊路徑搬移、Windows 分號與路徑、BOM、壞檔不動、
+                                       env 不是物件時不動、外掛資料夾不見時移除設定、
+                                       退出機制（含 Windows）、四支安裝／更新腳本都真的
+                                       有執行它
+openspec/changes/v1.30.45-a-dashboard-every-member-can-see/
+                                     — proposal.md、spec.md、tasks.md
+```
+
+修改檔：
+```
+install.sh、scripts/update.sh、install.ps1、scripts/update.ps1
+                                     — SessionStart hook 之後呼叫 ensure-monitor-mod.cjs
+.gitignore                           — 忽略 mods/*/.claude-plugin/types/（Claude Code 產生的
+                                       型別檔）與 .no-monitor-mod，避免讓安裝目錄看起來有
+                                       未提交的變更
+docs/setup-claude-code.md            — 新增「OwnMind 運作狀況按鈕」一節
+README.md、docs/README.zh-TW.md、docs/README.ja.md、CHANGELOG.md
+package.json、package-lock.json      — 1.30.45
+```
+
 ## v1.30.44 修改（存了金鑰的設定檔改成只有本人能讀）
 
 新增檔：

@@ -78,3 +78,10 @@ git-hooks/
 # The change above is what stops it triggering a reset.
 bin/
 reports/
+
+# v1.30.45 — Claude Code writes generated type stubs into a plugin's .claude-plugin/types/
+# when someone authors or tests the mod. Ignored so they never make the checkout look dirty
+# (see the note at the top of this file about interactive-upgrade and `git reset --hard`).
+mods/*/.claude-plugin/types/
+# The opt-out marker ensure-monitor-mod.cjs reads; created by the user inside the checkout.
+.no-monitor-mod

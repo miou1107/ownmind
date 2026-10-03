@@ -468,6 +468,19 @@ if (Test-Path $EnsureHook) {
   }
 }
 
+# --- 3.4a OwnMind monitor mod (v1.30.45, shared implementation) ---
+# Runs on every update, so machines installed before v1.30.45 get the mod on their next
+# auto-update. See ensure-monitor-mod.cjs.
+$EnsureMod = Join-Path $OwnMindDir "scripts\install-helpers\ensure-monitor-mod.cjs"
+if (Test-Path $EnsureMod) {
+  $modResult = & node $EnsureMod --ownmind-dir $OwnMindDir 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "   OwnMind monitor mod: $modResult"
+  } else {
+    Write-Host "   [FAIL] OwnMind monitor mod: $modResult"
+  }
+}
+
 # --- 3.4b Background credentials (v1.26.87, delegated to the shared implementation) ---
 # The key can be valid, the MCP can be uploading, and every scheduled run can still be
 # blind — Task Scheduler does not inherit a shell's environment.

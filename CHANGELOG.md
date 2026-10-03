@@ -1,5 +1,31 @@
 # OwnMind 更新紀錄
 
+## v1.30.45 — Claude Code 輸入框下方多一個 OwnMind 按鈕，看得到 OwnMind 這次有沒有在運作
+
+電腦這一邊下次自動更新就會裝好，伺服器不用動。
+
+以前要知道 OwnMind 這次對話有沒有載入記憶、AI 有沒有去查、規矩擋下了什麼，只能翻對話紀錄或日誌檔。
+Vin 做了一個 Claude Code 外掛來看這些事，這一版把它交給每一位成員，預設開啟，請大家一起用、一起回報問題。
+
+更新後重新開一個 Claude Code 對話，輸入框下方會多一個按鈕：
+
+- 🟢 OwnMind：這次對話已經載入記憶，最近一次連 OwnMind 主機也正常。
+- 🔴 OwnMind：這次對話沒有載入記憶，或是最近一次連 OwnMind 主機失敗。
+
+按下去會打開「OwnMind 運作狀況」面板。上面四格是記憶有沒有載入、這次對話查了幾次、規矩觸發與擋下幾次、
+今天自動更新是否正常；下面三張圖是最近 7 天的對話數與查詢次數、commit 後檢查的照做與漏做、自動更新失敗次數。
+也可以輸入 `/ownmind` 打開面板，或輸入 `/ownmind-week` 看 7 天摘要。
+
+之後 Vin 修改這個外掛，成員一樣跟著 OwnMind 自動更新拿到新版，不需要自己做任何事。macOS 和 Windows 都會安裝。
+
+**⚠️ 影響使用者操作：**
+- Claude Code 要是有 function hooks 功能的新版才看得到這個按鈕。舊版看不到按鈕，OwnMind 其他功能照常。
+- 安裝與更新會在 `~/.claude/settings.json` 的 `env` 寫入 `CLAUDE_CODE_PLUGIN_DIRS` 和 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`。
+  `CLAUDE_CODE_PLUGIN_DIRS` 原本列的其他外掛資料夾都會保留。
+- 原本手動裝在 `~/.claude/mods/ownmind-monitor` 的那一份，設定會改成指向 OwnMind 裡的版本，不會出現兩個按鈕。
+  舊資料夾留在原地，確認新版正常後可以自行刪除。
+- 不想要這個按鈕：建立 `~/.ownmind/.no-monitor-mod` 這個空檔案，下一次更新就會移除設定，之後也不會再加回去。
+
 ## v1.30.44 — 存了金鑰的設定檔，改成只有本人能讀
 
 只改電腦這一邊，下次自動更新就會換過去。不用部署伺服器。

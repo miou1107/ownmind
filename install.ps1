@@ -576,6 +576,19 @@ if (Test-Path $EnsureHook) {
   Write-Host "[WARN] ensure-session-hook.cjs not found; SessionStart hook left as-is"
 }
 
+# OwnMind monitor mod — v1.30.45, shared implementation (ensure-monitor-mod.cjs). Points
+# Claude Code at mods\ownmind-monitor inside this checkout through settings.json "env";
+# folders are joined with ';' on Windows. Opt out: create ~\.ownmind\.no-monitor-mod
+$EnsureMod = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-monitor-mod.cjs'
+if (Test-Path $EnsureMod) {
+  $modResult = & node $EnsureMod --ownmind-dir $OwnmindDir 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "[ OK ] OwnMind monitor mod: $modResult"
+  } else {
+    Write-Host "[FAIL] OwnMind monitor mod: $modResult"
+  }
+}
+
 # Background credentials — v1.26.87. A key that lives only in the environment works for the
 # MCP (the AI tool hands it that environment) and for nothing else: the usage scanner runs
 # from Task Scheduler, which does not inherit a shell. Same placement rule as the block

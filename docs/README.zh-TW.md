@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.44** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.45** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **看不到 OwnMind 在這次對話裡有沒有在運作** — 記憶有沒有載入、AI 查了幾次、規矩擋下了什麼，以前只能翻對話紀錄和 `~/.ownmind/logs`。Vin 做的 Claude Code 外掛 `ownmind-monitor` 收進 `mods/`，每個人預設開啟：輸入框下方多一個 🟢／🔴 OwnMind 按鈕，按下去是四格狀態和三張最近 7 天的圖（也可以輸入 `/ownmind`、`/ownmind-week`）。安裝和每次更新會在 `~/.claude/settings.json` 的 `env` 把這個資料夾加進 `CLAUDE_CODE_PLUGIN_DIRS`、設定 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`（原本列的其他外掛資料夾都保留，Windows 用分號分隔），手動裝在 `~/.claude/mods/ownmind-monitor` 的那一份會改指向新位置，不會載入兩次；之後外掛的修改跟著自動更新送到。Claude Code 要是有 function hooks 的新版才看得到按鈕。不想要的話建立 `~/.ownmind/.no-monitor-mod`。只要電腦更新，伺服器不用動。 `v1.30.45`
 - **存了金鑰的設定檔，Mac／Linux 上同一台電腦的其他帳號都讀得到** — 每次存檔都是先寫一個新的暫存檔再換上去，新檔案的權限照系統預設（通常是「大家都能讀」），所以 `~/.claude.json`、`~/.claude/settings.json` 和其他 AI 工具的設定檔，連同安裝時留下的 `settings.json.bak.*` 備份，都是其他帳號讀得到的。現在安裝和每次自動更新都會跑 `scripts/install-helpers/secure-key-files.cjs`，把這些檔案和備份裡存了 `OWNMIND_API_KEY`、而且屬於自己的，改成只有本人能讀（只改權限、不改內容；Windows 不動）；`register-mcp.cjs`、`ensure-key-file.cjs` 寫檔時直接設成只有本人能讀。**影響使用者：** 幾乎沒有；同一台電腦的其他帳號、或用別的使用者身分跑的容器，讀不到這些檔了。只改電腦這一邊。`v1.30.44`
 - **裝了 OwnMind 之後，程式庫自己的 git 小幫手被靜靜關掉** — OwnMind 把整台電腦的 git 小幫手位置改成自己的資料夾，git 就不再看各程式庫自己的小幫手。裝 OwnMind 前就裝好 Git LFS 的程式庫，`git push` 顯示成功、大檔案卻沒傳；推送前的檢查也一起消失；原本自己設過的全電腦位置還會被蓋掉。現在「上傳前」「切換分支後」「拉更新後」會轉給程式庫自己的小幫手（多資料夾的 worktree 也找得到），程式庫用 LFS 但沒有自己的小幫手時直接請 LFS 處理；資料夾裡不是 OwnMind 放的檔案（例如 `git lfs install` 放的）一律不覆蓋；原本的全電腦位置會先記下來再串接；自動更新會替已裝的電腦補上。**影響使用者：** Windows 上推送、切換分支、拉更新每次多約 0.1 秒（存檔不變）；以前被跳過的推送前檢查會重新開始跑，可能擋下推送。 `v1.30.43`
 - **任何成員都看得到別人私人鐵律的標題** — 伺服器補記「停用了哪則記憶」時，查記憶不檢查是誰的，送假事件就能把所有人的鐵律編號和標題存進自己的紀錄；踩坑紀錄頁又讓所有成員看到全體的紀錄，包括別人的鐵律標題、名字和工作摘要。現在查詢跟 OwnMind 其他地方用同一條「誰能讀什麼」規則；踩坑紀錄頁管理員看全體、一般成員只看自己的；舊資料的備援查詢只查紀錄主人自己的記憶，順便修好它們從沒生效過的比對規則（最多 9 位數，避免假造的超大編號讓整頁出錯）；「我的報告」的鐵律統計也不再讓成員看到別人的鐵律標題。要更新伺服器才生效。 `v1.30.42`
