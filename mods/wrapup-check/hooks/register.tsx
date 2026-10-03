@@ -34,6 +34,10 @@ const counts = atom({ plugin: 'wrapup-check', key: 'counts' } as const, { tests:
 const openRows = atom({ plugin: 'wrapup-check', key: 'openRows' } as const, [])
 const resolved = atom({ plugin: 'wrapup-check', key: 'resolved' } as const, [] as WrapupResolution[])
 const RESOLVE_TOOL = 'mcp__wrapup-check__resolve'
+// True from the moment the user types a wrap-up word until the AI's answer to it is complete.
+// The turn that was running when the wrap-up was typed, if any.
+let skipTurn = ''
+const handling = atom({ plugin: 'wrapup-check', key: 'handling' } as const, false)
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = (ms: number) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}` }
@@ -272,52 +276,53 @@ const summary = (rows: WrapupRow[], at: number) => {
   return `[收工自檢 ${clock(at)}]\n${block('已乾淨', clean)}\n${block('待辦', todo)}`
 }
 
-// Desktop draws no Box borders, so the cards and tiles are drawn as one SVG. The terminal
-// has no Svg element and gets one row per check instead.
-const HEX: Record<WrapupRow['state'], string> = { clean: '#2e9e5b', dirty: '#d64545', judge: '#d9a400', running: '#888888' }
+// What one line of the checklist says. A done item says what was found or done. While the AI
+// is still working through a wrap-up, an open item says so; once it is done, the item says
+// who has to act: yellow waits for the user, red was left undone.
+const HEX: Record<WrapupRow['state'], string> = { clean: '#2e9e5b', dirty: '#d64545', judge: '#c99700', running: '#888888' }
+const shown = (r: WrapupRow, handling: boolean) =>
+  r.state === 'clean' ? { mark: '✓', color: HEX.clean, text: r.short }
+  : r.state === 'running' ? { mark: '…', color: HEX.running, text: '查中' }
+  : handling ? { mark: '…', color: HEX.running, text: 'AI 處理中' }
+  : r.state === 'judge' ? { mark: '？', color: HEX.judge, text: `等你決定：${r.short}` }
+  : { mark: '✗', color: HEX.dirty, text: `還沒處理：${r.short}` }
+
+// Desktop draws no Box borders, so the checklist is drawn as one SVG. The terminal has no Svg
+// element and gets one text row per item instead.
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const W = 600
-
-const kpiSvg = (nClean: number, nDirty: number, nJudge: number) => {
-  const cards: Array<[number, string, string]> = [[nClean, '乾淨', HEX.clean], [nDirty, '待處理', HEX.dirty], [nJudge, '要你判斷', HEX.judge]]
-  const gap = 12, cw = (W - gap * 2) / 3, h = 104
-  const body = cards.map(([n, label, c], i) => {
-    const x = i * (cw + gap)
-    return `<rect x="${x + 1}" y="1" width="${cw - 2}" height="${h - 2}" rx="12" fill="${c}" fill-opacity="0.14" stroke="${c}" stroke-width="2"/>`
-      + `<text x="${x + cw / 2}" y="56" text-anchor="middle" font-size="44" font-weight="700" fill="${c}">${n}</text>`
-      + `<text x="${x + cw / 2}" y="86" text-anchor="middle" font-size="17" fill="${c}">${label}</text>`
-  }).join('')
-  return { body, h }
-}
-
-const tilesSvg = (rows: WrapupRow[]) => {
-  const gap = 12, colsN = 3, tw = (W - gap * (colsN - 1)) / colsN, th = 94
-  const rowsN = Math.ceil(rows.length / colsN)
-  const h = rowsN * th + (rowsN - 1) * gap
-  // A CJK glyph is one cell, ASCII half a cell; 11.5 cells fit a line, the rest wraps once.
-  const wrap2 = (t: string, max = 11.5) => {
-    const out: string[] = ['']; let w = 0
-    for (const ch of t) {
-      const cw = /[\x00-\x7f]/.test(ch) ? 0.5 : 1
-      if (w + cw > max) { if (out.length === 2) { out[1] = out[1].replace(/.$/, '…'); break } out.push(''); w = 0 }
-      out[out.length - 1] += ch; w += cw
-    }
-    return out.map(l => l.trim())
+// A CJK glyph is one cell, ASCII half a cell; past `max` cells the line ends in an ellipsis.
+const fit = (t: string, max: number) => {
+  let w = 0, out = ''
+  for (const ch of t) {
+    const cw = /[\x00-\x7f]/.test(ch) ? 0.5 : 1
+    if (w + cw > max) return out.replace(/.$/, '…')
+    out += ch; w += cw
   }
-  const body = rows.map((r, i) => {
-    const x = (i % colsN) * (tw + gap), y = Math.floor(i / colsN) * (th + gap), c = HEX[r.state]
-    return `<rect x="${x + 1}" y="${y + 1}" width="${tw - 2}" height="${th - 2}" rx="10" fill="${c}" fill-opacity="0.14" stroke="${c}" stroke-width="2"/>`
-      + `<text x="${x + 14}" y="${y + 32}" font-size="17" font-weight="700" fill="${c}">${MARK[r.state]} ${esc(r.name)}</text>`
-      + wrap2(r.short).map((l, j) => `<text x="${x + 14}" y="${y + 60 + j * 20}" font-size="14" fill="${c}">${esc(l)}</text>`).join('')
-  }).join('')
-  return { body, h }
+  return out
 }
 
-// One picture: three number cards on top, the six tiles below.
-const panelSvg = (rows: WrapupRow[], nClean: number, nDirty: number, nJudge: number) => {
-  const k = kpiSvg(nClean, nDirty, nJudge), t = tilesSvg(rows), gap = 16
-  const h = k.h + gap + t.h
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" font-family="-apple-system, 'PingFang TC', sans-serif">${k.body}<g transform="translate(0 ${k.h + gap})">${t.body}</g></svg>`
+// The pane follows the app's light or dark theme; the picture follows the system's.
+const DARK = '<style>@media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#a8a8a8}}</style>'
+
+const checklistSvg = (rows: WrapupRow[], handling: boolean) => {
+  const done = rows.filter(r => r.state === 'clean').length
+  const head = 64, rh = 58
+  const h = head + rows.length * rh
+  const bar = Math.round((W * done) / Math.max(rows.length, 1))
+  const top = `<text class="t" x="0" y="24" font-size="19" font-weight="700" fill="#333">收工檢查</text>`
+    + `<text class="s" x="${W}" y="24" text-anchor="end" font-size="15" fill="#666">完成 ${done} / ${rows.length}</text>`
+    + `<rect x="0" y="38" width="${W}" height="8" rx="4" fill="#888" fill-opacity="0.18"/>`
+    + (bar ? `<rect x="0" y="38" width="${bar}" height="8" rx="4" fill="${HEX.clean}"/>` : '')
+  const body = rows.map((r, i) => {
+    const s = shown(r, handling), y = head + i * rh
+    return `<circle cx="14" cy="${y + 22}" r="12" fill="${s.color}" fill-opacity="${r.state === 'clean' ? 1 : 0.15}" stroke="${s.color}" stroke-width="2"/>`
+      + `<text x="14" y="${y + 27}" text-anchor="middle" font-size="14" font-weight="700" fill="${r.state === 'clean' ? '#fff' : s.color}">${s.mark}</text>`
+      + `<text class="t" x="38" y="${y + 18}" font-size="16" fill="#333">${esc(r.name)}</text>`
+      + `<text${r.state === 'clean' ? ' class="s"' : ''} x="38" y="${y + 39}" font-size="13" fill="${r.state === 'clean' ? '#666' : s.color}">${esc(fit(s.text, 44))}</text>`
+      + (i < rows.length - 1 ? `<line x1="38" y1="${y + rh - 6}" x2="${W}" y2="${y + rh - 6}" stroke="#888" stroke-opacity="0.2"/>` : '')
+  }).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" font-family="-apple-system, 'PingFang TC', sans-serif">${DARK}${top}${body}</svg>`
 }
 
 export const register: Register = on => {
@@ -381,10 +386,29 @@ export const register: Register = on => {
     // A new wrap-up starts from what the machine looks like now: whatever was handled last
     // time has to be handled again if it is still there.
     await update($, resolved, () => [])
+    // Typed while another turn is running, the prompt carries that turn's id: that turn ending
+    // is not the AI answering the wrap-up.
+    skipTurn = e.turnId ?? ''
+    await update($, handling, () => true)
     const { rows, at } = await runChecks($)
     await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
     const text = summary(rows, at)
-    return next({ ...e, context: [...(e.context ?? []), `${text}\n（這是收工自檢剛跑完的六項結果，面板已經開給使用者看了。每一格都要處理到綠色再回話：紅色的直接處理掉；黃色的查清楚、處理完，就呼叫 ${RESOLVE_TOOL}，用一句話寫你做了什麼，那一格會變綠。只有真的要使用者決定的那一格可以留著。待辦與交接這一項，要用 ownmind 工具查過交接單。全部處理完再回報，只講兩句：東西收好了沒有；有沒有一件要他決定的事，沒有就說沒有。處理過程不要寫進回報。）`] })
+    const out = await next({ ...e, context: [...(e.context ?? []), `${text}\n（這是收工自檢剛跑完的六項結果，面板已經開給使用者看了。每一格都要處理到綠色再回話：紅色的直接處理掉；黃色的查清楚、處理完，就呼叫 ${RESOLVE_TOOL}，用一句話寫你做了什麼，那一格會變綠。只有真的要使用者決定的那一格可以留著。待辦與交接這一項，要用 ownmind 工具查過交接單。全部處理完再回報，只講兩句：東西收好了沒有；有沒有一件要他決定的事，沒有就說沒有。處理過程不要寫進回報。）`] })
+    // Blocked by a hook beneath: no turn runs, so nothing would ever clear the flag.
+    if ((out as any).drop) await update($, handling, () => false)
+    return out
+  })
+
+  // The AI has answered the wrap-up: open items stop saying "AI 處理中" and say who acts.
+  on('turn.complete', async ($, e, next) => {
+    const out = await next(e)
+    // A subagent finishing is not the AI's answer to the user.
+    const id = String((e as any).turnId ?? '')
+    if (!(e as any).agentId && !(skipTurn && id === skipTurn) && await read($, handling)) {
+      await update($, handling, () => false)
+      await runChecks($)
+    }
+    return out
   })
 
   on('command.run', { command: 'wrapup' }, async $ => {
@@ -398,13 +422,11 @@ export const register: Register = on => {
     const { Box, Button, Text } = ui
     const r = await read($, report)
     const open = await read($, openRows)
+    const busy = await read($, handling)
     const cols = Math.max(30, e.props.bodyColumns ?? 60)
-    const color = (s: WrapupRow['state']) => s === 'clean' ? 'green' : s === 'dirty' ? 'red' : s === 'judge' ? 'yellow' : 'gray'
-    const nClean = r.rows.filter(x => x.state === 'clean').length
-    const nDirty = r.rows.filter(x => x.state === 'dirty').length
-    const nJudge = r.rows.filter(x => x.state === 'judge').length
+    const done = r.rows.filter(x => x.state === 'clean').length
     const barW = Math.min(cols - 2, 40)
-    const seg = (n: number) => Math.round((barW * n) / 6)
+    const filled = r.rows.length ? Math.round((barW * done) / r.rows.length) : 0
     const toggle = (i: number) => update($, openRows, list => list.includes(i) ? list.filter(x => x !== i) : [...list, i])
     const header = (
       <Box flexDirection="row" gap={1}>
@@ -414,22 +436,23 @@ export const register: Register = on => {
         <Button key="wrapup-close" label="關閉" role="dismiss" dimColor onPress={() => $.ui.close({ id: PANE })} />
       </Box>
     )
-    const summaryText = `六項裡 ${nClean} 項乾淨，${nDirty} 項待處理，${nJudge} 項要你看`
+    const progress = `完成 ${done} / ${r.rows.length}`
 
-    // Desktop: the number cards and tiles as one SVG, then only the red and yellow items.
+    // Desktop: the checklist as one picture, then the detail of the items still open once the
+    // AI is done with them.
     if (e.surface !== 'terminal' && r.rows.length > 0) {
       const { Svg } = ui
-      const todo = r.rows.filter(x => x.state === 'dirty' || x.state === 'judge')
+      const left = busy ? [] : r.rows.filter(x => x.state === 'dirty' || x.state === 'judge')
       return (
         <Box flexDirection="column" gap={1}>
           {header}
-          <Svg source={panelSvg(r.rows, nClean, nDirty, nJudge)} alt={`${summaryText}。${r.rows.map(x => `${x.name}：${x.short}`).join('；')}`} />
-          {todo.length > 0 && (
+          <Svg source={checklistSvg(r.rows, busy)} alt={`收工檢查，${progress}。${r.rows.map(x => `${x.name}：${shown(x, busy).text}`).join('；')}`} />
+          {left.length > 0 && (
             <Box flexDirection="column">
-              <Text bold>待處理事項</Text>
-              {todo.map(x => (
+              <Text bold>還沒打勾的項目</Text>
+              {left.map(x => (
                 <Box flexDirection="column">
-                  <Text color={color(x.state)}>{MARK[x.state]} {x.name}</Text>
+                  <Text color={x.state === 'dirty' ? 'red' : 'yellow'}>{shown(x, busy).mark} {x.name}</Text>
                   {x.lines.map(l => <Text dimColor wrap="wrap">　{l}</Text>)}
                 </Box>
               ))}
@@ -439,32 +462,27 @@ export const register: Register = on => {
       )
     }
 
-    // Terminal: one row per check; pressing the name or the arrow expands its detail.
+    // Terminal: the same checklist as text rows; pressing a name expands its detail.
+    const color = (row: WrapupRow) => row.state === 'clean' ? 'green' : row.state === 'running' || busy ? 'gray' : row.state === 'dirty' ? 'red' : 'yellow'
     return (
       <Box flexDirection="column" gap={1}>
         {header}
         {r.rows.length === 0 && <Text dimColor>打「收工」或 /wrapup 就會跑六項檢查</Text>}
         {r.rows.length > 0 && (
           <Box flexDirection="column">
-            <Text>{summaryText}</Text>
+            <Text bold>收工檢查　{progress}</Text>
             <Box flexDirection="row">
-              <Text backgroundColor="green">{' '.repeat(seg(nClean))}</Text>
-              <Text backgroundColor="red">{' '.repeat(seg(nDirty))}</Text>
-              <Text backgroundColor="yellow">{' '.repeat(seg(nJudge))}</Text>
-            </Box>
-            <Box flexDirection="row" gap={2}>
-              <Text dimColor><Text color="green">■</Text> 乾淨</Text>
-              <Text dimColor><Text color="red">■</Text> 待處理</Text>
-              <Text dimColor><Text color="yellow">■</Text> 要你判斷</Text>
+              <Text backgroundColor="green">{' '.repeat(filled)}</Text>
+              <Text backgroundColor="gray">{' '.repeat(barW - filled)}</Text>
             </Box>
           </Box>
         )}
         {r.rows.map((row, i) => (
           <Box flexDirection="column">
             <Box flexDirection="row" gap={1}>
-              <Text color={color(row.state)} bold>{MARK[row.state]}</Text>
+              <Text color={color(row)} bold>{shown(row, busy).mark}</Text>
               <Button key={`wrapup-row-${i}`} plain label={row.name} onPress={() => toggle(i)} />
-              <Text color={color(row.state)} wrap="truncate-end">{row.short}</Text>
+              <Text color={color(row)} wrap="truncate-end">{shown(row, busy).text}</Text>
               <Box flexGrow={1} />
               <Button key={`wrapup-arrow-${i}`} plain dimColor label={open.includes(i) ? '⌄' : '›'} onPress={() => toggle(i)} />
             </Box>

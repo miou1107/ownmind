@@ -34,3 +34,20 @@ THEN the tile is yellow again, because its detail changed.
 GIVEN a prompt whose origin is a task notification, a peer session or a scheduled trigger
 WHEN its text contains a wrap-up word
 THEN nothing runs and no pane opens.
+
+GIVEN the user typed a wrap-up word
+WHEN the pane is drawn before the AI's answer is complete
+THEN the header reads 完成 n / 6 with n the green items, and every item that is not green reads AI 處理中.
+WHEN a subagent's turn completes
+THEN nothing changes.
+WHEN the AI's own turn completes
+THEN the checks run again, a yellow item reads 等你決定：<short>, a red one 還沒處理：<short>,
+AND on the desktop their detail lines are listed under 還沒打勾的項目.
+
+GIVEN the user typed a wrap-up word while another turn was running
+WHEN that earlier turn completes
+THEN the items still read AI 處理中, until the wrap-up's own turn completes.
+
+GIVEN a hook beneath blocked the wrap-up prompt
+WHEN the pane is drawn
+THEN no item reads AI 處理中.
