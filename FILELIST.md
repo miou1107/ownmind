@@ -36,6 +36,38 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.31.0 修改（收工時把「學到的東西」記下來，由你決定要不要變成記憶）
+
+新增檔：
+```
+shared/session-lessons.js                  — normalizeLessons：兩端共用的正規化（字串當 stuck、去空白、最多 20 條、每欄 2000 字）；
+                                             lessonToMemory：留下時變成哪一條記憶（標題、三行內容、標籤）
+db/027_session_lessons.sql                 — session_lessons 表：一條學到的東西一列，new／promoted／dismissed，promoted 指向 memories
+src/routes/session-lessons.js              — createSessionLessonsRouter：列出我的、留下（跑記憶寫入同一套金鑰掃描、寫一條 project 記憶和
+                                             memory_history 建立紀錄、標 promoted）、不用留
+src/lib/session-lessons-store.js           — storeSessionLessons：收工時每一條各存一列，過不了記憶寫入那套掃描的只計數不存，
+                                             資料表不存在時只少掉學到的、不影響工作紀錄
+client/src/pages/Portal/LessonsPage.jsx    — 控制中心「學到的」頁
+openspec/changes/v1.31.0-lessons-at-close/ — proposal / spec / tasks
+tests/session-lessons.test.js              — 33 條：正規化、記憶形狀、請求內容只在有東西時帶 lessons、工具定義、舊伺服器提示、三個端點對假資料庫、
+                                             收工存入（含金鑰擋下、表不存在）、掛載順序、同步代碼帶即時數量與快取覆蓋、開場那一行
+```
+
+修改檔：
+```
+mcp/index.js                               — ownmind_log_session 定義多 lessons；沒帶時回應多 lessons_notice（提醒，不擋）；伺服器太舊沒收到時也說
+mcp/lib/session-log-body.js                — 帶上正規化後的 lessons，空的不帶
+src/routes/session.js                      — POST 交給 storeSessionLessons，回 lessons_saved／lessons_rejected
+src/app.js                                 — /api/session/lessons 掛在 /api/session 前面
+src/routes/memory.js                       — init 和 sync-token 都多 lessons_waiting（表不存在時為 null，不影響開場）
+hooks/lib/conditional-sync.js              — fetchSyncTokenInfo／overlayLiveFields：快取沒過期時，等著處理的數量仍用伺服器剛回的即時值
+hooks/lib/render-session-context.js        — 有等著處理的就多一段「Lessons waiting」，只寫路徑不寫死頁名
+client/src/App.jsx, components/common/nav-sections.js, components/common/Sidebar.jsx, i18n/{zh,en,ja}.json
+configs/CLAUDE.md, configs/ownmind-rules-block.md, docs/setup-claude-code.md
+tests/session-log-args.test.js             — 抓最外層的 required（lessons 的 items 有自己的 required）
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.30.51 修改（修正 v1.30.50 新測試在自動檢查失敗）
 
 修改檔：
