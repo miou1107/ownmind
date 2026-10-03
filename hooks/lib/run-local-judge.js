@@ -57,7 +57,7 @@ export async function runJudgeJob(job, deps = {}) {
   const { sessionId, turnId, apiUrl, apiKey } = job;
   // Carried into every record. A verdict that lands two turns late has to say which reply it
   // is about, or the correction is applied to a reply that was never judged.
-  const excerpt = replyExcerpt(job.assistantText);
+  const excerpt = replyExcerpt(job.assistantText, [apiKey]);
 
   // EVERY PATH OUT OF HERE WRITES. The parent left a `pending` marker before spawning this
   // process, and a marker nobody resolves becomes "the judge never came back" three minutes
@@ -74,8 +74,8 @@ export async function runJudgeJob(job, deps = {}) {
       // The reply and the prompts leave the machine here. Redacted on the way out, the same
       // way the client this replaced did it: an AI reply quoting a config file or a curl
       // command carries whatever the user was working on.
-      assistant_text: redact(job.assistantText),
-      user_prompts: (job.userPrompts || []).map(redact),
+      assistant_text: redact(job.assistantText, { secrets: [apiKey] }),
+      user_prompts: (job.userPrompts || []).map((p) => redact(p, { secrets: [apiKey] })),
       repo_remote: job.repoRemote || null,
       trigger: job.trigger || '',
     });
@@ -139,6 +139,7 @@ export async function runJudgeJob(job, deps = {}) {
     rules: selection.rules || [],
     assistantText: job.assistantText,
     userPrompts: job.userPrompts || [],
+    secrets: [apiKey],
     cli: choice.cli,
     ...(choice.model && { model: choice.model }),
   });
@@ -182,7 +183,7 @@ async function main() {
         outcome: 'failed',
         failure: 'judge-crashed',
         reason: toReason(err?.message || err),
-        reply_excerpt: replyExcerpt(job.assistantText),
+        reply_excerpt: replyExcerpt(job.assistantText, [job.apiKey]),
         violations: [],
       });
     } catch { /* nothing left to try */ }

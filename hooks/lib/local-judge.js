@@ -99,6 +99,8 @@ export async function judgeLocally({
   cli = 'claude',
   agyBin = 'agy',
   spawnImpl = spawn,
+  // Values the caller knows are secret (the OwnMind key it holds), masked in what goes back.
+  secrets = [],
 } = {}) {
   const useAgy = cli === 'agy';
   const chosenModel = model || (useAgy ? DEFAULT_AGY_MODEL : DEFAULT_MODEL);
@@ -228,7 +230,7 @@ export async function judgeLocally({
   // audit row is closed. The reply itself is redacted on the way out — this is the same text
   // arriving by a second road, so it gets the same treatment. Without it, a reply containing
   // `api_key=…` on the line a rule was broken on would send that line verbatim.
-  const safe = (v) => ({ ...v, evidence: redact(v.evidence), fix: redact(v.fix) });
+  const safe = (v) => ({ ...v, evidence: redact(v.evidence, { secrets }), fix: redact(v.fix, { secrets }) });
 
   const byId = new Map(rules.map((r) => [r.id, r]));
   const violations = verdicts
@@ -242,8 +244,8 @@ export async function judgeLocally({
         // user never wrote into a message telling them their rule was broken.
         ruleTitle: rule.title || '',
         ruleCode: rule.code || null,
-        evidence: redact(v.evidence),
-        fix: redact(v.fix),
+        evidence: redact(v.evidence, { secrets }),
+        fix: redact(v.fix, { secrets }),
       };
     });
 

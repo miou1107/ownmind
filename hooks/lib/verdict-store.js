@@ -28,6 +28,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { redact } from './redact.js';
 
 /** Same shape the gate uses; anything outside it could steer a path out of the state dir. */
 const SAFE_ID = /^[A-Za-z0-9._-]+$/;
@@ -82,8 +83,14 @@ export function textHash(assistantText, userPrompts = []) {
   return crypto.createHash('sha256').update(material).digest('hex').slice(0, 12);
 }
 
-export function replyExcerpt(assistantText) {
-  return String(assistantText ?? '').replace(/\s+/g, ' ').trim().slice(0, EXCERPT_CHARS);
+/**
+ * Redacted before the final cut: it sits on disk for days, is read back into the AI's context,
+ * and a cut can split a key past where any pattern recognises it. A first, generous cut keeps
+ * the redaction's cost bounded — this runs synchronously in the Stop hook, on replies of any size.
+ */
+export function replyExcerpt(assistantText, secrets = []) {
+  const head = String(assistantText ?? '').slice(0, EXCERPT_CHARS * 8);
+  return redact(head, { secrets }).replace(/\s+/g, ' ').trim().slice(0, EXCERPT_CHARS);
 }
 
 /**

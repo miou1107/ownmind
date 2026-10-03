@@ -268,7 +268,7 @@ function normalizeKeywordRuleName(raw) {
  * To curb false positives, each regex is tightly bounded on length and
  * character class.
  */
-const SECRET_REGEXES = [
+export const SECRET_REGEXES = [
   // WordPress Application Password: 4 chars per group, exactly 6 groups,
   // whitespace separated.
   // Shape: six space-separated groups of four alphanumerics. No literal example

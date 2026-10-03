@@ -83,7 +83,7 @@ export function startLocalJudge({
     outcome: 'pending',
     started_at: Date.now(),
     text_hash: hash,
-    reply_excerpt: replyExcerpt(assistantText),
+    reply_excerpt: replyExcerpt(assistantText, [apiKey]),
     violations: [],
   }, dir);
   if (!marked) return { started: false, reason: 'the state directory could not be written' };
