@@ -36,6 +36,16 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.47 修改（「OwnMind 按鈕」的測試在 Windows 上失敗）
+
+修改檔：
+```
+scripts/install-helpers/ensure-monitor-mod.cjs — 有傳 --platform（只有測試用）就不檢查功能資料夾在不在硬碟上；
+                                       原本只在 --platform 跟實際系統不同時才跳過，Windows 上會誤判
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.47
+```
+
 ## v1.30.46 修改（金鑰不再出現在程式的指令列上）
 
 新增檔：

@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.46** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.47** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **「OwnMind 按鈕」的測試在 Windows 上失敗，從 v1.30.45 起 GitHub 的檢查一直是紅的** — `ensure-monitor-mod.cjs` 只有在 `--platform` 跟實際系統不同時才跳過「功能資料夾在不在硬碟上」的檢查；在 Mac 上成立，在 Windows 上 `--platform win32` 就是實際系統，於是測試用的假路徑 `C:\Users\amy` 被判定不見、設定被移除。現在只要有傳 `--platform`（只有測試會用，安裝程式從不傳）就跳過。**影響使用者：** 沒有；真實安裝從來沒受影響。`v1.30.47`
 - **金鑰出現在程式的指令列上，Mac／Linux 同一台電腦的每個帳號用 `ps` 都看得到** — 腳本把金鑰當成 curl 的 `-H "Authorization: Bearer …"` 參數、直接寫進 `node -e` 的程式文字、當參數交給輔助程式；每次開對話的開場掛勾都這樣做。現在 curl 從標準輸入拿金鑰（`ownmind_curl_auth "$KEY" | curl -K -`），node 程式從環境變數拿（`OWNMIND_INSTALL_KEY`、`OWNMIND_HOOK_KEY`），`register-mcp-cli.cjs` 改用 `--key-env`，升級程式重跑安裝時也走環境變數；Windows 的掛勾和升級程式一起改。還沒改到的：使用者自己貼上執行的安裝指令（`bash -s -- 金鑰 網址`）。**影響使用者：** 沒有。只改電腦這一邊。`v1.30.46`
 - **看不到 OwnMind 在這次對話裡有沒有在運作** — 記憶有沒有載入、AI 查了幾次、規矩擋下了什麼，以前只能翻對話紀錄和 `~/.ownmind/logs`。Vin 做的 Claude Code 外掛 `ownmind-monitor` 收進 `mods/`，每個人預設開啟：輸入框下方多一個 🟢／🔴 OwnMind 按鈕，按下去是四格狀態和三張最近 7 天的圖（也可以輸入 `/ownmind`、`/ownmind-week`）。安裝和每次更新會在 `~/.claude/settings.json` 的 `env` 把這個資料夾加進 `CLAUDE_CODE_PLUGIN_DIRS`、設定 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`（原本列的其他外掛資料夾都保留，Windows 用分號分隔），手動裝在 `~/.claude/mods/ownmind-monitor` 的那一份會改指向新位置，不會載入兩次；之後外掛的修改跟著自動更新送到。Claude Code 要是有 function hooks 的新版才看得到按鈕。不想要的話建立 `~/.ownmind/.no-monitor-mod`。只要電腦更新，伺服器不用動。 `v1.30.45`
 - **存了金鑰的設定檔，Mac／Linux 上同一台電腦的其他帳號都讀得到** — 每次存檔都是先寫一個新的暫存檔再換上去，新檔案的權限照系統預設（通常是「大家都能讀」），所以 `~/.claude.json`、`~/.claude/settings.json` 和其他 AI 工具的設定檔，連同安裝時留下的 `settings.json.bak.*` 備份，都是其他帳號讀得到的。現在安裝和每次自動更新都會跑 `scripts/install-helpers/secure-key-files.cjs`，把這些檔案和備份裡存了 `OWNMIND_API_KEY`、而且屬於自己的，改成只有本人能讀（只改權限、不改內容；Windows 不動）；`register-mcp.cjs`、`ensure-key-file.cjs` 寫檔時直接設成只有本人能讀。**影響使用者：** 幾乎沒有；同一台電腦的其他帳號、或用別的使用者身分跑的容器，讀不到這些檔了。只改電腦這一邊。`v1.30.44`

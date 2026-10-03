@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.30.46** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.30.47** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -40,6 +40,7 @@ AI は強力ですが **本質的に長期記憶を持たず**、異なる AI �
 
 ### ペイン 1：新ウィンドウ開く度に「好みを再説明」
 
+- **モニター mod のテストが Windows で失敗し、v1.30.45 から main の CI が赤かった** — `ensure-monitor-mod.cjs` は `--platform` が実行中のプラットフォームと異なるときだけ「mod フォルダがディスクにあるか」の確認を省いていた。Mac では成り立つが、Windows では `--platform win32` が実際のプラットフォームなので、テストの架空の `C:\Users\amy` が「無い」と判定されて設定が消えていた。`--platform`（テスト専用、インストーラーは渡さない）が渡されたら常に省くよう修正。**ユーザーへの影響：** なし。実際のインストールは影響を受けていない。`v1.30.47`
 - **API キーがプロセスのコマンドラインに載り、Mac／Linux の同じマシンの全アカウントが `ps` で見られた** — スクリプトはキーを curl の `-H "Authorization: Bearer …"`、`node -e` のプログラム本文、補助スクリプトの引数として渡していた。セッション開始フックは会話のたびにこれを行っていた。現在 curl は標準入力から受け取り（`ownmind_curl_auth "$KEY" | curl -K -`）、node は環境変数（`OWNMIND_INSTALL_KEY`、`OWNMIND_HOOK_KEY`）から読み、`register-mcp-cli.cjs` は `--key-env` を使い、アップグレーダーも環境変数でインストーラーを再実行する。Windows のフックとアップグレーダーも同様。未対応：ユーザー自身が実行するインストール用ワンライナー（`bash -s -- KEY URL`）。**ユーザーへの影響：** なし。クライアントのみ。`v1.30.46`
 - **会話の中で OwnMind が動いているか見えなかった** — メモリが読み込まれたか、AI が何回検索したか、ルールのフックが何を止めたかは、会話ログと `~/.ownmind/logs` を読むしかありませんでした。Vin の Claude Code 拡張 `ownmind-monitor` を `mods/` に収め、全員に既定で有効にしました。入力欄の下に 🟢／🔴 OwnMind ボタンが出て、押すと状態カード 4 枚と直近 7 日間のグラフ 3 枚が開きます（`/ownmind`、`/ownmind-week` でも可）。インストールと毎回の更新で `~/.claude/settings.json` の `env` に `CLAUDE_CODE_PLUGIN_DIRS`（このフォルダを追加、既存の他のフォルダは保持、Windows は `;` 区切り）と `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` を設定し、手動で入れた `~/.claude/mods/ownmind-monitor` の指定は新しい場所に置き換えるので二重に読み込まれません。以後の拡張の変更は自動更新で届きます。function hooks のある Claude Code が必要で、古い版ではボタンが出ません。不要なら `~/.ownmind/.no-monitor-mod` を作成してください。クライアントの更新のみ。 `v1.30.45`
 - **API キーを含む設定ファイルが、Mac／Linux の同じマシンの他のアカウントから読めた** — 保存はすべて新しい一時ファイル経由で、そのファイルは umask（通常 022）に従うため、`~/.claude.json`、`~/.claude/settings.json`、他ツールの MCP 設定、フック導入時の `settings.json.bak.*` バックアップが 0644 になっていた。インストールと毎回の自動更新で `scripts/install-helpers/secure-key-files.cjs` を実行し、`OWNMIND_API_KEY` を含み本人が所有するそれらのファイルとバックアップから group／other の権限を外す（権限のみ・内容は変えない・Windows では何もしない）。`register-mcp.cjs` と `ensure-key-file.cjs` は本人のみ読める形で書く。**ユーザーへの影響：** ほぼなし。別アカウントや別ユーザーで動くコンテナからは読めなくなる。クライアントのみ。`v1.30.44`
