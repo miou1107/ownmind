@@ -36,6 +36,35 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.31.2 修改（撞車預警：改檔前告訴你誰也在改同一個資料夾）
+
+新增檔：
+```
+shared/touch-report.js                     — touchOf：檔案路徑 → 專案名稱＋相對資料夾（不含檔名、不含絕對路徑、家目錄及其上層一律 null）；
+                                             isValidTouch：伺服器端同一條規則；renderOverlapLine：給 AI 的那一行；
+                                             mergeOverlapIntoEnvelope：把那一行併進改檔提醒的回應
+hooks/lib/touch-state.js                   — ~/.ownmind/state/touches.json：每個對話每個資料夾十分鐘問一次（失敗也算）、每個人只提一次、一天後清掉
+hooks/ownmind-touch-report.js              — touchReport：改檔前送出、收答案、印一行；連不上就記 touch_report_failed 並進入十分鐘冷卻；
+                                             .no-touch-report 就整個不做
+db/029_edit_touches.sql                    — edit_touches 表（user, project, dir, session 各一列，last_seen）＋兩個索引
+src/routes/activity-touch.js               — createActivityTouchRouter：POST 寫入並回兩小時內的其他人；GET /overlaps（管理者）最近一天的配對
+src/jobs/touch-cleanup.js                  — 每天 03:10 刪一天以前的列
+client/src/pages/Team/OverlapsBlock.jsx    — 團隊統計頁的「誰跟誰改到同一個資料夾」區塊
+openspec/changes/v1.31.2-collision-warning/ — proposal / spec / tasks
+tests/touch-report.test.js                 — 24 條：路徑對應（含家目錄）、伺服器檢查、那一行、併進回應、狀態檔視窗與去重、
+                                             hook 半邊（注入網路、失敗冷卻）、兩個端點對假資料庫、清理
+```
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.js           — 改檔分支：提醒和撞車查詢並行，那一行併進同一個回應；撞車模組在分支裡才載入
+src/app.js                                 — /api/activity/touch 掛在 /api/activity 前面
+src/index.js                               — 啟動 touch 清理排程
+client/src/pages/Team/StatsPage.jsx        — 全團隊檢視時顯示 OverlapsBlock
+client/src/i18n/{zh,en,ja}.json            — overlaps.*
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.31.1 修改（後台登入不再把永久金鑰交給瀏覽器；網頁安全政策打開）
 
 新增檔：
