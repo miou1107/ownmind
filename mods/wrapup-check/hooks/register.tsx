@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { WrapupBaseline, WrapupReport, WrapupRow } from '../types'
+import type { WrapupBaseline, WrapupReport, WrapupResolution, WrapupRow } from '../types'
 
 // Wrap-up self-check. When the user says they are wrapping up (收工, 收尾, 下班, 交接, wrap up),
 // run the six checks of team standard 723, open the result in a pane, and hand the same
@@ -16,11 +16,14 @@ const TITLE = 'OwnMind 收工自我檢查'
 // 收尾一下) and are only taken when they stand on their own. The English form must not be
 // part of a longer token, so the mod's own name (wrapup-check) and /wrapup do not count.
 const TRIGGER = /收工|收尾(?!一下|工作|的)|下班(?!前|後|時間|之後|以後)|交接(?!文件|單|人|事項|書|清單|流程)|(?<![\w\/-])wrap[\s-]?up(?![\w-])/i
+const NOT_THE_USER = new Set(['task-notification', 'scheduled-trigger', 'peer', 'peer-send-message', 'coordinator', 'observer', 'observer-activity'])
 const TEST_CMD = /\b(pytest|vitest|jest|mocha|go test|cargo test|npm test|pnpm test|yarn test|bun test|plugin test|make test)\b/
 const MAIN_CANDIDATES = ['main', 'master']
 const CODE_FILE = /\.(ts|tsx|cts|mts|js|jsx|cjs|mjs|py|go|rs|vue|svelte|sql|sh|ps1|psm1|vbs|bat|cmd)$/
 // Listening ports that belong to the OS or to always-on desktop apps, never to a session.
-const PORT_NOISE = /^(ControlCe|rapportd|com\.docke|Docker|ollama|Google|Chrome|Safari|Dropbox|Nextcloud|OneDrive|Spotify|Slack|zoom)/i
+// agy is OwnMind's own reply judge on machines that pick it: every turn starts one, it listens
+// while it judges and exits by itself, so a wrap-up taken mid-judge would always see it.
+const PORT_NOISE = /^(ControlCe|rapportd|com\.docke|Docker|ollama|Google|Chrome|Safari|Dropbox|Nextcloud|OneDrive|Spotify|Slack|zoom|agy\s)/i
 
 const EMPTY_BASELINE: WrapupBaseline = { containers: [], ports: [], worktrees: [], takenAt: 0 }
 const EMPTY_REPORT: WrapupReport = { at: 0, rows: [] }
@@ -29,6 +32,8 @@ const baseline = atom({ plugin: 'wrapup-check', key: 'baseline' } as const, EMPT
 const report = atom({ plugin: 'wrapup-check', key: 'report' } as const, EMPTY_REPORT)
 const counts = atom({ plugin: 'wrapup-check', key: 'counts' } as const, { tests: 0, background: 0 })
 const openRows = atom({ plugin: 'wrapup-check', key: 'openRows' } as const, [])
+const resolved = atom({ plugin: 'wrapup-check', key: 'resolved' } as const, [] as WrapupResolution[])
+const RESOLVE_TOOL = 'mcp__wrapup-check__resolve'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = (ms: number) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}` }
@@ -222,7 +227,12 @@ const NAMES = ['分支', '推拉與 stash', '版號', '驗證與文件', '測試
 const notGitRow = (name: string): WrapupRow =>
   ({ name, short: '這裡不是 git 專案', state: 'judge', lines: ['這個資料夾不是 git 專案，或是這台電腦沒有 git，這一項查不了'] })
 
+// Each run gets a number; a run that finishes after a newer one started does not write, so a
+// slow run can never put an older result (or its 查中 rows) over a newer one.
+let runSeq = 0
+
 const runChecks = async ($: any) => {
+  const seq = ++runSeq
   const cwd = await $.session.cwd()
   const c = await read($, counts)
   const running: WrapupRow[] = NAMES.map(name => ({ name, short: '查中', state: 'running', lines: ['查中'] }))
@@ -237,8 +247,16 @@ const runChecks = async ($: any) => {
     checkResidue($, cwd, c.background),
     checkHandoff($),
   ])
+  // A yellow row the model already handled turns green. A red row stays red whatever the
+  // model said: red is a fact the mod measured, and only fixing it makes it go away.
+  const done = await read($, resolved)
+  for (let i = 0; i < rows.length; i++) {
+    // Only while the row still says what it said when it was handled: a new reason is new work.
+    const r = done.find(d => d.name === rows[i].name && d.seen === rows[i].lines.join('\n'))
+    if (r && rows[i].state === 'judge') rows[i] = { name: rows[i].name, short: r.done, state: 'clean', lines: [r.done] }
+  }
   const at = await $.clock.now()
-  await update($, report, () => ({ at, rows }))
+  if (seq === runSeq) await update($, report, () => ({ at, rows }))
   return { rows, at }
 }
 
@@ -305,6 +323,20 @@ const panelSvg = (rows: WrapupRow[], nClean: number, nDirty: number, nJudge: num
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'wrapup', description: '收工六項自檢：分支、推拉、版號、驗證、殘留、交接' })
+    await $.tool.register({
+      name: 'resolve',
+      description: 'Wrap-up self-check: after you have handled a yellow item of the wrap-up pane, report it here so the tile turns green. '
+        + 'Give the item name exactly as the pane shows it, and one short sentence in Traditional Chinese, from the user\'s point of view, saying what you did. '
+        + 'A red item cannot be resolved here: fix it, and the next check sees it gone. Leave an item unresolved only when the user has to decide it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          item: { type: 'string', enum: NAMES },
+          done: { type: 'string', description: 'What you did, one sentence, at most 40 characters' },
+        },
+        required: ['item', 'done'],
+      },
+    })
     // Taken once per session and not awaited: docker and lsof can take seconds, and a session
     // start must not wait on them. The residue check says so if it runs before this finishes.
     if (!(await read($, baseline)).takenAt) void snapshot($)
@@ -322,12 +354,37 @@ export const register: Register = on => {
 
   // The user says they are wrapping up: run the checks, open the pane, then let the model
   // answer with the result in front of it.
+  // The model reports a yellow row it handled. The checks run again first, so the answer is
+  // about the machine now: a row that went red is refused, a row already green needs nothing.
+  on('tool.call', { tool: RESOLVE_TOOL }, async ($, e) => {
+    const input = e as any
+    const item = String(input.item ?? '')
+    const done = String(input.done ?? '').trim().slice(0, 60)
+    if (!NAMES.includes(item)) return { deny: `面板上沒有「${item}」這一項。面板上的六項是：${NAMES.join('、')}` }
+    if (!done) return { deny: '要用一句話寫出你對這一項做了什麼' }
+    const before = (await runChecks($)).rows.find(r => r.name === item)!
+    if (before.state === 'dirty') return { deny: `「${item}」還是紅色：${before.lines.join('；')}。處理完之後，下一次檢查就會變綠。` }
+    if (before.state === 'judge') {
+      const at = await $.clock.now()
+      await update($, resolved, list => [...list.filter(r => r.name !== item), { name: item, done, at, seen: before.lines.join('\n') }])
+    }
+    const { rows } = await runChecks($)
+    const left = rows.filter(r => r.state !== 'clean')
+    return { result: left.length ? `「${item}」已經變綠。還沒變綠的有：${left.map(r => `${r.name}（${r.short}）`).join('、')}` : `「${item}」已經變綠，六項都是綠色。` } as any
+  })
+
   on('prompt.submit', async ($, e, next) => {
+    // Only the user's own words count. A background task's notice, another session's message
+    // or a scheduled prompt can quote "wrap-up" without anyone wrapping up.
+    if (NOT_THE_USER.has(String((e as any).origin?.kind ?? ''))) return next(e)
     if (!TRIGGER.test(e.text)) return next(e)
+    // A new wrap-up starts from what the machine looks like now: whatever was handled last
+    // time has to be handled again if it is still there.
+    await update($, resolved, () => [])
     const { rows, at } = await runChecks($)
     await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
     const text = summary(rows, at)
-    return next({ ...e, context: [...(e.context ?? []), `${text}\n（這是收工自檢 mod 剛跑完的六項結果。面板已經開給使用者看了，回報只講兩句：東西收好了沒有；有沒有一件要他決定的事。第六項的 OwnMind 交接單要用 ownmind 工具再查一次。）`] })
+    return next({ ...e, context: [...(e.context ?? []), `${text}\n（這是收工自檢剛跑完的六項結果，面板已經開給使用者看了。每一格都要處理到綠色再回話：紅色的直接處理掉；黃色的查清楚、處理完，就呼叫 ${RESOLVE_TOOL}，用一句話寫你做了什麼，那一格會變綠。只有真的要使用者決定的那一格可以留著。待辦與交接這一項，要用 ownmind 工具查過交接單。全部處理完再回報，只講兩句：東西收好了沒有；有沒有一件要他決定的事，沒有就說沒有。處理過程不要寫進回報。）`] })
   })
 
   on('command.run', { command: 'wrapup' }, async $ => {

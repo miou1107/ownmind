@@ -30,7 +30,7 @@ const CLEAN: Record<string, string> = {
   'git diff --name-only abc..HEAD': '',
 }
 
-type World = { containers: string; agents: any[]; files: Record<string, string> }
+type World = { containers: string; agents: any[]; files: Record<string, string>; ports?: string; tools?: any[] }
 const world = (): World => ({ containers: '', agents: [], files: {} })
 
 const setup = (on: any, git: Record<string, string>, w: World) => {
@@ -41,12 +41,13 @@ const setup = (on: any, git: Record<string, string>, w: World) => {
   on('fs.read', (_: any, e: any) => (e.path in w.files ? { value: w.files[e.path] } : { deny: 'missing' }))
   on('ui.toast', () => ({ value: undefined }))
   on('command.register', () => ({ value: { command: 'wrapup' } }))
+  on('tool.register', (_: any, e: any) => { w.tools = [...(w.tools ?? []), e]; return { value: { tool: `mcp__wrapup-check__${e.name}` } } })
   on('agent.list', () => ({ value: w.agents }))
   on('process.run', (_: any, e: any) => {
     const argv: string[] = e.argv ?? []
     let stdout = ''
     if (argv[0] === 'docker') stdout = w.containers
-    else if (argv[0] === 'lsof') stdout = 'COMMAND PID USER FD TYPE DEVICE SIZE NODE NAME\n'
+    else if (argv[0] === 'lsof') stdout = `COMMAND PID USER FD TYPE DEVICE SIZE NODE NAME\n${w.ports ?? ''}`
     else stdout = git[argv.join(' ')] ?? ''
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -140,6 +141,9 @@ test('words that only look like a wrap-up do not trigger it', async ($, on) => {
     await ($ as any).prompt.submit({ text, wait: false })
   }
   expect(opened.length).toBe(5)
+  // A background task's notice that mentions a wrap-up is not the user wrapping up.
+  await ($ as any).prompt.submit({ text: 'Agent "Review wrap-up resolve change" finished', wait: false, origin: { kind: 'task-notification' } })
+  expect(opened.length).toBe(5)
 })
 
 test('a clean repo shows green tiles and no red mark', async ($, on) => {
@@ -214,4 +218,64 @@ test('test commands and background commands run in this session are counted', as
   const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
   expect(r.text).toMatch(/跑過 1 次測試指令/)
   expect(r.text).toMatch(/丟到背景跑的指令有 1 條/)
+})
+
+test('a yellow row the model handled turns green; a red row cannot be talked green; a new wrap-up starts over', async ($, on) => {
+  const w = world()
+  const git: Record<string, string> = { ...CLEAN, 'git branch --no-merged main': '  vin/old-fix\n', 'git rev-list --count rc0.35.124..HEAD': '2\n' }
+  setup(on, git, w)
+  let seen: any = null
+  ;(on as any)('prompt.submit', (_: any, e: any) => { seen = e; return { text: e.text } })
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('command.run', () => ({ text: '' }))
+  await start($)
+  await ($ as any).prompt.submit({ text: '收工', wait: false })
+  // The model can only call what the session declared, with the six names to pick from.
+  const decl = (w.tools ?? []).find((x: any) => x.name === 'resolve')
+  expect(decl?.inputSchema?.properties?.item?.enum).toEqual(['分支', '推拉與 stash', '版號', '驗證與文件', '測試環境殘留', '待辦與交接'])
+  const call = (item: string, done: string) => ($ as any).tool.call({ tool: 'mcp__wrapup-check__resolve', item, done })
+
+  // Red: refused, and the tile stays red.
+  const red = await call('分支', '不用管')
+  expect(red.deny).toMatch(/還是紅色：還沒併進 main 的分支：vin\/old-fix/)
+
+  // Yellow: green, with the model's sentence as the tile text.
+  const ok = await call('版號', '只改了註解，排進下一次發版')
+  expect(ok.result).toMatch(/「版號」已經變綠/)
+  expect(ok.result).toMatch(/分支/)
+  const ui: any = await mountPane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /只改了註解，排進下一次發版/ })).toBeDefined()
+  await ui.unmount()
+
+  // The version row now says something else (one more commit): it is yellow again.
+  git['git rev-list --count rc0.35.124..HEAD'] = '3\n'
+  const again: any = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
+  expect(again.text).toMatch(/待辦[\s\S]*版號：上一個 tag 是 rc0\.35\.124，之後還有 3 個 commit/)
+  expect((await call('版號', '三個都只改註解')).result).toMatch(/「版號」已經變綠/)
+
+  // An unknown item and an empty sentence are refused.
+  expect((await call('部署', '好了')).deny).toMatch(/面板上沒有「部署」這一項/)
+  expect((await call('待辦與交接', '  ')).deny).toMatch(/一句話/)
+
+  // Fixing the red row makes it green; then the last yellow row, and all six are green.
+  git['git branch --no-merged main'] = ''
+  const last = await call('待辦與交接', '查過 OwnMind，沒有沒人接的交接單')
+  expect(last.result).toMatch(/六項都是綠色/)
+
+  // A new wrap-up forgets what was handled: the version row is yellow again.
+  await ($ as any).prompt.submit({ text: '收工', wait: false })
+  expect((seen.context ?? []).join('\n')).toMatch(/待辦\n[\s\S]*版號/)
+  expect((seen.context ?? []).join('\n')).toMatch(/每一格都要處理到綠色/)
+})
+
+test('agy listening while it judges a reply is not residue', async ($, on) => {
+  const w = world()
+  setup(on, CLEAN, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('command.run', () => ({ text: '' }))
+  await start($)
+  w.ports = 'agy 22088 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:57259 (LISTEN)\nnode 1 v 7u IPv4 0x1 0t0 TCP 127.0.0.1:5173 (LISTEN)\n'
+  const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
+  expect(r.text).toMatch(/port 還開著：node 127\.0\.0\.1:5173/)
+  expect(r.text).not.toMatch(/agy/)
 })
