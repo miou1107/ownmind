@@ -23,7 +23,8 @@
 //
 // Usage:  node ensure-monitor-mod.cjs [--settings <path>] [--ownmind-dir <path>]
 //                                     [--home <path>] [--platform <darwin|linux|win32>]
-//         (--home and --platform let the tests exercise Windows from a Mac.)
+//         (--home and --platform are for the tests only: they exercise another platform's
+//         paths, so --platform also skips the check that the mod folder exists on disk.)
 // Output: one machine-readable line —
 //         OK:monitor_mod:unchanged | OK:monitor_mod:installed | OK:monitor_mod:updated
 //         OK:monitor_mod:opted_out | OK:monitor_mod:missing (the checkout has no mod folder;
@@ -147,9 +148,12 @@ function main() {
   const optedOut = fs.existsSync(path.join(ownmindDir, '.no-monitor-mod'));
   // Pointing Claude Code at a folder that is not there would only produce a warning on every
   // start, so a missing mod folder (an older checkout, a rollback) removes our entry the same
-  // way the opt-out does. Checked only when the platform is the one we run on: the tests pass
-  // Windows paths from a Mac.
-  const isMissing = !optedOut && platform === process.platform
+  // way the opt-out does. Not checked when --platform is passed: that flag exists only for
+  // the tests, which hand in another platform's paths that are not on this disk. It used to
+  // be skipped only when the platform differed from the one running, which held on a Mac and
+  // failed on Windows, where `--platform win32` is the real platform and the fake
+  // C:\Users\amy checkout was reported missing. The installers never pass --platform.
+  const isMissing = !optedOut && !args.platform
     && !fs.existsSync(path.join(ownmindDir, 'mods', MOD_NAME, '.claude-plugin', 'plugin.json'));
   const optOut = optedOut || isMissing;
 
