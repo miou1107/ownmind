@@ -36,6 +36,28 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.44 修改（存了金鑰的設定檔改成只有本人能讀）
+
+新增檔：
+```
+scripts/install-helpers/secure-key-files.cjs — 掃各 AI 工具的設定檔（清單來自 migrate-api-url.cjs 的 sourcesFor）、旁邊的
+                                       備份與暫存檔、~/.claude/backups 裡的 .claude.json 備份；有 OWNMIND_API_KEY 且屬於
+                                       自己的，拿掉 group／other 權限；只改權限；Windows 不動；不會讓呼叫的人失敗
+tests/key-file-permissions.test.js    — register-mcp／ensure-key-file 新寫的檔是 0600；掃描會改設定檔、備份、暫存檔；
+                                       不動沒金鑰的、已經私有的、別人的檔；改符號連結背後的真檔；只改權限；
+                                       讀不到的檔會回報；Windows 不動；不印出金鑰；安裝在完整性檢查前跑、更新有跑
+```
+
+修改檔：
+```
+scripts/install-helpers/register-mcp.cjs, ensure-key-file.cjs — 暫存檔以 0600 寫入再換上去
+install.sh                            — 完整性檢查前跑 secure-key-files.cjs（|| true）
+scripts/update.sh                     — 6d：跑 secure-key-files.cjs，輸出記進 update-err.log（|| true）
+tests/git-hook-passthrough.test.js    — Git for Windows 自帶 git-lfs、蓋過測試替身時跳過（GitHub 的 Windows 機器就是）
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.44
+```
+
 ## v1.30.43 修改（被靜靜關掉的 git 小幫手：上傳、切換分支、拉更新恢復）
 
 新增檔：
