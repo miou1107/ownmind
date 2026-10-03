@@ -622,6 +622,19 @@ else
   echo "[WARN] ensure-session-hook.cjs not found; SessionStart hook left as-is"
 fi
 
+# --- 4c-2b. OwnMind monitor mod (v1.30.45) ---
+# Points Claude Code at mods/ownmind-monitor inside this checkout via settings.json "env"
+# (CLAUDE_CODE_PLUGIN_DIRS + CLAUDE_CODE_ENABLE_FUNCTION_HOOKS), so every pull delivers the
+# newest mod. Other plugin folders are kept. Opt out: touch ~/.ownmind/.no-monitor-mod
+ENSURE_MOD="$OWNMIND_DIR/scripts/install-helpers/ensure-monitor-mod.cjs"
+if [ -f "$ENSURE_MOD" ]; then
+  if mod_result=$(node "$ENSURE_MOD" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+    echo "[ OK ] OwnMind monitor mod: $mod_result"
+  else
+    echo "[FAIL] OwnMind monitor mod: $mod_result"
+  fi
+fi
+
 # --- 4c-3. Background credentials (v1.26.87) ---
 # A key that lives only in the environment works for the MCP and for nothing else: the
 # usage scanner runs from launchd / Task Scheduler and cannot inherit a shell. Copy it into

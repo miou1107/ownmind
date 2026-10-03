@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.30.44** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.30.45** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -40,6 +40,7 @@ AI は強力ですが **本質的に長期記憶を持たず**、異なる AI �
 
 ### ペイン 1：新ウィンドウ開く度に「好みを再説明」
 
+- **会話の中で OwnMind が動いているか見えなかった** — メモリが読み込まれたか、AI が何回検索したか、ルールのフックが何を止めたかは、会話ログと `~/.ownmind/logs` を読むしかありませんでした。Vin の Claude Code 拡張 `ownmind-monitor` を `mods/` に収め、全員に既定で有効にしました。入力欄の下に 🟢／🔴 OwnMind ボタンが出て、押すと状態カード 4 枚と直近 7 日間のグラフ 3 枚が開きます（`/ownmind`、`/ownmind-week` でも可）。インストールと毎回の更新で `~/.claude/settings.json` の `env` に `CLAUDE_CODE_PLUGIN_DIRS`（このフォルダを追加、既存の他のフォルダは保持、Windows は `;` 区切り）と `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` を設定し、手動で入れた `~/.claude/mods/ownmind-monitor` の指定は新しい場所に置き換えるので二重に読み込まれません。以後の拡張の変更は自動更新で届きます。function hooks のある Claude Code が必要で、古い版ではボタンが出ません。不要なら `~/.ownmind/.no-monitor-mod` を作成してください。クライアントの更新のみ。 `v1.30.45`
 - **API キーを含む設定ファイルが、Mac／Linux の同じマシンの他のアカウントから読めた** — 保存はすべて新しい一時ファイル経由で、そのファイルは umask（通常 022）に従うため、`~/.claude.json`、`~/.claude/settings.json`、他ツールの MCP 設定、フック導入時の `settings.json.bak.*` バックアップが 0644 になっていた。インストールと毎回の自動更新で `scripts/install-helpers/secure-key-files.cjs` を実行し、`OWNMIND_API_KEY` を含み本人が所有するそれらのファイルとバックアップから group／other の権限を外す（権限のみ・内容は変えない・Windows では何もしない）。`register-mcp.cjs` と `ensure-key-file.cjs` は本人のみ読める形で書く。**ユーザーへの影響：** ほぼなし。別アカウントや別ユーザーで動くコンテナからは読めなくなる。クライアントのみ。`v1.30.44`
 - **OwnMind を入れると、OwnMind の 4 つ以外のリポジトリのフックが黙ってスキップされていた** — OwnMind は `core.hooksPath` をグローバルに設定するため、git は各リポジトリの `.git/hooks` を読まなくなります。OwnMind 以前から Git LFS のフックがあるリポジトリは push が「成功」しても大きなファイルが送られず、push 前のチェックも消え、以前のグローバルなフックの場所は上書きされて失われていました。現在は pre-push・post-checkout・post-merge がリポジトリ自身のフック（worktree にも対応）に引き継ぎ、LFS を使うのに自前のフックがないリポジトリでは `git lfs` を呼びます。`~/.ownmind/git-hooks` にある OwnMind 以外のフック（`git lfs install` が置いたものなど）は上書きしません。以前のグローバルな場所は記録して連結し、自動更新でインストール済みのマシンにも追加します。**ユーザーへの影響：** Windows では push・checkout・pull/merge がそれぞれ約 0.1 秒遅くなります（commit は変わりません）。スキップされていた push 前のチェックが再び動き、push を止める場合があります。 `v1.30.43`
 - **どのメンバーでも他人の非公開の鉄則のタイトルを読めた** — 報告された `memory_disable` を補完する際、対象メモリの所有者を確認せずに検索していたため、ID を順に報告すれば全員の鉄則のコードとタイトルを自分のログに保存できました。さらに「落とし穴の記録」ページは全メンバーにチーム全体の行（他人の鉄則タイトル、名前、セッション要約）を表示していました。現在は OwnMind の他の箇所と同じ閲覧ルール（`buildReadableWhere`）で検索し、ページは管理者にはチーム全体、メンバーには自分の行のみを表示します。旧データ用のフォールバック検索は行の持ち主のメモリのみを読み、テンプレート文字列でバックスラッシュが消えて一度も一致しなかった数字パターンも正しく SQL に届くようになり（偽の巨大 ID でページが壊れないよう 9 桁まで）、チームレポートのコンプライアンス欄も他人の鉄則タイトルをメンバーに見せなくなりました。サーバーの更新が必要です。 `v1.30.42`

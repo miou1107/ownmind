@@ -1,0 +1,1 @@
+{ "name": "ownmind-monitor", "version": "0.1.0", "description": "Shows whether OwnMind is loaded, consulted and enforcing rules in this session", "author": { "name": "Vin (miou1107)" }, "types": "./types/index.d.ts" }

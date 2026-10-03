@@ -485,6 +485,18 @@ if [ -f "$ENSURE_HOOK" ]; then
   fi
 fi
 
+# --- 3.4a OwnMind monitor mod (v1.30.45, shared implementation) ---
+# Runs on every update, so machines installed before v1.30.45 get the mod on their next
+# auto-update, and a moved or hand-installed copy is replaced. See ensure-monitor-mod.cjs.
+ENSURE_MOD="$OWNMIND_DIR/scripts/install-helpers/ensure-monitor-mod.cjs"
+if [ -f "$ENSURE_MOD" ]; then
+  if mod_result=$(node "$ENSURE_MOD" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+    echo "   OwnMind monitor mod: $mod_result"
+  else
+    echo "   [FAIL] OwnMind monitor mod: $mod_result"
+  fi
+fi
+
 # --- 3.4b Background credentials (v1.26.87, delegated to the shared implementation) ---
 # The key can be valid, the MCP can be uploading, and every scheduled run can still be
 # blind — launchd / Task Scheduler do not inherit a shell's environment.

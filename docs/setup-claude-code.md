@@ -34,6 +34,33 @@ hooks），但 `ownmind_*` 工具在任何 session 裡都不存在 —— 看起
 }
 ```
 
+## OwnMind 運作狀況按鈕（v1.30.45 起）
+
+Claude Code 輸入框下方的 🟢／🔴 OwnMind 按鈕，用來看 OwnMind 在這次對話裡有沒有在運作。
+按下去會打開「OwnMind 運作狀況」面板，也可以輸入 `/ownmind` 打開，`/ownmind-week` 看最近 7 天的摘要。
+
+| 按鈕 | 代表什麼 |
+|---|---|
+| 🟢 OwnMind | 這次對話已經載入記憶，最近一次連 OwnMind 主機也正常 |
+| 🔴 OwnMind | 這次對話沒有載入記憶，或是最近一次連 OwnMind 主機失敗 |
+
+這個按鈕是放在 OwnMind 裡的 Claude Code 外掛（`~/.ownmind/mods/ownmind-monitor`），安裝和每次自動更新都會在
+`~/.claude/settings.json` 的 `env` 寫入兩個設定，一般使用者不需要手動做：
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/you/.ownmind/mods/ownmind-monitor",
+    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
+  }
+}
+```
+
+- `CLAUDE_CODE_PLUGIN_DIRS` 原本列的其他資料夾會保留。macOS／Linux 用冒號分隔，Windows 用分號分隔。
+- Claude Code 要是有 function hooks 功能的新版才看得到這個按鈕。舊版看不到按鈕，OwnMind 其他功能照常。
+- 設定改完之後，要重新開一個 Claude Code 對話才會出現按鈕。
+- 不想要這個按鈕：建立 `~/.ownmind/.no-monitor-mod` 這個空檔案，下一次更新就會把設定移除，之後也不會再加回去。
+
 ## CLAUDE.md 設定（可選）
 
 在專案的 CLAUDE.md 或全域 ~/.claude/CLAUDE.md 加入：
