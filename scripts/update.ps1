@@ -583,7 +583,9 @@ if (Test-Path $CursorDir) {
 # in the update that already runs unattended.
 $MigrateUrl = Join-Path $OwnMindDir "scripts\install-helpers\migrate-api-url.cjs"
 if (Test-Path $MigrateUrl) {
-  try { & node $MigrateUrl } catch { }
+  # stderr is where it names a config it could not rewrite or an address it could not check;
+  # without the redirect that went nowhere on Windows, while update.sh kept it (v1.30.37).
+  try { & node $MigrateUrl 2>>$ErrLog } catch { }
 }
 
 $SelfCheck = Join-Path $OwnMindDir "scripts\install-helpers\self-check.cjs"

@@ -356,6 +356,11 @@ describe('the unattended update actually runs it', () => {
     assert.match(read('scripts/update.ps1'), /&\s*node\s+\$MigrateUrl/);
   });
 
+  it('both updaters keep what it writes to stderr, so a skipped address is not silent', () => {
+    assert.match(read('scripts/update.sh'), /node "\$MIGRATE_URL" 2>>/);
+    assert.match(read('scripts/update.ps1'), /&\s*node\s+\$MigrateUrl\s+2>>\s*\$ErrLog/);
+  });
+
   it('the server publishes the field the client reads', () => {
     assert.match(read('src/routes/memory.js'), /canonical_url: process\.env\.CANONICAL_URL/);
   });
