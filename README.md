@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.30.36** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.30.37** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -40,6 +40,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **On Windows, the address move's warnings went nowhere** — v1.30.36 said an address with no key, or a config that will not parse, is reported in the update's error log. That held on macOS and Linux only: `update.ps1` ran the step without redirecting stderr. It now appends to `~/.ownmind/logs/update-errors.log` like the script's other steps; checked on Windows PowerShell 5.1. `v1.30.37`
 - **When the server moved, only Claude Code followed — Codex, Windsurf, OpenCode and Cursor kept the old address** — the unattended update asked the server Claude Code points at where it should be, and stopped when the answer was "right here". On a machine where Claude Code had already moved, the other tools were never looked at; on 2026-10-02 the retired host's logs still showed them, working only because it forwards to the new one. The update now gathers every address on the machine (Claude Code, Cursor, Windsurf, OpenCode, Gemini CLI, and Codex's TOML, edited as text so nothing else changes), asks each one's own server, rewrites only what that server says has moved, and reads every changed file back. A server is asked only with the key stored beside its own address (per table in a Codex file; commented lines do not count), falling back to `OWNMIND_API_KEY` from the environment; an address with no key, and a config that will not parse, are reported rather than silently skipped. Writes follow symlinks, keep the file mode, and never leave the temporary copy behind. `v1.30.36`
 - **New bug reports were never said out loud, and the link pointed at a page that does not exist** — the session-start section reached the AI with no instruction to relay it, so on 2026-10-02 the owner heard neither "9 of your reports have been resolved" nor a new report waiting. The AI now says it in its first sentence; admins see waiting reports by number and title, and the link opens `/dashboard/admin/bugs` on your own server (members get `/dashboard/portal/reports`). `v1.30.35`
 - **An expired Claude Code login was reported as a generic refusal, and replies went unchecked for six weeks** — from 2026-08-19 the judge on the owner's Mac answered "OAuth session expired" 3,470 times; only "Not logged in" counted as signed out, so the user was told to try `claude` in a terminal instead of signing in again. The OAuth wording now counts as signed out. Separately, `~/.ownmind/judge.json` lets one machine pick its judge (`"cli": "agy"` runs Gemini, default `gemini-3.8-flash-low`, in plan mode, sandboxed) and judge silently (`"silent": true` keeps recording and stops all reply-check notices). Without the file nothing changes. `v1.30.34`

@@ -36,6 +36,17 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.37 修改（Windows 的自動更新保留網址搬家這一步的錯誤訊息）
+
+修改檔：
+```
+scripts/update.ps1                    — 跑 migrate-api-url.cjs 時把錯誤訊息接到 $ErrLog（update-errors.log），
+                                       跟 update.sh 一樣不再丟掉
+tests/api-url-migration.test.js       — 新增 1 條：兩支更新程式都要保留它的錯誤訊息
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.37
+```
+
 ## v1.30.36 修改（伺服器搬家時，其他工具的設定也跟著換，#152）
 
 修改檔：
