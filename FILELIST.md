@@ -36,6 +36,33 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.31.1 修改（後台登入不再把永久金鑰交給瀏覽器；網頁安全政策打開）
+
+新增檔：
+```
+db/028_web_sessions.sql               — web_sessions 表：每個瀏覽器的登入（只存 token 雜湊、最後使用時間、到期時間、作廢時間）
+src/utils/web-session.js              — 建立／查詢／作廢登入憑證；requireRecentLogin（拿金鑰的路線要 15 分鐘內登入）
+src/utils/content-security-policy.js  — 網頁安全政策設定
+src/public/setup.js                   — 安裝精靈的程式（從 setup.html 搬出來）
+tests/console-session-token.test.js   — 登入憑證、驗證、作廢、15 分鐘限制、安全政策、後台網頁
+```
+
+修改檔：
+```
+src/middleware/auth.js                — 接受 oms_ 登入憑證
+src/routes/me.js                      — 登入／首次設密碼發登入憑證；新增 logout；改密碼作廢其他登入
+src/utils/first-password.js           — loginResponseFor 回 session_token，不回 api_key
+src/routes/admin.js                   — 救援 setup 不回金鑰並作廢登入；改密碼作廢登入；舊密碼錯改 400
+src/routes/admin-password-reset.js    — 重設前先作廢登入
+src/routes/api-key-rotate.js, src/routes/admin-api-key.js — 用登入憑證時要 15 分鐘內登入
+src/app.js                            — 開啟網頁安全政策；提供 /setup.js
+src/public/setup.html                 — 移除內嵌程式與 onclick
+scripts/reset-admin-password.js       — 清密碼時一併作廢登入
+client/src/api/auth.js 等             — 改存登入憑證、刪除舊金鑰、登出通知伺服器
+tests/console-session-identity.test.js, first-password, login-outcome, setup-recovery — 跟著改
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.31.0 修改（收工時把「學到的東西」記下來，由你決定要不要變成記憶）
 
 新增檔：
