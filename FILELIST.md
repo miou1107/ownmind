@@ -36,6 +36,26 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.49 修改（送去伺服器檢查的回話，遮蔽金鑰的規則加強）
+
+新增檔：
+```
+tests/redact-strength.test.js         — 先在舊程式上重現（19 項失敗）：沒名稱的各家金鑰、JSON（含跳脫）、含空格的值、
+                                       環境變數、指令參數、中文、網址密碼、curl -u、各種標頭、Cookie、XML、Webhook、私鑰、
+                                       自己的金鑰；中文句子不被整句遮、普通英文不被遮；200KB 惡意輸入不會變慢
+```
+
+修改檔：
+```
+hooks/lib/redact.js                   — 改寫 redact()，新增 { secrets } 參數（呼叫者自己的金鑰）
+shared/secret-detect.js               — SECRET_REGEXES 改為 export，給 redact.js 引用
+hooks/lib/run-local-judge.js          — 送出的回話、提問、裁判、摘要都帶上自己的金鑰
+hooks/lib/local-judge.js              — 新增 secrets 參數，裁判引用的證據用它遮
+hooks/lib/start-local-judge.js        — 摘要帶上自己的金鑰
+hooks/lib/verdict-store.js            — replyExcerpt 先遮蔽再截短（先粗切控制耗時）
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.30.48 修改（自動更新只更新到正式版本）
 
 新增檔：

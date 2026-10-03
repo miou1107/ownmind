@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.48** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.49** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **送去伺服器檢查的回話，遮蔽金鑰的規則只認兩種寫法** — 「名稱=值」（名稱和等號中間不能有東西）和「Bearer 值」。JSON 設定檔、含空格的密碼、前面沒寫名稱的 GitHub／OpenAI／Anthropic／AWS 金鑰、整段私鑰、網址裡的密碼、`--token 值`、「密碼：值」，還有使用者自己的 OwnMind 金鑰（沒有固定開頭），全都原文送出。`hooks/lib/redact.js` 現在直接比對遮掉使用者自己的金鑰；`shared/secret-detect.js` 擋的所有金鑰格式都遮（直接引用，兩邊不會各改各的），另加更多有固定開頭的格式、私鑰、網址和 `curl -u` 的密碼、`Authorization`／`Cookie` 標頭、XML 欄位、Webhook 網址，以及環境變數／YAML／JSON（含跳脫過的）／指令參數／中文的「名稱：值」。講到金鑰的中文句子不會被整句遮掉。每條規則都有長度上限：初版在 200KB 的輸入上最慢要 18 秒（在回話結束的掛勾裡同步執行），現在不到 20 毫秒。存在電腦上的回話摘要也會先遮蔽。**影響使用者：** 伺服器看到的回話會多一些 `[REDACTED]`。電腦端。`v1.30.49`
 - **每台電腦都會更新到 GitHub 主分支最新的提交** — 每天的自動更新、開場掛勾、AI 收到升級通知時執行的指令、兩支手動升級程式、安裝程式，全都 `git pull` 主分支，所以修到一半、或不小心推上去的提交，大家下次開對話就裝到了。現在一律只更新到「主分支上最新的版本號標籤」（`vX.Y.Z`；`shared/release-target.js`、`scripts/install-helpers/update-to-release.mjs`）；已經比它新的電腦停在原地，任何路線都不會把電腦退回舊版。抓標籤時以 GitHub 為準（`--force --prune --prune-tags`），標籤被移動或刪除都不會卡住更新。更新時的 `npm install` 加上 `--ignore-scripts`，同步腳本另外裝的兩個套件鎖定版本。伺服器給 AI 的自動更新說明和 `check-sync` 也改成跟正式版比對。這不能證明版本是誰發的（拍板不做簽章）。**影響使用者：** 修正要等推了版本號標籤才會到大家電腦上。電腦端；說明文字要部署伺服器。`v1.30.48`
 - **「OwnMind 按鈕」的測試在 Windows 上失敗，從 v1.30.45 起 GitHub 的檢查一直是紅的** — `ensure-monitor-mod.cjs` 只有在 `--platform` 跟實際系統不同時才跳過「功能資料夾在不在硬碟上」的檢查；在 Mac 上成立，在 Windows 上 `--platform win32` 就是實際系統，於是測試用的假路徑 `C:\Users\amy` 被判定不見、設定被移除。現在只要有傳 `--platform`（只有測試會用，安裝程式從不傳）就跳過。**影響使用者：** 沒有；真實安裝從來沒受影響。`v1.30.47`
 - **金鑰出現在程式的指令列上，Mac／Linux 同一台電腦的每個帳號用 `ps` 都看得到** — 腳本把金鑰當成 curl 的 `-H "Authorization: Bearer …"` 參數、直接寫進 `node -e` 的程式文字、當參數交給輔助程式；每次開對話的開場掛勾都這樣做。現在 curl 從標準輸入拿金鑰（`ownmind_curl_auth "$KEY" | curl -K -`），node 程式從環境變數拿（`OWNMIND_INSTALL_KEY`、`OWNMIND_HOOK_KEY`），`register-mcp-cli.cjs` 改用 `--key-env`，升級程式重跑安裝時也走環境變數；Windows 的掛勾和升級程式一起改。還沒改到的：使用者自己貼上執行的安裝指令（`bash -s -- 金鑰 網址`）。**影響使用者：** 沒有。只改電腦這一邊。`v1.30.46`

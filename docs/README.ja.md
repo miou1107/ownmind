@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.30.48** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.30.49** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -40,6 +40,7 @@ AI は強力ですが **本質的に長期記憶を持たず**、異なる AI �
 
 ### ペイン 1：新ウィンドウ開く度に「好みを再説明」
 
+- **ルールチェック前の返信マスキングが 2 つの形しか知らなかった** — キーワードと区切りの間に何もない `keyword=value` と `Bearer x` のみ。JSON 設定、空白を含む引用値、キーワードのない GitHub／OpenAI／Anthropic／AWS キー、秘密鍵ブロック、URL 内のパスワード、`--token x`、`密碼：x`、そしてユーザー自身の OwnMind キー（単なる UUID）がそのままサーバーに送られていた。`hooks/lib/redact.js` は呼び出し側のキーを文字どおりマスクし、`shared/secret-detect.js` がブロックする全形式（インポートなのでずれない）、追加のプレフィックス形式、秘密鍵、URL と `curl -u` のパスワード、`Authorization`／`Cookie` ヘッダー、XML 要素、Webhook URL、env／YAML／JSON（エスケープ済み含む）／CLI／中国語のキー代入をマスクする。キーについての中国語の文は残す。全パターンに上限あり：初版は Stop フック内で 200KB 入力に最大 18 秒、現在は 20ms 未満。ディスクに残す返信抜粋もマスクする。**ユーザーへの影響：** サーバーが見る返信に `[REDACTED]` が増える。クライアント。`v1.30.49`
 - **全マシンが main の最新コミットに更新されていた** — 毎日の自動更新、セッション開始フック、アップグレード通知で AI が実行するコマンド、2 つの対話型アップグレーダー、インストーラーがすべて main を `git pull` していたため、修正とリリースの間に push されたコミットや誤って push されたものが次のセッションで全員に入っていた。現在は main 上の最新リリースタグ（`vX.Y.Z`）にのみ更新する（`shared/release-target.js`、`scripts/install-helpers/update-to-release.mjs`）。すでに先にあるマシンはそのまま、どの経路もマシンを古い版に戻さない。タグは `--force --prune --prune-tags` で取得し、移動・削除されたタグで更新が止まらない。更新時の `npm install` は `--ignore-scripts`、同期スクリプトが追加する 2 パッケージはバージョン固定。サーバーの自動更新手順と `check-sync` もリリースと比較する。リリースの作成者は証明しない（署名タグは採用しない判断）。**ユーザーへの影響：** 修正はリリースタグが push されて初めて届く。クライアント；手順文はサーバーのデプロイが必要。`v1.30.48`
 - **モニター mod のテストが Windows で失敗し、v1.30.45 から main の CI が赤かった** — `ensure-monitor-mod.cjs` は `--platform` が実行中のプラットフォームと異なるときだけ「mod フォルダがディスクにあるか」の確認を省いていた。Mac では成り立つが、Windows では `--platform win32` が実際のプラットフォームなので、テストの架空の `C:\Users\amy` が「無い」と判定されて設定が消えていた。`--platform`（テスト専用、インストーラーは渡さない）が渡されたら常に省くよう修正。**ユーザーへの影響：** なし。実際のインストールは影響を受けていない。`v1.30.47`
 - **API キーがプロセスのコマンドラインに載り、Mac／Linux の同じマシンの全アカウントが `ps` で見られた** — スクリプトはキーを curl の `-H "Authorization: Bearer …"`、`node -e` のプログラム本文、補助スクリプトの引数として渡していた。セッション開始フックは会話のたびにこれを行っていた。現在 curl は標準入力から受け取り（`ownmind_curl_auth "$KEY" | curl -K -`）、node は環境変数（`OWNMIND_INSTALL_KEY`、`OWNMIND_HOOK_KEY`）から読み、`register-mcp-cli.cjs` は `--key-env` を使い、アップグレーダーも環境変数でインストーラーを再実行する。Windows のフックとアップグレーダーも同様。未対応：ユーザー自身が実行するインストール用ワンライナー（`bash -s -- KEY URL`）。**ユーザーへの影響：** なし。クライアントのみ。`v1.30.46`
