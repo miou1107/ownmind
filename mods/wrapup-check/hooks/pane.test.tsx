@@ -324,3 +324,69 @@ test('a wrap-up typed during a running turn waits for its own answer; a blocked 
   expect(await ui.find({ type: 'Text', text: /還沒處理：3 個檔沒 commit/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('the header says the wrap-up is in progress until the AI answers, then the time it finished', async ($, on) => {
+  const w = world()
+  setup(on, CLEAN, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  await start($)
+  let ui: any = await mountPane($, 'desktop')
+  expect(await ui.find({ type: 'Text', text: /還沒查過/ })).toBeDefined()
+  await ui.unmount()
+  await ($ as any).prompt.submit({ text: '收工', wait: false })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    ui = await mountPane($, surface)
+    expect(await ui.find({ type: 'Text', text: /^收工狀態：進行中$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /查的/ })).toBeUndefined()
+    await ui.unmount()
+  }
+  await ($ as any).turn.complete({ answer: '好了', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    ui = await mountPane($, surface)
+    expect(await ui.find({ type: 'Text', text: /^收工狀態：18:42 完成$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /進行中/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('once the wrap-up is done and all six are green, the bottom says the session can be closed', async ($, on) => {
+  const w = world()
+  setup(on, CLEAN, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  await start($)
+  await ($ as any).prompt.submit({ text: '收工', wait: false })
+  const passed = async (surface: 'terminal' | 'desktop') => {
+    const ui: any = await mountPane($, surface)
+    const hit = surface === 'desktop'
+      ? /成功通過所有收工檢查，可安心關閉此對話/.test((await ui.find({ type: 'Svg' }))?.props?.source ?? '')
+      : await ui.find({ type: 'Text', text: /成功通過所有收工檢查，可安心關閉此對話/ })
+    await ui.unmount()
+    return !!hit
+  }
+  // The handoff row is still yellow: no banner, even after the AI answers.
+  await ($ as any).tool.call({ tool: 'mcp__wrapup-check__resolve', item: '待辦與交接', done: '查過 OwnMind，沒有沒人接的交接單' })
+  // All green but the AI is still working: no banner yet.
+  expect(await passed('terminal')).toBe(false)
+  expect(await passed('desktop')).toBe(false)
+  await ($ as any).turn.complete({ answer: '好了', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(await passed('terminal')).toBe(true)
+  expect(await passed('desktop')).toBe(true)
+})
+
+test('a wrap-up that ends with a yellow item left shows no closing banner', async ($, on) => {
+  const w = world()
+  setup(on, CLEAN, w)
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  await start($)
+  await ($ as any).prompt.submit({ text: '收工', wait: false })
+  await ($ as any).turn.complete({ answer: '好了', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui: any = await mountPane($, surface)
+    expect(await ui.find({ type: 'Text', text: /可安心關閉此對話/ })).toBeUndefined()
+    if (surface === 'desktop') expect(((await ui.find({ type: 'Svg' }))?.props?.source ?? '')).not.toMatch(/可安心關閉此對話/)
+    await ui.unmount()
+  }
+})
