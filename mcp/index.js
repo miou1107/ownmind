@@ -1406,7 +1406,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_task_claim": {
-      const data = await callApi("PUT", `/api/tasks/${args.id}/claim`, {
+      const data = await callApi("PUT", `/api/tasks/${encodeURIComponent(String(args.id))}/claim`, {
         tool: CLIENT_TOOL,
         session_id: sessionStartTime ? String(sessionStartTime) : '',
         sync_token: currentSyncToken,
@@ -1416,7 +1416,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_task_done": {
-      const data = await callApi("PUT", `/api/tasks/${args.id}/done`, {
+      const data = await callApi("PUT", `/api/tasks/${encodeURIComponent(String(args.id))}/done`, {
         result: args.result, links: args.links, sync_token: currentSyncToken,
       });
       logEvent('task_done', { id: args.id });
@@ -1424,7 +1424,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_task_drop": {
-      const data = await callApi("PUT", `/api/tasks/${args.id}/drop`, {
+      const data = await callApi("PUT", `/api/tasks/${encodeURIComponent(String(args.id))}/drop`, {
         reason: args.reason, sync_token: currentSyncToken,
       });
       logEvent('task_drop', { id: args.id });
