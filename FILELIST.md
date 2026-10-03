@@ -36,6 +36,26 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.41 修改（跟 AI 說「知道了」就會真的關掉提醒）
+
+新增檔：
+```
+tests/notice-dismiss-everywhere.test.js — 提醒顯示編號與關掉的指示、工具送「所有工具」、關一次每個工具都不再出現、
+                                       延後到期會回來、別人關掉不影響你
+```
+
+修改檔：
+```
+src/lib/broadcast-filter.js           — 多比對 tool='*'（ALL_TOOLS）那一列，關掉或延後時每個工具都套用；ignoreState 給關掉路由用
+src/routes/broadcast.js               — 對 tool='*' 關掉時不看既有狀態，先延後再永久關掉、或送兩次都會成功
+docs/setup-claude-code.md, skills/ownmind-memory.md — 工具表多 ownmind_dismiss_notice
+mcp/index.js                          — 新工具 ownmind_dismiss_notice；工具結果附帶的提醒顯示 (notice #N) 與關掉的指示
+hooks/lib/render-session-context.js   — 開對話時的提醒顯示 (notice #N) 與關掉的指示
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.41
+```
+
+
 ## v1.30.40 修改（伺服器不能再決定 AI 要執行什麼指令）
 
 新增檔：

@@ -822,6 +822,7 @@ OwnMind 使用 sync token 確保多工具環境下的記憶一致性。
 | `ownmind_disable(id, reason)` | 停用記憶 |
 | `ownmind_handoff_create(...)` | 建立交接 |
 | `ownmind_handoff_accept(id, accepted_by)` | 接受交接 |
+| `ownmind_dismiss_notice(broadcast_id, snooze_hours?)` | 使用者說已經知道某則提醒時呼叫，用提醒上的 (notice #N)；每個工具都不再出現 |
 | `ownmind_log_session(summary, tool, model, ...)` | 記錄 session（**summary/tool/model 必填**）|
 | `ownmind_get_secret(key)` | 取得密鑰 |
 | `ownmind_list_secrets` | 列出密鑰 |

@@ -65,6 +65,7 @@ hooks），但 `ownmind_*` 工具在任何 session 裡都不存在 —— 看起
 | ownmind_disable | 停用記憶 |
 | ownmind_handoff_create | 建立交接 |
 | ownmind_handoff_accept | 接受交接 |
+| ownmind_dismiss_notice | 關掉一則 OwnMind 提醒（每個工具都不再出現） |
 | ownmind_log_session | 記錄 session |
 | ownmind_get_secret | 取得密鑰 |
 | ownmind_list_secrets | 列出密鑰 |

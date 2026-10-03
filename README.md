@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.30.40** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.30.41** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -40,6 +40,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **Saying "noted" to a notice never turned it off** — every notice told the AI to offer "acknowledged", but no tool it held could act on it, so the same notice opened every new conversation; a dismiss done by hand was stored per tool and came back in the next one. Notices now show their number as `(notice #N)`, and the new `ownmind_dismiss_notice` tool turns one off (or snoozes it, where allowed) for that person in every tool and on every machine. Needs a server deploy and a client update. `v1.30.41`
 - **The server chose the command every AI ran on upgrade** — `mcp/index.js` copied `upgrade_action.command` from the init response into the AI's notice verbatim, and the AI runs the update at once without asking (by design, unchanged). Whoever could alter that response (a compromised server, a man in the middle on plain http) chose what ran on every machine. The command is now fixed in the client, and the server's command and message are dropped before anything reaches the AI; the version shown must be a plain x.y.z. Automatic updates at session start work as before. This closes the word-for-word relay; a fully compromised server still controls other text the AI reads. Client and server both changed. `v1.30.40`
 - **A leaked API key could never be revoked** — nothing on the server wrote `api_key` after an account was created, and a password change left it alone. Keys can now be replaced: `POST /api/me/rotate-key` (your own) and `POST /api/admin/users/:id/rotate-key` (a lower rank), also as "Replace API key" on the team page, audited without either key. On a machine, `node ~/.ownmind/scripts/install-helpers/swap-api-key.cjs --rotate` (or `--set`, key on stdin, for your other machines) rewrites the key in every tool's config, reads each back, and asks the server whose the new key is before calling it done. Needs a server deploy. Nothing changes until someone chooses to replace a key. `v1.30.39`
 - **Any admin could copy the super_admin's API key and become them** — `GET /api/admin/users` returned every user's full key, and authentication finds a user by key alone, so the team page's copy button undid every rule that keeps an admin away from a super_admin. The list now carries an eight-character prefix; a full key comes from `GET /api/admin/users/:id/api-key`, one user at a time, only for yourself or a lower rank, with every reveal written to the audit log. The dashboard shows the copy button and install prompt only where that holds. Needs a server deploy. Keys still cannot be rotated, so one copied before this release stays valid. `v1.30.38`

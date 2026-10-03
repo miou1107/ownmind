@@ -264,6 +264,7 @@ const TYPE_MAP = {
   ownmind_disable: 'Memory write',
   ownmind_handoff_create: 'Handoff created',
   ownmind_handoff_accept: 'Handoff accepted',
+  ownmind_dismiss_notice: 'Notice turned off',
   ownmind_log_session: 'Session logged',
   ownmind_get_secret: 'Secret management',
   ownmind_list_secrets: 'Secret management',
@@ -334,11 +335,15 @@ async function fetchBroadcastsSafely() {
   }
 }
 
+// Without this line the AI answered "noted" and the notice came back in every new
+// conversation: nothing it could call turned one off.
+const DISMISS_HINT = '[SYSTEM] If the user says they already know about a notice or do not want to see it again, call ownmind_dismiss_notice with its notice number. Replying "noted" does not turn it off.';
+
 function renderBroadcasts(broadcasts) {
   const lines = ['📢 OwnMind broadcast'];
   for (const bc of broadcasts.slice(0, 3)) {
     const sev = String(bc.severity || 'info').toUpperCase();
-    lines.push(`[${sev}] ${String(bc.title || '').replace(/\n/g, ' ')}`);
+    lines.push(`[${sev}] ${String(bc.title || '').replace(/\n/g, ' ')} (notice #${bc.id})`);
     const body = String(bc.body || '').split('\n').slice(0, 5).join(' ').slice(0, 400);
     if (body) lines.push(body);
     if (bc.cta_text) {
@@ -353,6 +358,7 @@ function renderBroadcasts(broadcasts) {
   if (broadcasts.length > 3) {
     lines.push(`(${broadcasts.length - 3} more broadcast(s) not shown)`);
   }
+  lines.push(DISMISS_HINT);
   lines.push('---');
   return lines.join('\n');
 }
@@ -640,6 +646,18 @@ const TOOLS = [
         accepted_by: { type: "string", description: "Acceptor name" },
       },
       required: ["id", "accepted_by"],
+    },
+  },
+  {
+    name: "ownmind_dismiss_notice",
+    description: "Turn off an OwnMind notice (the 📢 broadcast lines) for this person in every tool and on every machine. CALL THIS when the user says they already know about a notice, it is handled, or they do not want to see it again — saying \"noted\" back to them does NOT turn it off, and it will reappear in the next conversation. Each notice shows its number as (notice #N). Pass snooze_hours instead to hide it for a while, only on notices that offer a snooze.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        broadcast_id: { type: "number", description: "The notice number shown as (notice #N)" },
+        snooze_hours: { type: "number", description: "(optional) Hide it for this many hours instead of for good. Only for notices that offer a snooze." },
+      },
+      required: ["broadcast_id"],
     },
   },
   {
@@ -1231,6 +1249,16 @@ async function handleTool(name, args) {
       });
       if (data.sync_token) currentSyncToken = data.sync_token;
       logEvent('handoff_accept', { id: args.id, accepted_by: args.accepted_by });
+      return data;
+    }
+
+    case "ownmind_dismiss_notice": {
+      // ALL_TOOLS ('*' in src/lib/broadcast-filter.js): turned off once, it stays off in
+      // every tool. The per-tool form is what the upgrade script's own snooze still uses.
+      const body = { broadcast_id: args.broadcast_id, tool: '*' };
+      if (args.snooze_hours !== undefined && args.snooze_hours !== null) body.snooze_hours = args.snooze_hours;
+      const data = await callApi("POST", "/api/broadcast/dismiss", body);
+      logEvent('notice_dismiss', { id: args.broadcast_id, snooze: body.snooze_hours ?? null });
       return data;
     }
 

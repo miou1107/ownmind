@@ -3,7 +3,7 @@ import { query as defaultQuery } from '../utils/db.js';
 import defaultAuth from '../middleware/auth.js';
 import defaultAdminAuth, { superAdminAuth as defaultSuperAdminAuth } from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
-import { filterVisibleBroadcasts, filterInjectable } from '../lib/broadcast-filter.js';
+import { filterVisibleBroadcasts, filterInjectable, ALL_TOOLS } from '../lib/broadcast-filter.js';
 
 const VALID_TYPES = new Set(['announcement', 'upgrade_reminder', 'maintenance', 'rule_change']);
 const VALID_SEVERITY = new Set(['info', 'warning', 'critical']);
@@ -227,7 +227,10 @@ export function createBroadcastRouter(deps = {}) {
         user_id: req.user.id,
         tool,
         client_version,
-        now: now()
+        now: now(),
+        // Turning off for every tool must work on a notice already snoozed or turned off
+        // everywhere: snooze-then-dismiss, or the same request sent twice.
+        ignoreState: tool === ALL_TOOLS
       });
       const bc = visible.find((b) => b.id === broadcast_id);
       if (!bc) {
