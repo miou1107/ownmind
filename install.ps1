@@ -407,8 +407,11 @@ if (-not (Test-Path $RegisterCli)) {
 } else {
   $cliArgs = @($RegisterCli, "--command", $McpConfig.command)
   foreach ($a in $McpConfig.args) { $cliArgs += @("--arg", $a) }
-  $cliArgs += @("--url", $ApiUrl, "--key", $ApiKey, "--home", $HOME)
+  # The key through the environment, not the command line (same as install.sh).
+  $env:OWNMIND_INSTALL_KEY = $ApiKey
+  $cliArgs += @("--url", $ApiUrl, "--key-env", "OWNMIND_INSTALL_KEY", "--home", $HOME)
   $regOut = & node $cliArgs 2>&1
+  Remove-Item Env:OWNMIND_INSTALL_KEY -ErrorAction SilentlyContinue
   foreach ($line in $regOut) {
     if ("$line" -like "PROBLEM *") { Write-Host ("       [WARN] " + ("$line" -replace '^PROBLEM ', '')) }
   }

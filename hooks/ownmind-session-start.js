@@ -173,9 +173,10 @@ function drainSpools(apiUrl, apiKey) {
       const child = spawn(process.execPath, [
         '-e',
         `const sc=require(${JSON.stringify(selfCheck)});`
-        + `if(sc.retrySpool)sc.retrySpool(process.argv[1],process.argv[2]).catch(()=>{});`,
-        apiUrl, apiKey,
-      ], { stdio: 'ignore', detached: true, windowsHide: true });
+        + `if(sc.retrySpool)sc.retrySpool(process.argv[1],process.env.OWNMIND_HOOK_KEY).catch(()=>{});`,
+        apiUrl,
+        // The key in the environment, not the arguments: those are the command line.
+      ], { stdio: 'ignore', detached: true, windowsHide: true, env: { ...process.env, OWNMIND_HOOK_KEY: apiKey } });
       child.unref();
     }
   } catch { /* best effort */ }

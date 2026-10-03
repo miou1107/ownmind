@@ -9,6 +9,15 @@
 # Stdout uses structured prefixes (same as interactive-upgrade):
 #   INFO:<code>:msg  OK:<code>:msg  ERROR:<code>:msg
 
+# The API key reaches curl on its standard input (`curl -K -`), never on its command line:
+# on a Mac or Linux machine `ps` shows every account each process's command line, while a
+# process's input is visible to its owner only. Quotes and backslashes are escaped for
+# curl's config syntax by sed, which also gets the key on its input; bash's own
+# ${var//…} replacement treats backslashes differently from one bash version to the next.
+ownmind_curl_auth() {
+  printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+}
+
 set -u
 
 OWNMIND_DIR="${HOME}/.ownmind"
@@ -88,8 +97,7 @@ case "${MODE}" in
     # While we're here, grab the init response for the iron-rule check in step 5 to save a round-trip.
     STEP "init" "Calling /api/memory/init to get sync_token"
     INIT_TMP=$(mktemp)
-    INIT_CODE=$(curl -s -o "${INIT_TMP}" -w "%{http_code}" --max-time 10 \
-      -H "Authorization: Bearer ${API_KEY}" \
+    INIT_CODE=$(ownmind_curl_auth "${API_KEY}" | curl -K - -s -o "${INIT_TMP}" -w "%{http_code}" --max-time 10 \
       "${API_URL}/api/memory/init?compact=true" 2>&1)
     INIT_RES=$(cat "${INIT_TMP}"); rm -f "${INIT_TMP}"
     [ "${INIT_CODE}" = "200" ] || FAIL "init_failed" "init responded ${INIT_CODE}: $(echo "${INIT_RES}" | head -c 200)"
@@ -105,8 +113,7 @@ case "${MODE}" in
     TEST_NAME="__upgrade_test__$(date +%s)__$(hostname | tr -d '[:space:]')"
     STEP "write" "Writing test memory ${TEST_NAME}"
     WRITE_TMP=$(mktemp)
-    WRITE_CODE=$(curl -s -o "${WRITE_TMP}" -w "%{http_code}" --max-time 10 -X POST \
-      -H "Authorization: Bearer ${API_KEY}" \
+    WRITE_CODE=$(ownmind_curl_auth "${API_KEY}" | curl -K - -s -o "${WRITE_TMP}" -w "%{http_code}" --max-time 10 -X POST \
       -H "Content-Type: application/json" \
       -d "{\"title\":\"${TEST_NAME}\",\"type\":\"session_log\",\"content\":\"upgrade verification\",\"is_test\":true,\"tags\":[\"upgrade_test\"],\"sync_token\":\"${SYNC_TOKEN}\"}" \
       "${API_URL}/api/memory" 2>&1)
@@ -125,8 +132,7 @@ case "${MODE}" in
     # 4. Read back (use the id returned by write for the round-trip; the list endpoint /api/memory does not exist).
     STEP "read" "Reading back the memory we just wrote (id=${MEM_ID})"
     READ_TMP=$(mktemp)
-    READ_CODE=$(curl -s -o "${READ_TMP}" -w "%{http_code}" --max-time 10 \
-      -H "Authorization: Bearer ${API_KEY}" \
+    READ_CODE=$(ownmind_curl_auth "${API_KEY}" | curl -K - -s -o "${READ_TMP}" -w "%{http_code}" --max-time 10 \
       "${API_URL}/api/memory/${MEM_ID}" 2>&1)
     READ_RES=$(cat "${READ_TMP}"); rm -f "${READ_TMP}"
     [ "${READ_CODE}" = "200" ] || FAIL "read_failed" "Read responded ${READ_CODE}: $(echo "${READ_RES}" | head -c 200)"
@@ -150,8 +156,7 @@ case "${MODE}" in
     API_KEY=$(echo "${CREDS}" | sed -n '1p')
     API_URL=$(echo "${CREDS}" | sed -n '2p')
 
-    DELETE_RES=$(curl -sf --max-time 10 -X DELETE \
-      -H "Authorization: Bearer ${API_KEY}" \
+    DELETE_RES=$(ownmind_curl_auth "${API_KEY}" | curl -K - -sf --max-time 10 -X DELETE \
       "${API_URL}/api/memory/test-cleanup?name_prefix=__upgrade_test__" 2>&1)
     # The API may not be deployed yet — fail-open (failure doesn't block).
     if [ -n "${DELETE_RES}" ] && echo "${DELETE_RES}" | grep -q "deleted"; then

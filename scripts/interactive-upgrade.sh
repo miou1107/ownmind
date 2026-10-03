@@ -10,6 +10,15 @@
 #
 # On failure, performs rollback (restores from ~/.ownmind.bak.<timestamp>).
 
+# The API key reaches curl on its standard input (`curl -K -`), never on its command line:
+# on a Mac or Linux machine `ps` shows every account each process's command line, while a
+# process's input is visible to its owner only. Quotes and backslashes are escaped for
+# curl's config syntax by sed, which also gets the key on its input; bash's own
+# ${var//…} replacement treats backslashes differently from one bash version to the next.
+ownmind_curl_auth() {
+  printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+}
+
 set -u  # do not set -e; we want to control error paths ourselves
 
 OWNMIND_DIR="${HOME}/.ownmind"
@@ -325,7 +334,9 @@ else
   # configuration, and it cannot produce the missing artifacts anyway. The self-check
   # inside install.sh has already reported the condition to the server.
   install_status=0
-  bash install.sh "${API_KEY}" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
+  # The key goes through the environment, not the command line (install.sh reads it there
+  # when the first argument is empty): `ps` shows every account each command line.
+  OWNMIND_INSTALL_KEY="${API_KEY}" bash install.sh "" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
   if [ "${install_status}" -eq 0 ]; then
     OK "install" "Setup complete"
   elif [ "${install_status}" -eq 2 ]; then
@@ -393,8 +404,7 @@ VERSION=$(node -p "require('${OWNMIND_DIR_WIN}/package.json').version" 2>/dev/nu
 
 if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; then
   STEP "dismiss" "Dismissing stale upgrade broadcasts"
-  ACTIVE=$(curl -sf --max-time 5 \
-    -H "Authorization: Bearer ${API_KEY}" \
+  ACTIVE=$(ownmind_curl_auth "${API_KEY}" | curl -K - -sf --max-time 5 \
     -H "X-Ownmind-Version: ${VERSION}" \
     "${API_URL}/api/broadcast/active?tool=claude-code&client_version=${VERSION}" 2>/dev/null || echo "[]")
   IDS=$(echo "${ACTIVE}" | node -e '
@@ -414,8 +424,7 @@ if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; 
   if [ -n "${IDS}" ]; then
     while IFS= read -r ID; do
       [ -z "$ID" ] && continue
-      curl -sf --max-time 3 -X POST \
-        -H "Authorization: Bearer ${API_KEY}" \
+      ownmind_curl_auth "${API_KEY}" | curl -K - -sf --max-time 3 -X POST \
         -H "Content-Type: application/json" \
         -d "{\"broadcast_id\":${ID},\"tool\":\"claude-code\"}" \
         "${API_URL}/api/broadcast/dismiss" >/dev/null 2>&1 \
@@ -467,8 +476,7 @@ send_upgrade_complete_beacon() {
   esac
   body=$(printf '{"ts":"%s","trigger":"upgrade_complete","client_version":"%s","platform":"%s","machine":"%s"}' \
     "$ts" "$version" "$platform" "$machine")
-  if curl -fsS -m 5 -X POST \
-    -H "Authorization: Bearer $api_key" \
+  if ownmind_curl_auth "$api_key" | curl -K - -fsS -m 5 -X POST \
     -H "Content-Type: application/json" \
     -d "$body" \
     "${api_url%/}/api/debug/install-check" >/dev/null 2>&1; then

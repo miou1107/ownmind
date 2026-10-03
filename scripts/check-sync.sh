@@ -6,6 +6,15 @@
 # Never throws a non-zero exit code (avoid blocking the AI flow); every error goes to
 # STDOUT under an `error` tag.
 
+# The API key reaches curl on its standard input (`curl -K -`), never on its command line:
+# on a Mac or Linux machine `ps` shows every account each process's command line, while a
+# process's input is visible to its owner only. Quotes and backslashes are escaped for
+# curl's config syntax by sed, which also gets the key on its input; bash's own
+# ${var//…} replacement treats backslashes differently from one bash version to the next.
+ownmind_curl_auth() {
+  printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+}
+
 OWNMIND_DIR="${OWNMIND_DIR:-$HOME/.ownmind}"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
@@ -91,8 +100,7 @@ if [ -f "${CLAUDE_DIR}/settings.json" ]; then
 fi
 
 if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ]; then
-  SERVER_VER=$(curl -sf --max-time 5 \
-    -H "Authorization: Bearer ${API_KEY}" \
+  SERVER_VER=$(ownmind_curl_auth "${API_KEY}" | curl -K - -sf --max-time 5 \
     "${API_URL}/api/memory/init" 2>/dev/null \
     | node -e "
       let b = '';

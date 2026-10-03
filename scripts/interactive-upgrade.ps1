@@ -363,7 +363,12 @@ if (-not (Test-Path $installScript)) {
 } elseif ([string]::IsNullOrEmpty($apiKey) -or [string]::IsNullOrEmpty($apiUrl)) {
   Step "install" "No existing credentials; skipping install.ps1 re-run (skill/hook synced by update.sh)"
 } else {
-  & powershell -ExecutionPolicy Bypass -File $installScript $apiKey $apiUrl 2>&1 | Out-File -Append $LogFile -Encoding utf8
+  # The key through the environment (install.ps1 reads OWNMIND_API_KEY when given no
+  # arguments), not the command line. The URL travels the same way, since it is positional.
+  $env:OWNMIND_API_KEY = $apiKey
+  $env:OWNMIND_API_URL = $apiUrl
+  & powershell -ExecutionPolicy Bypass -File $installScript 2>&1 | Out-File -Append $LogFile -Encoding utf8
+  Remove-Item Env:OWNMIND_API_KEY, Env:OWNMIND_API_URL -ErrorAction SilentlyContinue
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Rollback

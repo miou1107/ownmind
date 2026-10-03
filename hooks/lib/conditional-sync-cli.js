@@ -16,7 +16,7 @@
  *   4. Failure → print empty string and exit 0 (sh falls back).
  *
  * Usage:
- *   INIT_DATA=$(node hooks/lib/conditional-sync-cli.js "$API_URL" "$API_KEY")
+ *   INIT_DATA=$(OWNMIND_HOOK_KEY="$API_KEY" node hooks/lib/conditional-sync-cli.js "$API_URL")
  *
  * v1.18.0-rc2 review fixes:
  *   - B1: extractIronRules can't pull iron rules from the init data (compact mode doesn't send them)
@@ -122,7 +122,9 @@ export async function syncEnforcementBundle(apiUrl, apiKey, { cachePath, log = l
 
 async function main() {
   const apiUrl = process.argv[2];
-  const apiKey = process.argv[3];
+  // OWNMIND_HOOK_KEY first: an argument is on the command line, readable by every account
+  // on the machine. argv[3] stays for a hook from an older install still calling it that way.
+  const apiKey = process.env.OWNMIND_HOOK_KEY || process.argv[3];
 
   if (!apiUrl || !apiKey) {
     await writeStdoutAsync('');

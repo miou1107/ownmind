@@ -197,7 +197,9 @@ describe('install.sh really does replace a different key', () => {
       .replaceAll('$API_URL', 'https://s/ownmind')
       .replaceAll('$API_KEY', 'NEW-KEY')
       .replaceAll('\\"', '"');
-    const said = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }).trim();
+    // The key comes from the environment (v1.30.44), not from the program text.
+    const said = execFileSync(process.execPath, ['-e', script],
+      { encoding: 'utf8', env: { ...process.env, OWNMIND_INSTALL_KEY: 'NEW-KEY' } }).trim();
 
     const after = JSON.parse(readFileSync(settingsPath, 'utf8'));
     assert.equal(after.mcpServers.ownmind.env.OWNMIND_API_KEY, 'NEW-KEY', 'the key changed');

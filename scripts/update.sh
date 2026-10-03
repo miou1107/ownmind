@@ -11,6 +11,15 @@
 # v1.17.81 added an observability pipeline (IR-038): update_started beacon + report-error,
 # matching install / upgrade.
 
+# The API key reaches curl on its standard input (`curl -K -`), never on its command line:
+# on a Mac or Linux machine `ps` shows every account each process's command line, while a
+# process's input is visible to its owner only. Quotes and backslashes are escaped for
+# curl's config syntax by sed, which also gets the key on its input; bash's own
+# ${var//…} replacement treats backslashes differently from one bash version to the next.
+ownmind_curl_auth() {
+  printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+}
+
 OWNMIND_DIR="$HOME/.ownmind"
 
 # v1.17.81 — load report-error helper.
@@ -59,8 +68,7 @@ send_update_beacon() {
   esac
   body=$(printf '{"ts":"%s","trigger":"%s","client_version":"update-script","platform":"%s","machine":"%s"}' \
     "$ts" "$trigger" "$platform" "$machine")
-  if curl -fsS -m 5 -X POST \
-    -H "Authorization: Bearer $api_key" \
+  if ownmind_curl_auth "$api_key" | curl -K - -fsS -m 5 -X POST \
     -H "Content-Type: application/json" \
     -d "$body" \
     "${api_url%/}/api/debug/install-check" >/dev/null 2>&1; then

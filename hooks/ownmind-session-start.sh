@@ -2,6 +2,15 @@
 # OwnMind SessionStart Hook
 # 每個新 session 自動檢查更新 + 載入使用者記憶，注入到 AI context
 
+# The API key reaches curl on its standard input (`curl -K -`), never on its command line:
+# on a Mac or Linux machine `ps` shows every account each process's command line, while a
+# process's input is visible to its owner only. Quotes and backslashes are escaped for
+# curl's config syntax by sed, which also gets the key on its input; bash's own
+# ${var//…} replacement treats backslashes differently from one bash version to the next.
+ownmind_curl_auth() {
+  printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+}
+
 OWNMIND_DIR="$HOME/.ownmind"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 MARKER_FILE="$OWNMIND_DIR/.last-update-check"
@@ -133,8 +142,8 @@ log_event() {
   echo "$entry" >> "$LOG_DIR/$date_str.jsonl"
   # Server upload (background, non-blocking)
   if [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
-    curl -sf --max-time 3 -X POST \
-      -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+    ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 -X POST \
+      -H "Content-Type: application/json" \
       -d "{\"events\":[$entry]}" \
       "${API_URL}/api/activity/batch" >/dev/null 2>&1 &
   fi
@@ -480,10 +489,11 @@ fi
 SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
 SELF_CHECK_SCRIPT_WIN="$(to_win_path "$SELF_CHECK_SCRIPT")"
 if [ -f "$SELF_CHECK_SCRIPT" ] && [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
-  timeout 3 node -e "
+  # The key through the environment, not the program text: that is the command line.
+  OWNMIND_HOOK_KEY="$API_KEY" timeout 3 node -e "
     const sc = require('$SELF_CHECK_SCRIPT_WIN');
     if (sc.retrySpool) {
-      sc.retrySpool('$API_URL', '$API_KEY').catch(() => {});
+      sc.retrySpool('$API_URL', process.env.OWNMIND_HOOK_KEY).catch(() => {});
     }
   " >/dev/null 2>&1 &
 fi
@@ -496,13 +506,14 @@ fi
 #   4. 相同 → 跳過 init download、用 cache (~95% sessions 走這條)
 #   5. 不同 → 全量 init + 寫新 cache + 重寫 ~/.claude/skills/ownmind-iron-rules/
 # helper 內建 fallback：fetch 失敗 → 用 cache、cache 也沒 → 印空 string
-INIT_DATA=$(timeout 10 node "$LIB_DIR/conditional-sync-cli.js" \
-  "$API_URL" "$API_KEY" 2>/dev/null)
+# The key in the environment (OWNMIND_HOOK_KEY), not as an argument: `ps` shows arguments
+# to every account on the machine.
+INIT_DATA=$(OWNMIND_HOOK_KEY="$API_KEY" timeout 10 node "$LIB_DIR/conditional-sync-cli.js" \
+  "$API_URL" 2>/dev/null)
 
 if [ -z "$INIT_DATA" ]; then
   # conditional-sync 完全失敗（無網 + 無 cache）→ fallback 到 v1.17.x 直接 curl
-  INIT_DATA=$(curl -sf --max-time 5 \
-    -H "Authorization: Bearer $API_KEY" \
+  INIT_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 5 \
     "${API_URL}/api/memory/init?compact=true" 2>/dev/null)
 fi
 
@@ -520,13 +531,11 @@ CLIENT_VERSION=$(node -p "require('$OWNMIND_DIR_WIN/package.json').version" 2>/d
 BROADCAST_URL="${API_URL}/api/broadcast/active?tool=claude-code"
 if [ -n "$CLIENT_VERSION" ]; then
   BROADCAST_URL="${BROADCAST_URL}&client_version=${CLIENT_VERSION}"
-  BROADCAST_DATA=$(curl -sf --max-time 3 \
-    -H "Authorization: Bearer $API_KEY" \
+  BROADCAST_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 \
     -H "X-Ownmind-Version: ${CLIENT_VERSION}" \
     "${BROADCAST_URL}" 2>/dev/null)
 else
-  BROADCAST_DATA=$(curl -sf --max-time 3 \
-    -H "Authorization: Bearer $API_KEY" \
+  BROADCAST_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 \
     "${BROADCAST_URL}" 2>/dev/null)
 fi
 # 空值 / 失敗一律當 "[]"（就是沒廣播）
@@ -542,8 +551,7 @@ timeout 5 node "$LIB_DIR/session-start-output.js" "$INIT_DATA" "$BROADCAST_DATA"
 # 把雲端 iron_rule/project/feedback 同步到 $CLAUDE_PROJECT_DIR 的 auto-memory dir，
 # 避免 AI 讀到過期快照。CLAUDE_PROJECT_DIR 未設時 node script 自己 exit 0。
 if [ -n "$CLAUDE_PROJECT_DIR" ]; then
-  SYNC_DATA=$(curl -sf --max-time 4 \
-    -H "Authorization: Bearer $API_KEY" \
+  SYNC_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 4 \
     "${API_URL}/api/memory/sync?types=iron_rule,project,feedback" 2>/dev/null)
   if [ -n "$SYNC_DATA" ]; then
     echo "$SYNC_DATA" | node "$LIB_DIR/sync-memory-files.js" 2>/dev/null

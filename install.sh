@@ -2,9 +2,20 @@
 # OwnMind 一鍵安裝腳本
 # 用法: curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
+# The API key reaches curl on its standard input (`curl -K -`), never on its command line:
+# on a Mac or Linux machine `ps` shows every account each process's command line, while a
+# process's input is visible to its owner only. Quotes and backslashes are escaped for
+# curl's config syntax by sed, which also gets the key on its input; bash's own
+# ${var//…} replacement treats backslashes differently from one bash version to the next.
+ownmind_curl_auth() {
+  printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+}
+
 set -eE  # -E so the ERR trap below also fires inside shell functions
 
-API_KEY="${1:-}"
+# The key may also arrive in OWNMIND_INSTALL_KEY with an empty first argument: that is how
+# interactive-upgrade.sh re-runs this script without putting the key on a command line.
+API_KEY="${1:-${OWNMIND_INSTALL_KEY:-}}"
 API_URL="${2:-}"
 
 if [ -z "$API_KEY" ]; then
@@ -20,6 +31,10 @@ if [ -z "$API_URL" ]; then
   echo "Example: bash install.sh abc123 https://your-server.com/ownmind"
   exit 1
 fi
+
+# Every node program below reads the key from here, never from its own program text or
+# arguments: those are the process's command line, which any account can read with `ps`.
+export OWNMIND_INSTALL_KEY="$API_KEY"
 
 echo "OwnMind installer"
 echo "─────────────────────────────────────────────"
@@ -41,8 +56,7 @@ send_install_beacon() {
   esac
   body=$(printf '{"ts":"%s","trigger":"%s","client_version":"install-script","platform":"%s","machine":"%s"}' \
     "$ts" "$trigger" "$platform" "$machine")
-  if curl -fsS -m 5 -X POST \
-    -H "Authorization: Bearer $API_KEY" \
+  if ownmind_curl_auth "$API_KEY" | curl -K - -fsS -m 5 -X POST \
     -H "Content-Type: application/json" \
     -d "$body" \
     "${API_URL%/}/api/debug/install-check" >/dev/null 2>&1; then
@@ -319,7 +333,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     if (!settings.mcpServers) settings.mcpServers = {};
     const prev = settings.mcpServers.ownmind || {};
     const prevEnv = prev.env || {};
-    const nextKey = '$API_KEY';
+    const nextKey = process.env.OWNMIND_INSTALL_KEY;
     settings.mcpServers.ownmind = {
       ...prev,
       ...entry,
@@ -367,7 +381,7 @@ else
           ...entry,
           env: {
             OWNMIND_API_URL: '$API_URL',
-            OWNMIND_API_KEY: '$API_KEY',
+            OWNMIND_API_KEY: process.env.OWNMIND_INSTALL_KEY,
             OWNMIND_TOOL: 'claude-code'
           }
         }
@@ -416,7 +430,7 @@ else
 fi
 MCP_REG_OUT=$(MSYS_NO_PATHCONV=1 node "$REGISTER_MCP_CLI_WIN" \
   --command "$MCP_COMMAND" "${MCP_CLI_ARGS[@]}" \
-  --url "$API_URL" --key "$API_KEY" --home "$(to_win_path "$HOME")") || MCP_REG_OUT=""
+  --url "$API_URL" --key-env OWNMIND_INSTALL_KEY --home "$(to_win_path "$HOME")") || MCP_REG_OUT=""
 printf '%s\n' "$MCP_REG_OUT" | sed -n 's/^PROBLEM /       [WARN] /p'
 # IR-001: an installer saying it configured something is not evidence that it did. This
 # reports what was read back off disk, not what we meant to write.
@@ -960,7 +974,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
         env: {
           ...(prev.env || {}),
           OWNMIND_API_URL: '$API_URL',
-          OWNMIND_API_KEY: '$API_KEY',
+          OWNMIND_API_KEY: process.env.OWNMIND_INSTALL_KEY,
           OWNMIND_TOOL: 'cursor'
         }
       };
@@ -977,7 +991,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
             ...entry,
             env: {
               OWNMIND_API_URL: '$API_URL',
-              OWNMIND_API_KEY: '$API_KEY',
+              OWNMIND_API_KEY: process.env.OWNMIND_INSTALL_KEY,
               OWNMIND_TOOL: 'cursor'
             }
           }

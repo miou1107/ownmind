@@ -66,10 +66,11 @@ describe('install.sh send_install_beacon — spool fallback on POST failure (v1.
   it('returns only when curl succeeds; failures take the spool path', () => {
     const fnMatch = content.match(/send_install_beacon\(\)\s*\{[\s\S]+?\n\}/m);
     assert.ok(fnMatch);
-    // Must have an `if curl ... then return` structure.
+    // Must have an `if curl ... then return` structure. Since v1.30.44 the key is piped in
+    // first: `if ownmind_curl_auth "$API_KEY" | curl -K - ...`.
     assert.match(
       fnMatch[0],
-      /if\s+curl[\s\S]*?then[\s\S]*?return/,
+      /if\s+(ownmind_curl_auth\s+"\$API_KEY"\s*\|\s*)?curl[\s\S]*?then[\s\S]*?return/,
       'POST success must return explicitly; only failures fall through to the spool (avoid doing both)'
     );
   });

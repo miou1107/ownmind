@@ -34,7 +34,7 @@
 // contains a quote. Every value is now its own argv element, so the only characters that
 // travel are the ones in a path or a URL.
 //
-// Usage:  node register-mcp-cli.cjs --command <cmd> [--arg <a>]... --url <u> --key <k>
+// Usage:  node register-mcp-cli.cjs --command <cmd> [--arg <a>]... --url <u> (--key-env <VAR> | --key <k>)
 //                                   --home <h> [--tool <t>]
 //         node register-mcp-cli.cjs --upgrade <home>
 // Prints: PROBLEM <text>   (zero or more)
@@ -124,9 +124,12 @@ function main(argv) {
     else opts[flag] = value;
   }
 
-  const { url: apiUrl, key: apiKey, home, tool, command } = opts;
+  // `--key-env NAME` reads the key from that environment variable. Preferred over `--key`:
+  // an argument is on the process's command line, which every account can read with `ps`.
+  const apiKey = opts['key-env'] ? process.env[opts['key-env']] : opts.key;
+  const { url: apiUrl, home, tool, command } = opts;
   if (!command || !apiUrl || !apiKey || !home) {
-    console.log('PROBLEM register-mcp-cli needs --command --url --key --home');
+    console.log('PROBLEM register-mcp-cli needs --command --url --key (or --key-env) --home');
     console.log('UNVERIFIED');
     return;
   }
