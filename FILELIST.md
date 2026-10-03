@@ -36,6 +36,25 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.40 修改（伺服器不能再決定 AI 要執行什麼指令）
+
+新增檔：
+```
+mcp/lib/upgrade-notice.js             — 升級提示由電腦端組出：指令寫死（跟伺服器原本送的同一條），不讀伺服器給的指令；
+                                       stripUpgradeAction 把伺服器的指令和說明清掉，只留「需要更新」；
+                                       版本號要是 x.y.z 才顯示；照樣要求立刻執行、不問使用者
+tests/upgrade-notice-fixed-command.test.js — 伺服器塞的指令不會出現在提示裡、版本號格式檢查、使用說明指向電腦端那條指令、
+                                       開場自動更新檢查還在
+```
+
+修改檔：
+```
+mcp/index.js                          — 改用 buildUpgradeNotice；交給 AI 和寫入快取之前，先把伺服器的 upgrade_action 清到只剩標記
+src/routes/memory.js                  — 使用說明的「升級處理」改成執行 _upgrade_notice 裡的指令（仍然不問使用者）
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.40
+```
+
 ## v1.30.39 修改（金鑰可以更換）
 
 新增檔：

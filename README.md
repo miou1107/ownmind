@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.30.39** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.30.40** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -40,6 +40,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **The server chose the command every AI ran on upgrade** — `mcp/index.js` copied `upgrade_action.command` from the init response into the AI's notice verbatim, and the AI runs the update at once without asking (by design, unchanged). Whoever could alter that response (a compromised server, a man in the middle on plain http) chose what ran on every machine. The command is now fixed in the client, and the server's command and message are dropped before anything reaches the AI; the version shown must be a plain x.y.z. Automatic updates at session start work as before. This closes the word-for-word relay; a fully compromised server still controls other text the AI reads. Client and server both changed. `v1.30.40`
 - **A leaked API key could never be revoked** — nothing on the server wrote `api_key` after an account was created, and a password change left it alone. Keys can now be replaced: `POST /api/me/rotate-key` (your own) and `POST /api/admin/users/:id/rotate-key` (a lower rank), also as "Replace API key" on the team page, audited without either key. On a machine, `node ~/.ownmind/scripts/install-helpers/swap-api-key.cjs --rotate` (or `--set`, key on stdin, for your other machines) rewrites the key in every tool's config, reads each back, and asks the server whose the new key is before calling it done. Needs a server deploy. Nothing changes until someone chooses to replace a key. `v1.30.39`
 - **Any admin could copy the super_admin's API key and become them** — `GET /api/admin/users` returned every user's full key, and authentication finds a user by key alone, so the team page's copy button undid every rule that keeps an admin away from a super_admin. The list now carries an eight-character prefix; a full key comes from `GET /api/admin/users/:id/api-key`, one user at a time, only for yourself or a lower rank, with every reveal written to the audit log. The dashboard shows the copy button and install prompt only where that holds. Needs a server deploy. Keys still cannot be rotated, so one copied before this release stays valid. `v1.30.38`
 - **On Windows, the address move's warnings went nowhere** — v1.30.36 said an address with no key, or a config that will not parse, is reported in the update's error log. That held on macOS and Linux only: `update.ps1` ran the step without redirecting stderr. It now appends to `~/.ownmind/logs/update-errors.log` like the script's other steps; checked on Windows PowerShell 5.1. `v1.30.37`
