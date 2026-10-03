@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.31.9** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.31.10** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -40,6 +40,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **The update-failed toast kept coming back** — on 2026-10-04 the auto-update failed four times on one Mac: a hand-edited file in the install folder blocked the pull. After the install was fixed by hand, every new window still toasted "auto-update failed 4 times today", sometimes twice in one window. The toast now needs both: three or more failed attempts today, and an installed copy that really is behind. It says how many versions behind and that telling the AI "升級 OwnMind" fixes it. Overlapping refreshes no longer show the same toast twice. Client update only. `v1.31.10`
 - **"收工" listed things other windows had left** — on 2026-10-04 the pane said a port was still open; it was a database an idaytour window had started the night before. Branches, stash entries and commits from other windows in the same repo counted the same way. All six checks now count only what this session added or changed since it started: branches it made or moved, files it changed, its own unpushed commits and stash entries, and ports opened by its own processes. The version item is ticked when the session made no commit and left the version files alone. Commits waiting on the remote are no longer listed as a to-do. Client update only. `v1.31.9`
 - **After "收工" there was no way to tell when the wrap-up was finished** — the pane header only said "01:50 查的", the same while the AI was still working. It now reads "收工狀態：進行中" while the checks run or the AI is handling the wrap-up, and "收工狀態：01:53 完成" once the AI has answered. When it is done and all six items are ticked, a green banner at the bottom says "成功通過所有收工檢查，可安心關閉此對話", so you know the conversation can be closed. Desktop text is about 40% larger. Client update only. `v1.31.8`
 - **After "收工" the pane could stay yellow however the wrap-up was handled** — the version tile was yellow whenever commits followed the newest tag, the handoff tile was always yellow, and OwnMind's own reply judge (agy) showed up as a leftover port. The AI was left explaining yellow tiles in prose, which reads as "something is still wrong". The AI now handles every tile before it answers: it fixes a red one (only a re-check clears red), and once a yellow one is handled it calls `mcp__wrapup-check__resolve` with one sentence, and that tile turns green and shows the sentence. Typing 收工 again starts over. agy no longer counts as a leftover. The pane is now a checklist of the six items: "完成 n / 6" with a progress bar, each item ticked with what was found or done, "AI 處理中" while the AI is still answering, then "等你決定" or "還沒處理" for what is left (the three number cards are gone). Client update only. `v1.31.7`

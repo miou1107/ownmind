@@ -81,3 +81,35 @@ for (const home of [undefined, '/c/Users/amy']) {
     expect(runs[0]?.init?.cwd).toBe('C:\\Users\\amy\\.ownmind')
   })
 }
+
+// 2026-10-04: the auto-update failed four times on Vin's Mac, he fixed the install by hand,
+// and every new window still toasted that the rules might be stale. The toast now needs the
+// installed copy to really be behind, not just a failed attempt in today's log.
+for (const [behind, tags, toasts] of [['current', '', 0], ['behind', 'v1.31.8\nv1.31.9\n', 1]] as const) {
+  test(`update toast only when the install is ${behind}`, async ($, on) => {
+    const o = on as any
+    const v = (x: any) => () => ({ value: x })
+    const shown: string[] = []
+    o('session.start', () => ({ cwd: '/tmp' }))
+    o('command.register', v({ command: 'x' }))
+    o('ui.status', v(undefined))
+    o('ui.toast', (_: any, e: any) => { shown.push(String(e.message ?? e.text ?? JSON.stringify(e))); return { value: undefined } })
+    o('clock.every', v({}))
+    o('clock.now', v(Date.parse('2026-10-04T12:00:00+08:00')))
+    o('env.get', v('/home/test'))
+    o('fs.read', (_: any, e: any) => {
+      const p = String(e.path ?? '')
+      if (p.endsWith('2026-10-04.jsonl')) return { value: `{"event":"update_failed","details":{"step":"pull"}}\n`.repeat(4) }
+      return { deny: 'missing' }
+    })
+    o('process.run', v({ exitCode: 0, stdout: tags, stderr: '', isStdoutTruncated: false, isStderrTruncated: false }))
+    o('session.messages', v([]))
+    o('ui.open', v({ isPlaced: true }))
+    await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+    // The /ownmind command awaits the refresh; session start only kicks it off.
+    await ($ as any).command.run({ command: 'ownmind' })
+    console.log(behind, 'toasts', JSON.stringify(shown))
+    expect(shown.length).toBe(toasts)
+    if (toasts) expect(shown[0]).toMatch(/落後 2 版/)
+  })
+}
