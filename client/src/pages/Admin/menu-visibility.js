@@ -2,7 +2,7 @@
 //
 // Requirement 4 of openspec/changes/archive/v1.26.49-team-management-page/spec.md.
 //
-// The item set is fixed at four ids in a fixed order; the visible subset is
+// The item set is fixed at five ids in a fixed order; the visible subset is
 // derived per-row. The predicates mirror what the server enforces
 // (src/routes/admin.js:238-311,345-357): showing a button the server would
 // reject teaches the admin to distrust the UI, so we hide it instead.
@@ -10,7 +10,7 @@
 // Pure function on purpose — testable without a DOM, and the RowMenu component
 // consumes the returned list as its render source of truth.
 
-const ORDER = ['install-prompt', 'edit', 'password', 'delete'];
+const ORDER = ['install-prompt', 'rotate-key', 'edit', 'password', 'delete'];
 
 const RANK = { user: 0, admin: 1, super_admin: 2 };
 
@@ -41,6 +41,10 @@ export function visibleMenuItems(actor, row) {
     // for everyone, on the reasoning that the key was already in the row — which was the
     // flaw: an admin could copy a super_admin's key and become them.
     'install-prompt': canRevealKeyOf(actor, row),
+
+    // Issuing someone a new key is holding their account, so the same rule as revealing it
+    // (src/routes/api-key-rotate.js enforces it on the server).
+    'rotate-key': canRevealKeyOf(actor, row),
 
     // Every actor can edit any row's role or display name. Server enforces the
     // hard rules (admin cannot touch super_admin, cannot demote the last

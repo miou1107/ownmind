@@ -150,6 +150,7 @@ import { createDebugRouter } from './routes/debug.js';
 import setupRoutes from './routes/setup.js';
 import adminPasswordResetRoutes from './routes/admin-password-reset.js';
 import adminApiKeyRoutes from './routes/admin-api-key.js';
+import apiKeyRotateRoutes from './routes/api-key-rotate.js';
 import bugReportsRoutes from './routes/bug-reports.js';
 import { createVersionRouter } from './routes/version.js';
 import { createChangelogRouter } from './routes/changelog.js';
@@ -168,6 +169,11 @@ app.use('/api/admin/users', adminPasswordResetRoutes);
 // One user's full API key, for yourself or someone below you (the list carries only a
 // prefix). Mounted before /api/admin for the same reason as the reset above.
 app.use('/api/admin/users', adminApiKeyRoutes);
+
+// Replace an API key: /api/me/rotate-key (your own) and /api/admin/users/:id/rotate-key
+// (someone below you). Ahead of the admin and me routers, whose router-level auth would
+// otherwise answer first.
+app.use('/api', apiKeyRotateRoutes);
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/compliance', complianceRoutes);

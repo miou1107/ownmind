@@ -12,14 +12,14 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { visibleMenuItems } from '../client/src/pages/Admin/menu-visibility.js';
 
-const ITEMS = ['install-prompt', 'edit', 'password', 'delete'];
+const ITEMS = ['install-prompt', 'rotate-key', 'edit', 'password', 'delete'];
 
 // Fixed cast for readability. Actor is who's clicking; row is whose menu is being opened.
 const SUPER = { id: 1, role: 'super_admin' };
 const ADMIN = { id: 2, role: 'admin' };
 const MEMBER = { id: 3, role: 'user' };
 
-describe('visibleMenuItems — always emits four IDs in the fixed order', () => {
+describe('visibleMenuItems — always emits five IDs in the fixed order', () => {
   it('never returns an item outside the allowed set', () => {
     for (const actor of [SUPER, ADMIN, MEMBER]) {
       for (const row of [SUPER, ADMIN, MEMBER]) {
@@ -125,17 +125,17 @@ describe('visibleMenuItems — delete (item 4) visibility', () => {
 });
 
 describe('visibleMenuItems — combined scenarios from spec', () => {
-  it('super_admin viewing another admin: all four visible', () => {
+  it('super_admin viewing another admin: all five visible', () => {
     assert.deepEqual(
       visibleMenuItems(SUPER, ADMIN),
-      ['install-prompt', 'edit', 'password', 'delete'],
+      ['install-prompt', 'rotate-key', 'edit', 'password', 'delete'],
     );
   });
 
   it('admin viewing self: items 1, 2, 3 visible; item 4 not', () => {
     assert.deepEqual(
       visibleMenuItems(ADMIN, ADMIN),
-      ['install-prompt', 'edit', 'password'],
+      ['install-prompt', 'rotate-key', 'edit', 'password'],
     );
   });
 

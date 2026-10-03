@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { AlertTriangle, UserPlus, Copy, MoreHorizontal } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { useSession } from '../../session/SessionContext';
-import { apiGet } from '../../api';
+import { apiGet, apiPost } from '../../api';
+import { setApiKey } from '../../api/auth.js';
 import { mergeUsersWithUsage } from './user-merge.js';
 import { buildInstallPrompt, currentApiUrl } from '../../utils/install-prompt.js';
 import RowMenu from './RowMenu.jsx';
@@ -103,6 +104,27 @@ export default function TeamPage() {
         showToast(t('team.toast.copied_install'));
       } catch (err) {
         showToast(err.message || t('team.toast.copy_failed'));
+      }
+      return;
+    }
+    if (menuId === 'rotate-key') {
+      // The old key dies on the server the moment this succeeds, so say so before, and hand
+      // the admin the new install prompt right after — it is the only time the key is shown.
+      if (!window.confirm(t('team.confirm.rotate_key', { email: row.email }))) return;
+      const r = await apiPost(`/api/admin/users/${row.id}/rotate-key`);
+      if (!r.ok || !r.data?.api_key) {
+        showToast(r.error || t('team.toast.rotate_failed'));
+        return;
+      }
+      // Replacing your own key also replaces the one this browser is signed in with.
+      if (row.id === session.id) setApiKey(r.data.api_key);
+      try {
+        const prompt = buildInstallPrompt({ ...row, api_key: r.data.api_key }, currentApiUrl(window.location));
+        await navigator.clipboard.writeText(prompt);
+        showToast(t('team.toast.rotated_key'));
+      } catch {
+        // The key has changed either way; a bare "copy failed" would read as "nothing happened".
+        showToast(t('team.toast.rotated_copy_failed'));
       }
       return;
     }

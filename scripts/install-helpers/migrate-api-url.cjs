@@ -362,6 +362,10 @@ module.exports = {
   sameAddress,
   sourcesFor,
   FILE_SOURCES,
+  // Shared with swap-api-key.cjs, which edits the same files for the key.
+  load,
+  tomlLines,
+  writeAtomic,
 };
 
 if (require.main === module) {
