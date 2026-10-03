@@ -9,7 +9,7 @@
 # 2026-08-10, two users on 1.26.125 were being reported as
 #
 #     scheduler failed | Task Scheduler entry points at another installation,
-#                        not C:\Users\Adam\.ownmind
+#                        not C:\Users\member-5\.ownmind
 #
 # by self-check.cjs, which has compared the task's actions against the installation
 # directory since v1.26.124. Their task existed and was enabled, so the repair said

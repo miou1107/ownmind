@@ -9,7 +9,7 @@ databases that could not be opened. All three were found by a person reading a l
 on the machine itself.
 
 That is the actual gap. **The evidence needed to diagnose a collector only exists on the
-machine that has the problem**, and nobody looks at it there. Amiee's `codex` has never
+machine that has the problem**, and nobody looks at it there. member-1's `codex` has never
 checked in since 2026-05-05 and the investigation is still blocked on physical access to
 her laptop (backlog 17).
 

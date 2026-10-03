@@ -11,11 +11,11 @@ The only writer is `POST /api/debug/install-check`; there is no reader, no page,
 
 Twice in one week that cost real time:
 
-- Adam's report has carried `memory_load: fail` with `bash_is_wsl: true` and the exact
+- member-5's report has carried `memory_load: fail` with `bash_is_wsl: true` and the exact
   explanation — "`bash` on this machine is the WSL launcher, whose home directory is not
   this one" — since May. The answer to "why do six Windows machines never load memories"
   sat in the database for two months while the question took a week of hand-digging.
-- Adam's May report also showed the credentials lookup failing. Nobody saw that either.
+- member-5's May report also showed the credentials lookup failing. Nobody saw that either.
 
 Vin, 2026-08-06, stating the requirement: 「每次在安裝、升級的時候都要做完整的檢測，檢測
 如果有問題就要自己 repair 並且回報給 ownmind 做紀錄，讓開發者可以分析問題並發新版解決。

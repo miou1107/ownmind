@@ -81,7 +81,7 @@ New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 # 「task 完全沒註冊」，Bob 跟 Alice 兩台升級踩到。當時修掉參數，沒有修掉「把小錯誤
 # 放大成永久損壞」的結構。
 #
-# 2026-08-05 正式機追查：Adam 的掃描器從 07-15 之後一次都沒跑過，二十天沒有人發現。
+# 2026-08-05 正式機追查：member-5 的掃描器從 07-15 之後一次都沒跑過，二十天沒有人發現。
 # Register-ScheduledTask -Force 直接覆蓋同名 task，一步完成，中間沒有空窗。
 # v1.17.66 — 改用 wscript.exe + run-hidden.vbs 包 node.exe，避免每次跑都跳 console window
 # （Alice 回報：每 30 分鐘閃 PowerShell/console 視窗 + 補跑造成連跳，影響工作體驗）

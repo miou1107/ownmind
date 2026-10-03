@@ -590,7 +590,7 @@ describe('pre-commit — public identifiers and the way out of a wrong block', (
   });
 
   it('with no rule of your own it is the built-in scan that blocks, and it says so', () => {
-    // The path Eric hit: nothing configured, the baseline caught it, and the message named
+    // The path member-6 hit: nothing configured, the baseline caught it, and the message named
     // no exit at all.
     fs.writeFileSync(path.join(tmpHome, '.ownmind', 'cache', 'iron_rules.json'), '[]');
     stage('data/checksums.txt', 'a1B2c3D4e5F6g7H8i9J0kL\n');

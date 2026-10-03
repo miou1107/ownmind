@@ -17,7 +17,7 @@
 - Broadcast body hard limit: **2000 characters** (`validateBroadcastPayload`, `src/routes/broadcast.js`).
 - Broadcast title hard limit: **200 characters**.
 - The broadcast must be `severity='warning'` — `hooks/lib/render-session-context.js` only injects its action-required block for `warning`/`error` or `type='upgrade_reminder'`. An `info` broadcast renders passively and gets skimmed past.
-- Target user: the **oldest** `super_admin` by `id`. On production that is id 1 (Vincent Kao); id 4 (Eric) is also `super_admin`, so "any super_admin" would be wrong.
+- Target user: the **oldest** `super_admin` by `id`. On production that is id 1 (Vincent Kao); id 4 (member-6) is also `super_admin`, so "any super_admin" would be wrong.
 - Run the full suite with `npm test`. A single file: `node --test tests/<file>.test.js`.
 - Never write a literal control byte into a source file (that is Task 6's whole subject).
 
@@ -129,7 +129,7 @@ git commit -m "feat(v1.26.87): 記住哪些檢測失敗已經通知過"
   - `StateRef = { user_id, machine, check_name }`
   - `DetailChange = { user_id, machine, check_name, detail }`
 
-The fixtures below are the real shape of production rows: `checks[]` entries are `{name, status, detail, fix?, evidence?}`, and Adam's `memory_load` failure is copied from the row uploaded on 2026-08-06.
+The fixtures below are the real shape of production rows: `checks[]` entries are `{name, status, detail, fix?, evidence?}`, and member-5's `memory_load` failure is copied from the row uploaded on 2026-08-06.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -140,19 +140,19 @@ import assert from 'node:assert/strict';
 
 import { evaluateFailures, stateKey } from '../src/lib/install-check-alerts.js';
 
-// Real payload from production, machine LAPTOP-MBGGLV2J, client 1.26.84.
-const ADAM_MEMORY_LOAD_FAIL = {
+// Real payload from production, machine LAPTOP-MEMBER5, client 1.26.84.
+const MEMBER5_MEMORY_LOAD_FAIL = {
   name: 'memory_load',
   status: 'fail',
   detail: 'memories have never loaded automatically on this account (`bash` on this machine is the WSL launcher, whose home directory is not this one)',
   fix: 'Re-run the installer, then fully restart your AI tool and open a new conversation',
 };
 
-function adamReport(checks) {
+function member5Report(checks) {
   return {
     user_id: 3,
-    user_name: 'Adam',
-    machine: 'LAPTOP-MBGGLV2J',
+    user_name: 'member-5',
+    machine: 'LAPTOP-MEMBER5',
     client_version: '1.26.84',
     checks,
   };
@@ -161,9 +161,9 @@ function adamReport(checks) {
 function announced(overrides = {}) {
   return {
     user_id: 3,
-    machine: 'LAPTOP-MBGGLV2J',
+    machine: 'LAPTOP-MEMBER5',
     check_name: 'memory_load',
-    detail: ADAM_MEMORY_LOAD_FAIL.detail,
+    detail: MEMBER5_MEMORY_LOAD_FAIL.detail,
     announced_at: new Date('2026-08-06T00:00:00Z'),
     resolved_at: null,
     ...overrides,
@@ -173,24 +173,24 @@ function announced(overrides = {}) {
 describe('evaluateFailures — first sighting', () => {
   it('a failure nobody has announced is new', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([{ name: 'scheduler', status: 'pass', detail: 'ok' }, ADAM_MEMORY_LOAD_FAIL])],
+      reports: [member5Report([{ name: 'scheduler', status: 'pass', detail: 'ok' }, MEMBER5_MEMORY_LOAD_FAIL])],
       knownState: [],
     });
     assert.equal(newFailures.length, 1);
     assert.deepEqual(newFailures[0], {
       user_id: 3,
-      user_name: 'Adam',
-      machine: 'LAPTOP-MBGGLV2J',
+      user_name: 'member-5',
+      machine: 'LAPTOP-MEMBER5',
       check_name: 'memory_load',
-      detail: ADAM_MEMORY_LOAD_FAIL.detail,
-      fix: ADAM_MEMORY_LOAD_FAIL.fix,
+      detail: MEMBER5_MEMORY_LOAD_FAIL.detail,
+      fix: MEMBER5_MEMORY_LOAD_FAIL.fix,
       client_version: '1.26.84',
     });
   });
 
   it('an all-green report produces nothing', () => {
     const { newFailures, resolved } = evaluateFailures({
-      reports: [adamReport([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
+      reports: [member5Report([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
       knownState: [],
     });
     assert.equal(newFailures.length, 0);
@@ -199,7 +199,7 @@ describe('evaluateFailures — first sighting', () => {
 
   it('warn is not a failure', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([{ name: 'api_key_source', status: 'warn', detail: 'key only in env' }])],
+      reports: [member5Report([{ name: 'api_key_source', status: 'warn', detail: 'key only in env' }])],
       knownState: [],
     });
     assert.equal(newFailures.length, 0);
@@ -209,14 +209,14 @@ describe('evaluateFailures — first sighting', () => {
 describe('evaluateFailures — announce once', () => {
   it('the same failure already announced is not new again', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([ADAM_MEMORY_LOAD_FAIL])],
+      reports: [member5Report([MEMBER5_MEMORY_LOAD_FAIL])],
       knownState: [announced()],
     });
     assert.equal(newFailures.length, 0);
   });
 
   it('running twice over the same input announces nothing the second time', () => {
-    const reports = [adamReport([ADAM_MEMORY_LOAD_FAIL])];
+    const reports = [member5Report([MEMBER5_MEMORY_LOAD_FAIL])];
     const first = evaluateFailures({ reports, knownState: [] });
     assert.equal(first.newFailures.length, 1);
 
@@ -235,14 +235,14 @@ describe('evaluateFailures — announce once', () => {
   });
 
   it('a reworded detail updates the record but does not re-announce', () => {
-    const reworded = { ...ADAM_MEMORY_LOAD_FAIL, detail: 'memories never load: bash here is the WSL launcher' };
+    const reworded = { ...MEMBER5_MEMORY_LOAD_FAIL, detail: 'memories never load: bash here is the WSL launcher' };
     const { newFailures, detailChanges } = evaluateFailures({
-      reports: [adamReport([reworded])],
+      reports: [member5Report([reworded])],
       knownState: [announced()],
     });
     assert.equal(newFailures.length, 0);
     assert.deepEqual(detailChanges, [{
-      user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load', detail: reworded.detail,
+      user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load', detail: reworded.detail,
     }]);
   });
 });
@@ -250,16 +250,16 @@ describe('evaluateFailures — announce once', () => {
 describe('evaluateFailures — resolution re-arms', () => {
   it('a previously announced check that now passes is resolved', () => {
     const { resolved, newFailures } = evaluateFailures({
-      reports: [adamReport([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }])],
+      reports: [member5Report([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }])],
       knownState: [announced()],
     });
-    assert.deepEqual(resolved, [{ user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load' }]);
+    assert.deepEqual(resolved, [{ user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load' }]);
     assert.equal(newFailures.length, 0);
   });
 
   it('failing again after being resolved is announced again', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([ADAM_MEMORY_LOAD_FAIL])],
+      reports: [member5Report([MEMBER5_MEMORY_LOAD_FAIL])],
       knownState: [announced({ resolved_at: new Date('2026-08-06T09:00:00Z') })],
     });
     assert.equal(newFailures.length, 1);
@@ -269,7 +269,7 @@ describe('evaluateFailures — resolution re-arms', () => {
 describe('evaluateFailures — a report without checks decides nothing', () => {
   it('a beacon row does not resolve a live failure', () => {
     const { resolved, newFailures } = evaluateFailures({
-      reports: [adamReport([])],
+      reports: [member5Report([])],
       knownState: [announced()],
     });
     assert.equal(resolved.length, 0, 'an empty report must not read as "fixed"');
@@ -278,7 +278,7 @@ describe('evaluateFailures — a report without checks decides nothing', () => {
 
   it('a check absent from the report is left alone, not resolved', () => {
     const { resolved } = evaluateFailures({
-      reports: [adamReport([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
+      reports: [member5Report([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
       knownState: [announced()],
     });
     assert.equal(resolved.length, 0);
@@ -433,8 +433,8 @@ const WSL_FIX = 'Re-run the installer, then fully restart your AI tool and open 
 function failure(overrides = {}) {
   return {
     user_id: 3,
-    user_name: 'Adam',
-    machine: 'LAPTOP-MBGGLV2J',
+    user_name: 'member-5',
+    machine: 'LAPTOP-MEMBER5',
     check_name: 'memory_load',
     detail: WSL_DETAIL,
     fix: WSL_FIX,
@@ -448,8 +448,8 @@ describe('renderAlertMessage — one entry carries everything needed to act', ()
 
   it('names the check, the person and the machine', () => {
     assert.match(body, /memory_load/);
-    assert.match(body, /Adam/);
-    assert.match(body, /LAPTOP-MBGGLV2J/);
+    assert.match(body, /member-5/);
+    assert.match(body, /LAPTOP-MEMBER5/);
   });
 
   it('carries the reason and the fix verbatim', () => {
@@ -473,7 +473,7 @@ describe('renderAlertMessage — one entry carries everything needed to act', ()
 
 describe('renderAlertMessage — rollup', () => {
   it('six machines with one cause read as one entry', () => {
-    const machines = ['LAPTOP-MBGGLV2J', 'TANK', 'after', 'LAPTOP-G95HIQ3V', 'LAPTOP-RGE2HCSQ', 'Fontrip-Joanna'];
+    const machines = ['LAPTOP-MEMBER5', 'TANK', 'after', 'LAPTOP-MEMBER6', 'LAPTOP-MEMBER1', 'Fontrip-member-2'];
     const failures = machines.map((m, i) => failure({ machine: m, user_name: `U${i}`, user_id: 100 + i }));
     const { body } = renderAlertMessage(failures);
 
@@ -668,10 +668,10 @@ import assert from 'node:assert/strict';
 
 import { runInstallCheckAlerts } from '../src/jobs/install-check-alerts.js';
 
-const ADAM_ROW = {
+const MEMBER5_ROW = {
   user_id: 3,
-  user_name: 'Adam',
-  machine: 'LAPTOP-MBGGLV2J',
+  user_name: 'member-5',
+  machine: 'LAPTOP-MEMBER5',
   client_version: '1.26.84',
   checks: [
     { name: 'scheduler', status: 'pass', detail: 'Task Scheduler state=Ready' },
@@ -680,7 +680,7 @@ const ADAM_ROW = {
 };
 
 /** Fake db: dispatches on the SQL text, records every write. */
-function makeQuery({ reports = [ADAM_ROW], state = [], admins = [{ id: 1 }] } = {}) {
+function makeQuery({ reports = [MEMBER5_ROW], state = [], admins = [{ id: 1 }] } = {}) {
   const calls = [];
   const query = async (sql, params = []) => {
     calls.push({ sql, params });
@@ -729,7 +729,7 @@ describe('runInstallCheckAlerts', () => {
   it('says nothing when every failure is already announced', async () => {
     const { query, calls } = makeQuery({
       state: [{
-        user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load',
+        user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load',
         detail: 'bash here is the WSL launcher',
         announced_at: new Date('2026-08-06T00:00:00Z'), resolved_at: null,
       }],
@@ -741,11 +741,11 @@ describe('runInstallCheckAlerts', () => {
   });
 
   it('marks a fixed check resolved without announcing anything', async () => {
-    const green = { ...ADAM_ROW, checks: [{ name: 'memory_load', status: 'pass', detail: 'loaded' }] };
+    const green = { ...MEMBER5_ROW, checks: [{ name: 'memory_load', status: 'pass', detail: 'loaded' }] };
     const { query, calls } = makeQuery({
       reports: [green],
       state: [{
-        user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load', detail: 'x',
+        user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load', detail: 'x',
         announced_at: new Date('2026-08-06T00:00:00Z'), resolved_at: null,
       }],
     });
@@ -971,7 +971,7 @@ const VALID_BODY = {
   trigger: 'post_upgrade',
   client_version: '1.26.86',
   platform: 'win32',
-  machine: 'LAPTOP-MBGGLV2J',
+  machine: 'LAPTOP-MEMBER5',
   checks: [{ name: 'memory_load', status: 'fail', detail: 'WSL launcher', fix: 'Re-run the installer' }],
   summary: { pass: 9, warn: 0, fail: 1 },
 };

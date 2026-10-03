@@ -27,7 +27,7 @@ long as the installation exists.
 
 **The untracked ones cannot be cleared at all.** `git reset --hard` does not remove
 untracked files, so `?? bin/` and `?? reports/` are still there afterwards and the branch
-fires again next time. Eric's machine reports `tree: ?? standards/` on every upgrade for
+fires again next time. member-6's machine reports `tree: ?? standards/` on every upgrade for
 the same reason.
 
 The cost is not the reset itself — a backup is taken first. It is that the branch which

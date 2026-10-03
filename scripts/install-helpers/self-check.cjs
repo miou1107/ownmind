@@ -107,7 +107,7 @@ function readJsonSafe(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
-// v1.26.82 — this used to read ~/.claude/settings.json and nothing else. On Adam's machine
+// v1.26.82 — this used to read ~/.claude/settings.json and nothing else. On member-5's machine
 // the key is not there: Claude Code keeps MCP config in ~/.claude.json now, and his key
 // arrives as an environment variable. The MCP is handed that environment, so it kept
 // working while this check reported "OWNMIND_API_KEY is empty" and the scanner and the

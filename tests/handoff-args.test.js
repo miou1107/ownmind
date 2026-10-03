@@ -11,7 +11,7 @@
 // So every caller that trusted the schema lost its handoff, and the feature only worked by
 // accident when the caller happened to send two fields it was told it could omit.
 //
-// This is the same defect as Eric's bug #9 (v1.26.61, session logs), one table over, and it
+// This is the same defect as member-6's bug #9 (v1.26.61, session logs), one table over, and it
 // takes the same decision: the columns have always been nullable (db/001_init.sql:76-87), the
 // MCP process already holds the tool in a constant, and nothing anywhere knows the model.
 // See tests/session-log-args.test.js for the original.

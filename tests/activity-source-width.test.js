@@ -18,7 +18,7 @@
 // entire history.
 //
 // The column is widened rather than the strings shortened, because the strings are also
-// sent by installed clients that will never be upgraded — Adam is on v1.26.29. Shortening
+// sent by installed clients that will never be upgraded — member-5 is on v1.26.29. Shortening
 // server-side literals would leave every one of those clients still failing.
 
 import { describe, it } from 'node:test';

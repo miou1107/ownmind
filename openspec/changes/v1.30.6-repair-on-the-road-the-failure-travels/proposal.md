@@ -4,12 +4,12 @@
 
 `scripts/install-helpers/ensure-scanner-schedule.sh` opens by explaining itself:
 
-> Measured on production 2026-08-06: Adam's collector last reported on 2026-07-15. His MCP was
+> Measured on production 2026-08-06: member-5's collector last reported on 2026-07-15. His MCP was
 > alive the whole time, auto-updating and heartbeating daily. Only the scheduled task was gone.
 > Three weeks, nobody noticed, because nothing was watching.
 >
 > The Windows side already had a repair (`interactive-upgrade.ps1` re-registers the task, and
-> its comment names Adam). It never reached him: only `bootstrap.ps1` calls it, and nobody runs
+> its comment names member-5). It never reached him: only `bootstrap.ps1` calls it, and nobody runs
 > bootstrap by hand. **Repair has to live on the road the failure travels, which is the daily
 > auto-update.**
 

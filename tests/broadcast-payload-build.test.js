@@ -52,7 +52,7 @@ describe('buildBroadcastPayload — recipients', () => {
   });
 
   it('sends the ids of the chosen members, in the order chosen', () => {
-    const chosen = [{ id: 7, name: 'Amiee' }, { id: 4, name: 'Joanna' }];
+    const chosen = [{ id: 7, name: 'member-1' }, { id: 4, name: 'member-2' }];
     assert.deepEqual(buildBroadcastPayload(form(), chosen).target_users, [7, 4]);
   });
 });

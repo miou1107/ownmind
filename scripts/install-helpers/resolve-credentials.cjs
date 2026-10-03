@@ -6,7 +6,7 @@
 //
 // Why this file exists
 // --------------------
-// Adam's machine, 2026-08-06. His MCP had been running and uploading for weeks. In the
+// member-5's machine, 2026-08-06. His MCP had been running and uploading for weeks. In the
 // same period his usage scanner died (7/15), his upgrade beacons stopped (7/8), his memory
 // hook had never fired at all, and the installer's self-check reported three failures
 // saying `OWNMIND_API_KEY is empty`.

@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
     // what the columns allow. `from_tool` is defaulted by the MCP client from the tool
     // hosting it, and `from_model` is genuinely optional — nothing in the client knows it.
     // All four columns except content have been nullable since db/001_init.sql:76-87; this
-    // makes the endpoint agree with its own schema. Same defect as Eric's bug #9.
+    // makes the endpoint agree with its own schema. Same defect as member-6's bug #9.
     const validation = requireFields(req.body, ['project', 'content']);
     if (validation) return res.status(400).json(validation);
 

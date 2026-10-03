@@ -3,7 +3,7 @@
  *
  * Why this is a module rather than four lines in the switch: it decides what a session
  * record is allowed to be missing, and that decision is the fix for a bug that has now
- * been filed three times (Eric's #9 for log_session, and two earlier ones — see the
+ * been filed three times (member-6's #9 for log_session, and two earlier ones — see the
  * header of required-args.js). A decision with that history should be executed by a test,
  * not read.
  *

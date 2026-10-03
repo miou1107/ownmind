@@ -20,8 +20,8 @@ function asDelivered(body) {
 function silence(over = {}) {
   return {
     user_id: 2,
-    user_name: 'Amiee Kuo',
-    machine: 'LAPTOP-RGE2HCSQ',
+    user_name: 'member-1',
+    machine: 'LAPTOP-MEMBER1',
     stale_tools: 'antigravity,cursor,opencode',
     last_beat_at: new Date('2026-07-27T01:18:00Z'),
     stale_days: 11,
@@ -34,9 +34,9 @@ describe('v1.26.102 — the message the person gets', () => {
 
   it('is addressed to them, about their own machine', () => {
     assert.equal(title, '你的用量採集停了');
-    assert.match(body, /LAPTOP-RGE2HCSQ/);
+    assert.match(body, /LAPTOP-MEMBER1/);
     // Their own name would be odd in a message they are reading about themselves.
-    assert.ok(!body.includes('Amiee'));
+    assert.ok(!body.includes('member-1'));
   });
 
   it('says which tools stopped and when', () => {
@@ -84,8 +84,8 @@ describe('v1.26.102 — the message the person gets', () => {
 
 describe('v1.26.102 — the message the admin gets', () => {
   const many = [
-    silence({ user_id: 2, user_name: 'Amiee Kuo', machine: 'A', stale_days: 11 }),
-    silence({ user_id: 3, user_name: 'Adam', machine: 'B', stale_days: 40 }),
+    silence({ user_id: 2, user_name: 'member-1', machine: 'A', stale_days: 11 }),
+    silence({ user_id: 3, user_name: 'member-5', machine: 'B', stale_days: 40 }),
   ];
   const { title, body } = renderAdminMessage(many);
 
@@ -94,12 +94,12 @@ describe('v1.26.102 — the message the admin gets', () => {
   });
 
   it('names who each machine belongs to', () => {
-    assert.match(body, /Amiee Kuo（A）/);
-    assert.match(body, /Adam（B）/);
+    assert.match(body, /member-1（A）/);
+    assert.match(body, /member-5（B）/);
   });
 
   it('puts the longest silence first, so truncation drops the newest problems', () => {
-    assert.ok(body.indexOf('Adam') < body.indexOf('Amiee'));
+    assert.ok(body.indexOf('member-5') < body.indexOf('member-1'));
   });
 
   it('says why the dashboard still looks fine', () => {

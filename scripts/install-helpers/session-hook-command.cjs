@@ -53,10 +53,10 @@ function sessionStartCommand({ platform, hookDir, ownmindDir } = {}) {
   // The hook is an ES module that imports `../shared/helpers.js`. From ~/.claude/hooks/
   // that resolves to ~/.claude/shared/, which does not exist, so Node exits with
   // ERR_MODULE_NOT_FOUND before a single line runs — silently, since nothing is watching a
-  // hook's exit code. Found on Adam's machine after everything else had been made correct:
+  // hook's exit code. Found on member-5's machine after everything else had been made correct:
   // four matchers, Node, the file present, and still not one load.
   //
-  // 采瑤's machine worked throughout only because her AI had happened to write a path under
+  // member-4's machine worked throughout only because her AI had happened to write a path under
   // ~/.ownmind/hooks/, where the imports resolve. That accident was the control group.
   const base = ownmindDir
     ? `${String(ownmindDir).replace(/\\/g, '/').replace(/\/+$/, '')}/hooks`
@@ -132,7 +132,7 @@ function needsRewrite(existingEntries, opts) {
  * an argument the user cannot win.
  *
  * v1.26.82 matched only the exact strings we emit, which meant quoting decided ownership.
- * On 采瑤's machine her AI had hand-written a working but unquoted Node command; we read
+ * On member-4's machine her AI had hand-written a working but unquoted Node command; we read
  * that as a customisation and left her on one matcher instead of four, so memories loaded
  * on a new conversation and not on resume, clear or compact. Quoting is spelling, not
  * intent.

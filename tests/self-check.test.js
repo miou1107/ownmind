@@ -408,7 +408,7 @@ describe('v1.17.68 — checkApiKeyFormat (client-side format validation; does no
   });
 });
 
-// Amiee's machine, 2026-08-13. Her scheduled scanner had been exiting 0x86 (a node
+// member-1's machine, 2026-08-13. Her scheduled scanner had been exiting 0x86 (a node
 // abort) since at least 08-11, and the report she uploaded carried that number in
 // scheduler_detail while the scheduler check read "state=Ready" and passed. The state
 // says the task is registered and enabled; only the result code says whether the last

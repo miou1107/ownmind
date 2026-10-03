@@ -9,7 +9,7 @@ Legend: `[ ]` pending · `[x]` done
 - [x] Confirmed nothing reads it: `grep install_check_logs src/ client/ mcp/ hooks/` returns
       the migration only.
 - [x] Read a real failing payload rather than assuming its shape. Checks are
-      `{name, status, detail, fix?, evidence?}`; Adam's `memory_load` failure carries both a
+      `{name, status, detail, fix?, evidence?}`; member-5's `memory_load` failure carries both a
       human explanation and `bash_is_wsl: true`.
 - [x] Found `src/routes/debug.js` is `file`-typed `data` — two NUL bytes at lines 73 and 81
       hide it from `grep`, which is why the first search for the route found nothing.
@@ -27,7 +27,7 @@ Legend: `[ ]` pending · `[x]` done
 - [x] `src/lib/install-check-alerts.js` — `evaluateFailures({ latestChecks, knownState })`
       returns `{ newFailures, resolved }`. No database access, no clock, no I/O.
 - [x] Tests written before the implementation, using real production payloads as fixtures:
-      Adam's `memory_load` failure, a beacon row with no `checks`, an all-green report.
+      member-5's `memory_load` failure, a beacon row with no `checks`, an all-green report.
 - [x] Test: **run the same input twice, the second run yields no new failures.** Repeated
       application is the whole point of the state table and the first run passing proves
       nothing about the second.
@@ -68,13 +68,13 @@ output:
 ```
 檢測出現 1 個新問題
 
-memory_load 失敗 — Adam（after）、Vin-windows-test（TANK）
+memory_load 失敗 — member-5（after）、Vin-windows-test（TANK）
   memories have never loaded automatically on this account (`bash` on this machine is the WSL launcher, whose home directory is not this one)
   修法：Re-run the installer, then fully restart your AI tool and open a new conversation
   版本 1.26.84、1.26.86
 ```
 
-12 machines read, 2 new failures found (Adam, Vin-windows-test), rolled up to 1 entry
+12 machines read, 2 new failures found (member-5, Vin-windows-test), rolled up to 1 entry
 (same `check_name` + `detail`), `omitted: 0`, body 301 characters — well inside the 2000
 limit. Task 7 also broke each guard on purpose (removed the "already announced" check,
 made the truncation cut silent) and confirmed the covering test went red both times, then

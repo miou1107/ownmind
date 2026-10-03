@@ -16,10 +16,10 @@ Every heartbeat row on production, 2026-08-07:
 
 ```
 who               machine            tool          last beat   days
-Amiee Kuo         LAPTOP-RGE2HCSQ    claude-code   08-07 10:24   0.2   ← the MCP
-Amiee Kuo         LAPTOP-RGE2HCSQ    cursor        07-27 09:18  11.2   ← the scanner
-Amiee Kuo         LAPTOP-RGE2HCSQ    antigravity   07-27 09:18  11.2
-Amiee Kuo         LAPTOP-RGE2HCSQ    opencode      07-27 09:18  11.2
+member-1         LAPTOP-MEMBER1    claude-code   08-07 10:24   0.2   ← the MCP
+member-1         LAPTOP-MEMBER1    cursor        07-27 09:18  11.2   ← the scanner
+member-1         LAPTOP-MEMBER1    antigravity   07-27 09:18  11.2
+member-1         LAPTOP-MEMBER1    opencode      07-27 09:18  11.2
 ```
 
 Her last actual usage event is 94 days old. Her MCP is on 1.26.57 and her scanner stopped
@@ -90,7 +90,7 @@ frozen for weeks is precisely the one that never received it.
 
 **A machine where everything went quiet.** In this table that is indistinguishable from a
 computer that is switched off, a person on leave, or a laptop that was replaced. On the
-same snapshot, Joanna's whole machine had been silent 4.2 days and Michelle's older Mac
+same snapshot, member-2's whole machine had been silent 4.2 days and member-8's older Mac
 1.2 days; neither is a fault, and neither has anything the person could act on. Guessing
 here buys one more detection and spends the reader's trust in every other message. Recorded
 in `openspec/BACKLOG.md` rather than approximated.
@@ -106,7 +106,7 @@ and found three defects, all of which reproduced:
 1. **One broadcast covers both of a person's machines, and repairing the first
    ended it.** The second machine's state row stays announced, so it can never be
    claimed again — its only notice disappeared because a different machine was
-   fixed. Michelle and Vin-windows-test both run two machines. Ending a notice now
+   fixed. member-8 and Vin-windows-test both run two machines. Ending a notice now
    requires that no *other* machine sharing it is still unresolved.
 2. **Resolving and ending the notice were two separate writes, in the order that
    cannot self-heal.** Resolved-then-crash leaves a repaired machine announced for

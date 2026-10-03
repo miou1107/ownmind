@@ -36,7 +36,7 @@
       defence in depth hides its own lower layers from concurrency tests.
 - [x] Node-side coverage closed in `tests/node-hook-parity.test.js`: skip on contention,
       lock before announcing, release when there is nothing to run. 4 mutations, all red.
-- [x] Folded in at Vin's request after DESKTOP-8DD75VJ failed a pull with no recorded reason:
+- [x] Folded in at Vin's request after DESKTOP-MEMBER7 failed a pull with no recorded reason:
       `interactive-upgrade.sh` / `.ps1` now put the tail of the failing command's log into
       `detail`. 7 mutations, all red. The derived-call-site scan immediately found a seventh
       call site the hand edits had missed (`install_incomplete`), and the cap test found an

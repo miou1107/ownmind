@@ -1,6 +1,6 @@
 # v1.26.61 — Stop losing whole session logs over a missing `model`
 
-Filed by Eric on production as bug #9, severity high, component `log_session`.
+Filed by member-6 on production as bug #9, severity high, component `log_session`.
 
 ## What he saw
 
@@ -25,7 +25,7 @@ recoverable situation unrecoverable.**
 That guard's own header says two AIs had already filed near-identical reports — first for
 `ownmind_save`, then for `ownmind_log_session`. This is the third. The guard was the fix
 for the first two, and it changed the failure from a confusing server 400 into a clear
-client-side error. It did not stop the failure. Eric's AI retried three times and got the
+client-side error. It did not stop the failure. member-6's AI retried three times and got the
 same message each time, then gave up.
 
 A clearer error message is a reminder, and reminders do not hold. The way to end this
@@ -64,7 +64,7 @@ bucket instead, and the same applies to `tool`.
 
 ## Second issue in the same report
 
-Eric also noted that `ownmind_report_bug`'s `confirm_string` never says what the user must
+member-6 also noted that `ownmind_report_bug`'s `confirm_string` never says what the user must
 type. The description reads "the exact submit confirmation phrase typed verbatim by the
 user" and stops there. His user typed 「確認送出」, was refused with a 400, and only then
 learned from the error that the phrase is 「送出」. Every first-time reporter hits this.
@@ -81,7 +81,7 @@ wants will supply that string.
 So the description carries the *route* to the phrase rather than the phrase: call, be
 refused, and the refusal names the word (`src/utils/bug-report-helpers.js:22` already
 does). The AI then shows the user the exact word instead of asking them to guess, which
-is what went wrong for Eric's user — and the description never contains the answer.
+is what went wrong for member-6's user — and the description never contains the answer.
 
 ## Found while doing it
 

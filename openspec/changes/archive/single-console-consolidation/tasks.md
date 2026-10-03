@@ -341,9 +341,9 @@ Shipped as `v1.26.50`. One old tab split across two pages. The pricing block was
       degradation. Suite 2388/2388 green
 - [x] Browser check on production — **系統設定 done 2026-08-05**, and it is doing the job
       the stage was written for. On real data it reads: 「2 位近 7 天沒任何 token 使用紀錄，
-      但 collector 都還在跟 server 打卡：Adam、Amiee Kuo。這是舊版「已裝」數字沒有告訴你的
+      但 collector 都還在跟 server 打卡：member-5、member-1。這是舊版「已裝」數字沒有告訴你的
       死角」— the silent state named, counted, and the people listed. It independently
-      corroborates what OwnMind memory 740 recorded about Adam. No pricing card anywhere on
+      corroborates what OwnMind memory 740 recorded about member-5. No pricing card anywhere on
       the page, confirming v1.26.60's removal reached the UI
 - [ ] **廣播管理 create/revoke still untested, deliberately.** The page renders its 43
       existing broadcasts cleanly, but creating one puts a message in front of every
@@ -376,7 +376,7 @@ remain (stats-dashboard, team-usage, periodic-reports).
       `bug-report-row-vm`, `bug-status-update-validate`, `work-log-query`,
       `work-log-row-vm`) plus two new manifest assertions
 - [x] Browser check on production — **done 2026-08-05, using real work rather than test
-      data.** 錯誤回報 lists six reports with both sub-tabs; the detail modal for Eric's #9
+      data.** 錯誤回報 lists six reports with both sub-tabs; the detail modal for member-6's #9
       opened, and its status was moved `new` → `fixed` through the UI, which is true as of
       the release deployed the same day. One PATCH, no test rows created. 工作紀錄 renders
       100 rows across its four filters. **Found while there**: the bug-report detail modal
@@ -445,12 +445,12 @@ single stage, and the only one that was a new integration rather than a move.
       尚無數據 where the legacy page would have painted every one of them solid red at
       0%. Zero bare `0%` nodes anywhere on the page, checked by querying the DOM
 - [x] **Both out-of-scope fixes confirmed against production, not just fixtures.**
-      `initRateMeasured`: three real accounts (Joanna, Amiee Kuo, Vin-windows-test) have
+      `initRateMeasured`: three real accounts (member-2, member-1, Vin-windows-test) have
       `by_event: 0` and no init event, and the server reports a flawless 100% for each —
       the page now says 尚無數據. Six accounts do have init events with `by_event` at 19
       or fewer, so the guard passes them through untouched. `has_usage_data`: the same
       three read 尚無資料 on 使用者管理 where they previously read "0 tokens / 0 次對話",
-      while Joanna — one session, zero tokens — correctly reads `0 tokens / 1 次對話`.
+      while member-2 — one session, zero tokens — correctly reads `0 tokens / 1 次對話`.
       Before the fix all four looked identical
 - [x] **Found by this browser check, fixed in v1.26.57**:
       `https://legacy-server.example/ownmind/dashboard` with **no trailing slash** 301s to the
@@ -577,11 +577,11 @@ Shipped as `v1.26.58`.
       `hidden`, so every claim below is read from the DOM rather than from a
       screenshot. **Requirement 7 is legible on real data, which is the point**:
       of 9 members, 6 reported usage and 3 did not, so the panel reads 67% and names
-      Adam, Vin-windows-test and Amiee Kuo rather than only counting them. Adam has
+      member-5, Vin-windows-test and member-1 rather than only counting them. member-5 has
       session logs but no usage rows, so his activity columns are populated (7
       conversations, multi-claude-switcher, 100%) while his four usage cells read
       尚無資料 — the two endpoints' absences stay separate, which is the distinction
-      the legacy page collapsed. **And the converse holds**: Joanna, who has one
+      the legacy page collapsed. **And the converse holds**: member-2, who has one
       tier-2 row and genuinely zero tokens, reads a real `0`, not 尚無資料. Zero bare
       `0%` nodes anywhere; no `$`, 成本 or cost column; the unmeasured rows sort last.
       The amber marker is gone from 團隊用量 and 統計儀表板 and still present on 週報月報

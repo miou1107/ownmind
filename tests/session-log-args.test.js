@@ -1,4 +1,4 @@
-// v1.26.61 — Eric's bug #9: a whole session log discarded because `model` was absent.
+// v1.26.61 — member-6's bug #9: a whole session log discarded because `model` was absent.
 //
 // The client guard that produced his error is correct and stays; what was wrong is that
 // two of the three required fields did not need to be required. `tool` is a value the MCP
@@ -71,7 +71,7 @@ describe('buildSessionLogBody — what actually goes to the server', () => {
     assert.ok(!('summary' in body));
   });
 
-  it('reproduces Eric\'s call: summary only, and it now produces a usable body', () => {
+  it('reproduces member-6\'s call: summary only, and it now produces a usable body', () => {
     // The exact shape that arrived at the tool in bug #9. Before this change the guard
     // rejected it for two missing fields and the session log was lost.
     const body = buildSessionLogBody({ summary: '本次工作摘要' }, { clientTool: 'claude-code' });
@@ -159,7 +159,7 @@ describe('the declared contract matches what the code does', () => {
   });
 
   it('report_bug describes how to learn the phrase without containing it', () => {
-    // Eric's second finding was that the description never said what the user must type,
+    // member-6's second finding was that the description never said what the user must type,
     // so the user guessed and was refused. The first fix wrote the phrase into the
     // description — which adversarial review rightly called out: an LLM that knows the
     // exact string needed to pass a check will fill it in rather than interrupt itself,

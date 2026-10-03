@@ -7,12 +7,12 @@
 # to be an inline function, and the failure below could only be found by a user running the
 # whole updater on a machine that happened to have the wrong file on it.
 #
-# Reported 2026-08-11 (Amiee, Windows PowerShell 5.1):
+# Reported 2026-08-11 (member-1, Windows PowerShell 5.1):
 #
 #     以 "3" 引數呼叫 "Replace" 時發生例外狀況: "值不能為 null。參數名稱: input"
-#     於 C:\Users\Amieekuo\.ownmind\scripts\update.ps1:176
+#     於 C:\Users\member-1\.ownmind\scripts\update.ps1:176
 #     不可在值為 Null 的運算式上呼叫方法。
-#     於 C:\Users\Amieekuo\.ownmind\scripts\update.ps1:180
+#     於 C:\Users\member-1\.ownmind\scripts\update.ps1:180
 #
 # Root cause: `Get-Content -Raw` returns $null for a zero-byte file — not ''. The old code
 # fed that straight into [regex]::Replace(), which rejects a null input, and the assignment

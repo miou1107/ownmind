@@ -5,14 +5,14 @@
 #
 # Why this exists
 # ---------------
-# Measured on production 2026-08-06. Adam's collector heartbeat says it plainly: the
+# Measured on production 2026-08-06. member-5's collector heartbeat says it plainly: the
 # claude-code row his MCP writes moved that morning carrying 1.26.67, while the four rows
 # the scanner writes had not moved since 2026-07-15 and still carried 1.26.29. Files were
 # upgraded the whole time. The scheduled task was gone for three weeks and the dashboard
 # rendered his usage as blank, which reads like "he did not work".
 #
 # interactive-upgrade.ps1 has re-registered the task since v1.26.65, and its comment names
-# Adam. It never reached him, because only bootstrap.ps1 calls it and nobody runs bootstrap
+# member-5. It never reached him, because only bootstrap.ps1 calls it and nobody runs bootstrap
 # by hand. The auto-update path is mcp/index.js -> update.ps1, and that path had never
 # looked at the schedule at all. A repair only works if it lives on the road the failure
 # actually travels.
@@ -83,7 +83,7 @@ if (-not (Test-Path $healthHelper)) {
 
 # Three ways a registered task is not a working schedule, all of them measured on real
 # machines, all of them decided by Test-ScheduleHealthy: disabled (v1.26.79), owned by
-# another installation (v1.26.130, Adam and Eric), and a state we could not read.
+# another installation (v1.26.130, member-5 and member-6), and a state we could not read.
 #
 # -ErrorAction SilentlyContinue so an absent task is $null rather than a throw. Both reads
 # below are written out rather than wrapped in a helper: the thing worth being able to see

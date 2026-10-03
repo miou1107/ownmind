@@ -227,7 +227,7 @@ them", and it is the concrete form of Vin's complaint that the presentation is w
 
 The rule lives at the data layer because the table is not the only consumer. The
 narrative page is LLM-generated from `collectSections()`
-(`src/routes/me-narrative.js:21,43`); given an unmarked zero it will write "Adam
+(`src/routes/me-narrative.js:21,43`); given an unmarked zero it will write "member-5
 hardly uses OwnMind" as a plain, confident sentence. Prose is worse than a table
 here: a blank cell invites suspicion, a sentence settles the question.
 

@@ -24,9 +24,9 @@ function beat(now, user_id, user_name, machine, tool, days) {
 
 /** One broken machine: the MCP's tool beating, the scanner's tools frozen. */
 const BROKEN = (now) => [
-  beat(now, 2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'claude-code', 0.2),
-  beat(now, 2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'cursor', 11.2),
-  beat(now, 2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'opencode', 11.2),
+  beat(now, 2, 'member-1', 'LAPTOP-MEMBER1', 'claude-code', 0.2),
+  beat(now, 2, 'member-1', 'LAPTOP-MEMBER1', 'cursor', 11.2),
+  beat(now, 2, 'member-1', 'LAPTOP-MEMBER1', 'opencode', 11.2),
 ];
 
 const HEALTHY = (now) => ['claude-code', 'cursor', 'opencode']
@@ -34,14 +34,14 @@ const HEALTHY = (now) => ['claude-code', 'cursor', 'opencode']
 
 /** Every tool on one machine beating again. */
 const repairedTools = (now, machine, tools = ['claude-code', 'cursor', 'opencode']) =>
-  tools.map((tool) => beat(now, 2, 'Amiee Kuo', machine, tool, 0.1));
+  tools.map((tool) => beat(now, 2, 'member-1', machine, tool, 0.1));
 
 /** Two machines belonging to one person, both broken, one worse. */
 const TWO_MACHINES = (now) => [
-  beat(now, 2, 'Amiee Kuo', 'BOX-A', 'claude-code', 0.2),
-  beat(now, 2, 'Amiee Kuo', 'BOX-A', 'cursor', 11),
-  beat(now, 2, 'Amiee Kuo', 'BOX-B', 'claude-code', 0.2),
-  beat(now, 2, 'Amiee Kuo', 'BOX-B', 'cursor', 20),
+  beat(now, 2, 'member-1', 'BOX-A', 'claude-code', 0.2),
+  beat(now, 2, 'member-1', 'BOX-A', 'cursor', 11),
+  beat(now, 2, 'member-1', 'BOX-B', 'claude-code', 0.2),
+  beat(now, 2, 'member-1', 'BOX-B', 'cursor', 20),
 ];
 
 /**
@@ -239,7 +239,7 @@ describe('v1.26.102 — nothing is announced on first sighting', () => {
     await runCollectorSilenceAlerts({ ...db, now: clock });
     assert.equal(db.rows.size, 1);
 
-    const repaired = makeDb({ beats: (now) => repairedTools(now, 'LAPTOP-RGE2HCSQ'), clock });
+    const repaired = makeDb({ beats: (now) => repairedTools(now, 'LAPTOP-MEMBER1'), clock });
     for (const [k, v] of db.rows) repaired.rows.set(k, v);
     clock.advance(HOUR);
     await runCollectorSilenceAlerts({ ...repaired, now: clock });
@@ -300,7 +300,7 @@ describe('v1.26.102 — the job announces a dead collector', () => {
     const before = db.broadcasts.size;
 
     const wider = makeDb({
-      beats: (now) => [...BROKEN(now), beat(now, 2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'antigravity', 11.2)],
+      beats: (now) => [...BROKEN(now), beat(now, 2, 'member-1', 'LAPTOP-MEMBER1', 'antigravity', 11.2)],
       clock,
     });
     for (const [k, v] of db.rows) wider.rows.set(k, v);
@@ -368,7 +368,7 @@ describe('v1.26.102 — recovery', () => {
     const notice = [...db.broadcasts.values()].find((b) => b.target_users[0] === 2);
     assert.equal(notice.ends_at, 'future');
 
-    const fixed = (now) => repairedTools(now, 'LAPTOP-RGE2HCSQ');
+    const fixed = (now) => repairedTools(now, 'LAPTOP-MEMBER1');
     clock.advance(DAY);
     const out = await runCollectorSilenceAlerts({ ...repairedWorld(db, fixed, clock), now: clock });
 
@@ -390,8 +390,8 @@ describe('v1.26.102 — recovery', () => {
     // BOX-A repaired, BOX-B still dead.
     const half = (now) => [
       ...repairedTools(now, 'BOX-A', ['claude-code', 'cursor']),
-      beat(now, 2, 'Amiee Kuo', 'BOX-B', 'claude-code', 0.2),
-      beat(now, 2, 'Amiee Kuo', 'BOX-B', 'cursor', 21),
+      beat(now, 2, 'member-1', 'BOX-B', 'claude-code', 0.2),
+      beat(now, 2, 'member-1', 'BOX-B', 'cursor', 21),
     ];
     clock.advance(DAY);
     const out = await runCollectorSilenceAlerts({ ...repairedWorld(db, half, clock), now: clock });
@@ -426,7 +426,7 @@ describe('v1.26.102 — recovery', () => {
   it('a machine that breaks again waits out the window before being announced', async () => {
     const clock = movableClock();
     const db = await announced(clock);
-    const fixed = (now) => repairedTools(now, 'LAPTOP-RGE2HCSQ');
+    const fixed = (now) => repairedTools(now, 'LAPTOP-MEMBER1');
     clock.advance(DAY);
     const recovered = repairedWorld(db, fixed, clock);
     await runCollectorSilenceAlerts({ ...recovered, now: clock });

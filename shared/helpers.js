@@ -126,7 +126,7 @@ export function resolveClientTool(env = process.env) {
 /**
  * Read OwnMind credentials.
  *
- * v1.26.82 — this used to read `~/.claude/settings.json` and nothing else. On Adam's
+ * v1.26.82 — this used to read `~/.claude/settings.json` and nothing else. On member-5's
  * machine the key is not there: Claude Code keeps MCP config in `~/.claude.json` now, and
  * his key arrives as an `OWNMIND_API_KEY` environment variable. The MCP is handed that
  * environment and kept working, while the usage scanner and both SessionStart hooks — all

@@ -16,7 +16,7 @@
       assertion failure). Run 31367550646: all four legs green, the assertions executed rather
       than skipped
 - [x] Mutation check on CI, not just locally: `Test-TaskBelongsToInstall` forced to `$true`
-      went red on all four legs, naming "Adam's task is not healthy — this is the whole
+      went red on all four legs, naming "member-5's task is not healthy — this is the whole
       defect". Throwaway branch, deleted after
 - [x] Code review — one Critical and two Important fixed:
       - the repair honoured `$env:OWNMIND_DIR` while the registration and the self-check never

@@ -92,7 +92,7 @@ describe('GET /api/usage/self-check — the server says whether memories ever lo
   });
 
   it('says never rather than omitting the field', async () => {
-    // 采瑤's row. An absent field reads as "not implemented yet" and a caller written
+    // member-4's row. An absent field reads as "not implemented yet" and a caller written
     // defensively would treat it as unknown. Null is the finding.
     const { app } = serverWith([{ last_hook_init_at: null, last_mcp_init_at: null, hook_inits_7d: '0' }]);
     const { body } = await get(app);
@@ -101,7 +101,7 @@ describe('GET /api/usage/self-check — the server says whether memories ever lo
   });
 
   it('separates the hook from the MCP, because only one of them is the automatic path', () => {
-    // Eric loads memories only when his AI calls the tool by hand. That is not the feature
+    // member-6 loads memories only when his AI calls the tool by hand. That is not the feature
     // working; collapsing the two would report his machine as healthy.
     const { seen } = serverWith([]);
     assert.ok(true, seen);
@@ -286,7 +286,7 @@ describe('the installer runs the new check', () => {
   });
 });
 
-// The self-check has only ever run during install and manual upgrade. Adam's last full
+// The self-check has only ever run during install and manual upgrade. member-5's last full
 // report is dated 2026-05-29; his machine has auto-updated daily ever since and told us
 // nothing. His scheduled scanner died in July and the diagnosis sat on his disk.
 //

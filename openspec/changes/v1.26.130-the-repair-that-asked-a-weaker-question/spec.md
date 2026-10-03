@@ -9,7 +9,7 @@ broken, exactly as `self-check.cjs` reports it.
 
 - **GIVEN** a task named `OwnMind Usage Scanner` exists, is enabled, and its actions name
   `C:\Users\Vin\.ownmind`
-- **AND** this installation is `C:\Users\Adam\.ownmind`
+- **AND** this installation is `C:\Users\member-5\.ownmind`
 - **WHEN** the repair runs during an auto-update
 - **THEN** it does not report `already_registered`, and re-registers the task
 

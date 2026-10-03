@@ -1,7 +1,7 @@
 // v1.26.65 — why a Windows scanner dies quietly and stays dead.
 //
 // Traced from production on 2026-08-05. `~/.ownmind/package.json` is a single
-// source read by both the MCP and the scanner. On Adam's machine the MCP reads
+// source read by both the MCP and the scanner. On member-5's machine the MCP reads
 // 1.26.59 today while the scanner's last heartbeat, on 2026-07-15, carried
 // 1.26.29. The files were upgraded; the scanner has not run once since. Twenty
 // days passed before anyone noticed.
@@ -87,7 +87,7 @@ describe('run-hidden.vbs — the exit code Task Scheduler records must mean some
     //
     // The consequence is worse than a missing signal: the documented diagnostic
     // for this exact fault is "check LastTaskResult, 0 means it worked", and that
-    // check cannot fail. It would have told Adam his dead scanner was healthy.
+    // check cannot fail. It would have told member-5 his dead scanner was healthy.
     assert.doesNotMatch(src, /sh\.Run[^\n]*,\s*False/i,
       'fire-and-forget makes every run report success');
     assert.match(src, /sh\.Run[^\n]*,\s*True/i);

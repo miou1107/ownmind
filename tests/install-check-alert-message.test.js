@@ -10,8 +10,8 @@ const WSL_FIX = 'Re-run the installer, then fully restart your AI tool and open 
 function failure(overrides = {}) {
   return {
     user_id: 3,
-    user_name: 'Adam',
-    machine: 'LAPTOP-MBGGLV2J',
+    user_name: 'member-5',
+    machine: 'LAPTOP-MEMBER5',
     check_name: 'memory_load',
     detail: WSL_DETAIL,
     fix: WSL_FIX,
@@ -33,8 +33,8 @@ describe('renderAlertMessage — one entry carries everything needed to act', ()
 
   it('names the check, the person and the machine', () => {
     assert.match(body, /memory_load/);
-    assert.match(body, /Adam/);
-    assert.match(body, /LAPTOP-MBGGLV2J/);
+    assert.match(body, /member-5/);
+    assert.match(body, /LAPTOP-MEMBER5/);
   });
 
   it('carries the reason and the fix verbatim', () => {
@@ -58,7 +58,7 @@ describe('renderAlertMessage — one entry carries everything needed to act', ()
 
 describe('renderAlertMessage — rollup', () => {
   it('six machines with one cause read as one entry', () => {
-    const machines = ['LAPTOP-MBGGLV2J', 'TANK', 'after', 'LAPTOP-G95HIQ3V', 'LAPTOP-RGE2HCSQ', 'Fontrip-Joanna'];
+    const machines = ['LAPTOP-MEMBER5', 'TANK', 'after', 'LAPTOP-MEMBER6', 'LAPTOP-MEMBER1', 'Fontrip-member-2'];
     const failures = machines.map((m, i) => failure({ machine: m, user_name: `U${i}`, user_id: 100 + i }));
     const { body } = renderAlertMessage(failures);
 
@@ -127,7 +127,7 @@ describe('renderAlertMessage — what the reader actually receives', () => {
     const delivered = deliver(body);
 
     assert.ok(delivered.includes('memory_load'), 'first check name missing');
-    assert.ok(delivered.includes('LAPTOP-MBGGLV2J'), 'first machine missing');
+    assert.ok(delivered.includes('LAPTOP-MEMBER5'), 'first machine missing');
     assert.ok(delivered.includes('scheduler'), 'second check name missing');
     assert.ok(delivered.includes('TANK'), 'second machine missing');
   });

@@ -12,9 +12,9 @@ The module holds no React and no network code, so it is testable on its own.
 
 ### Scenario: typing narrows on either field
 
-- **GIVEN** users `[{id:1,name:'Vin',email:'vincent@fontrip.com'}, {id:4,name:'Joanna',email:'joanna@fontrip.com'}]`
+- **GIVEN** users `[{id:1,name:'Vin',email:'vincent@fontrip.com'}, {id:4,name:'member-jo',email:'member-jo@example.com'}]`
 - **WHEN** `filterMembers(users, 'jo', [])` is called
-- **THEN** the result is the Joanna row only
+- **THEN** the result is the member-jo row only
 - **AND** `filterMembers(users, 'VINCENT@', [])` also returns the Vin row, because the
   match is case-insensitive and covers email
 
@@ -97,7 +97,7 @@ the count when something is.
 ### Scenario: choosing two people
 
 - **GIVEN** the member list has loaded
-- **WHEN** the admin types `jo`, picks Joanna, then types `am` and picks Amiee
+- **WHEN** the admin types `jo`, picks member-jo, then types `ku` and picks member-kuo
 - **THEN** two chips are shown, each labelled with a name
 - **AND** the submitted payload carries `target_users` as the two matching integer ids
 - **AND** those ids are the values from `/api/admin/users`, not positions in the list
@@ -129,7 +129,7 @@ the count when something is.
 ### Scenario: reaching the second suggestion without a mouse
 
 - **GIVEN** two members whose names share a prefix, so no query narrows the list to one
-  — 'Amiee' and 'Amiee Kuo'
+  — 'member-1' and 'member-10'
 - **WHEN** the admin presses ArrowDown to move to the second row and Enter
 - **THEN** the second member is chosen
 

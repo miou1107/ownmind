@@ -10,7 +10,7 @@ to announce something is made against that key.
 
 ### Scenario: the same red light in ten consecutive reports
 
-- **GIVEN** `(Adam, LAPTOP-MBGGLV2J, memory_load)` has been announced
+- **GIVEN** `(member-5, LAPTOP-MEMBER5, memory_load)` has been announced
 - **WHEN** nine further reports arrive, each still failing that check
 - **THEN** no further broadcast is created
 
@@ -91,12 +91,12 @@ Vin's words in the backlog: 「6 machines, same WSL bash」 must read as one row
 Each entry SHALL carry the check name, the affected people and machines, the `detail`
 string, the `fix` string when the report supplies one, and the client version.
 
-### Scenario: the entry for Adam's machine
+### Scenario: the entry for member-5's machine
 
 - **GIVEN** the failing check
   `{name: 'memory_load', status: 'fail', detail: 'memories have never loaded…', fix: 'Re-run the installer…'}`
-  reported by Adam on `LAPTOP-MBGGLV2J` at `1.26.84`
-- **THEN** the rendered entry contains `memory_load`, `Adam`, `LAPTOP-MBGGLV2J`, the detail
+  reported by member-5 on `LAPTOP-MEMBER5` at `1.26.84`
+- **THEN** the rendered entry contains `memory_load`, `member-5`, `LAPTOP-MEMBER5`, the detail
   text, the fix text and `1.26.84`
 
 ## ADDED Requirement: truncation is stated, never silent

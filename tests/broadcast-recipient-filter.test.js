@@ -12,8 +12,8 @@ import { filterMembers }
 
 const USERS = [
   { id: 1, name: 'Vin', email: 'vincent@fontrip.com' },
-  { id: 4, name: 'Joanna', email: 'joanna@fontrip.com' },
-  { id: 7, name: 'Amiee Kuo', email: 'amiee@fontrip.com' },
+  { id: 4, name: 'member-jo', email: 'member-jo@example.com' },
+  { id: 7, name: 'member-kuo', email: 'member-kuo@example.com' },
 ];
 
 describe('filterMembers', () => {
@@ -40,7 +40,7 @@ describe('filterMembers', () => {
   });
 
   it('preserves the input order rather than match order', () => {
-    // 'o' hits all three: Vin through 'fontrip', Joanna and Kuo through name.
+    // 'o' hits all three: Vin through 'fontrip', member-jo and member-kuo through name.
     // The menu must list them the way the API returned them.
     assert.deepEqual(filterMembers(USERS, 'o', []).map((u) => u.id), [1, 4, 7]);
   });
@@ -62,7 +62,7 @@ describe('filterMembers', () => {
   });
 
   it('tolerates a member row with no name or no email', () => {
-    const partial = [{ id: 2, name: null, email: 'ghost@fontrip.com' }, { id: 3, email: null, name: 'Nameless' }];
+    const partial = [{ id: 2, name: null, email: 'ghost@example.com' }, { id: 3, email: null, name: 'Nameless' }];
     assert.deepEqual(filterMembers(partial, 'ghost', []).map((u) => u.id), [2]);
     assert.deepEqual(filterMembers(partial, 'nameless', []).map((u) => u.id), [3]);
   });

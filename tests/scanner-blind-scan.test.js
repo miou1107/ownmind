@@ -88,7 +88,7 @@ describe('defaultListJsonlFiles — a clean environment and a broken one are dif
 });
 
 describe('one unreadable file must not take the whole tool down with it', () => {
-  // Amiee has no `codex` row in collector_heartbeat at all, on a server where the
+  // member-1 has no `codex` row in collector_heartbeat at all, on a server where the
   // other eight members do — including members who almost certainly never run Codex.
   // "Not using it" cannot produce a missing row; a throwing adapter can.
   //
@@ -149,7 +149,7 @@ describe('one unreadable file must not take the whole tool down with it', () => 
       ),
     });
     const r = await adapter.readSince({});
-    assert.ok(r.heartbeat, 'no heartbeat is exactly why Amiee has no codex row');
+    assert.ok(r.heartbeat, 'no heartbeat is exactly why member-1 has no codex row');
     assert.deepEqual(r.skipped, ['ENOENT']);
   });
 

@@ -11,8 +11,8 @@ import {
 
 const BUNDLE = {
   selectors: [{ id: 412, type: 'team_standard', tags: [], keywords: ['company host'], always_check: false, repo_match: 'r' }],
-  guards: [{ id: 412, title: 'ci ownership', repo_match: 'r', paths: ['ci/**'], owner: 'Eric' }],
-  injectables: [{ id: 412, title: 'ci ownership', content: 'Only Eric may edit ci/.', keywords: ['company host'], always_check: false, repo_match: 'r', paths: ['ci/**'], owner: 'Eric' }],
+  guards: [{ id: 412, title: 'ci ownership', repo_match: 'r', paths: ['ci/**'], owner: 'member-6' }],
+  injectables: [{ id: 412, title: 'ci ownership', content: 'Only member-6 may edit ci/.', keywords: ['company host'], always_check: false, repo_match: 'r', paths: ['ci/**'], owner: 'member-6' }],
 };
 
 function cacheIn(dir) {
@@ -25,7 +25,7 @@ test('a bundle written here reads back with all three lists', () => {
   const read = readEnforcementBundle(file);
   assert.deepEqual(read.guards, BUNDLE.guards);
   assert.deepEqual(read.selectors, BUNDLE.selectors);
-  assert.equal(read.injectables[0].content, 'Only Eric may edit ci/.');
+  assert.equal(read.injectables[0].content, 'Only member-6 may edit ci/.');
 });
 
 test('a cache that was never written reports present: false, not an empty rule set', () => {

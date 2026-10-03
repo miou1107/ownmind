@@ -23,8 +23,8 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 function user(overrides = {}) {
   return {
     id: 4,
-    email: 'joanna@fontrip.com',
-    name: 'Joanna',
+    email: 'member-2@example.com',
+    name: 'member-2',
     role: 'user',
     api_key: 'om_live_key',
     password_hash: '$2b$10$hash',
@@ -55,8 +55,8 @@ describe('loginResponseFor', () => {
     assert.equal('api_key' in body, false);
     assert.ok(!JSON.stringify(body).includes('om_live_key'), 'the key leaked into the body');
     assert.equal(body.id, 4);
-    assert.equal(body.name, 'Joanna');
-    assert.equal(body.email, 'joanna@fontrip.com');
+    assert.equal(body.name, 'member-2');
+    assert.equal(body.email, 'member-2@example.com');
     assert.equal(body.role, 'user');
     assert.equal(body.must_change_password, false);
   });

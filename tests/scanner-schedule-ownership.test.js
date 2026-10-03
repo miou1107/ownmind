@@ -2,10 +2,10 @@
  * v1.26.130 — the repair that runs on every update could not see the failure the check
  * on the same machine was reporting.
  *
- * Measured on production 2026-08-10. Two users, Adam and Eric, both on 1.26.125:
+ * Measured on production 2026-08-10. Two users, member-5 and member-6, both on 1.26.125:
  *
  *     scheduler failed | Task Scheduler entry points at another installation,
- *                        not C:\Users\Adam\.ownmind
+ *                        not C:\Users\member-5\.ownmind
  *
  * self-check.cjs found that because v1.26.124 taught it to compare the task's actions
  * against this installation's directory (see scheduler-task-owner.cjs). But self-check only
@@ -180,9 +180,9 @@ const action = (exe, args) => `[pscustomobject]@{ Execute = ${exe}; Arguments = 
 
 // The action string Windows reports for a real registration, taken from the one measured in
 // v1.26.124. `ADAMS` is the same task seen from the installation that does not own it —
-// which is exactly what Adam's and Eric's machines have.
+// which is exactly what member-5's and member-6's machines have.
 const OURS = String.raw`wscript.exe "C:\Users\Vin\.ownmind\scripts\windows\run-hidden.vbs" "C:\Program Files\nodejs\node.exe" "C:\Users\Vin\.ownmind\hooks\ownmind-usage-scanner.js"`;
-const ADAM_DIR = String.raw`C:\Users\Adam\.ownmind`;
+const OTHER_DIR = String.raw`C:\Users\member-5\.ownmind`;
 
 /**
  * The cases both implementations have to agree on. One table, two languages: the JS copy
@@ -191,12 +191,12 @@ const ADAM_DIR = String.raw`C:\Users\Adam\.ownmind`;
  */
 const OWNERSHIP_CASES = [
   { name: 'the install the task actually drives', actions: OURS, dir: String.raw`C:\Users\Vin\.ownmind`, expect: true },
-  { name: "Adam's machine — the task belongs to somebody else", actions: OURS, dir: ADAM_DIR, expect: false },
+  { name: "member-5's machine — the task belongs to somebody else", actions: OURS, dir: OTHER_DIR, expect: false },
   { name: 'forward slashes', actions: OURS, dir: 'C:/Users/Vin/.ownmind', expect: true },
   { name: 'different case', actions: OURS, dir: String.raw`c:\users\vin\.ownmind`, expect: true },
   { name: 'trailing separator', actions: OURS, dir: 'C:\\Users\\Vin\\.ownmind\\', expect: true },
-  { name: 'unreadable actions are "cannot tell", not "wrong"', actions: '', dir: ADAM_DIR, expect: true },
-  { name: 'whitespace-only actions are also "cannot tell"', actions: '   ', dir: ADAM_DIR, expect: true },
+  { name: 'unreadable actions are "cannot tell", not "wrong"', actions: '', dir: OTHER_DIR, expect: true },
+  { name: 'whitespace-only actions are also "cannot tell"', actions: '   ', dir: OTHER_DIR, expect: true },
   { name: 'an unknown install directory cannot convict a task', actions: OURS, dir: '', expect: true },
 ];
 
@@ -243,10 +243,10 @@ describe('the PowerShell repair asks the same ownership question the check asks'
 });
 
 describe('what the repair treats as a healthy schedule', () => {
-  it("Adam's task is not healthy — this is the whole defect", { skip: noPowerShell }, () => {
+  it("member-5's task is not healthy — this is the whole defect", { skip: noPowerShell }, () => {
     // Enabled, present, State=Ready. The old gate returned "already_registered" here and
     // walked away, every day, on a machine the self-check was calling broken.
-    healthy('Ready', OURS, ADAM_DIR, false, 'a task owned by another install was called healthy');
+    healthy('Ready', OURS, OTHER_DIR, false, 'a task owned by another install was called healthy');
   });
 
   it('a task that belongs here and is enabled is left alone', { skip: noPowerShell }, () => {
@@ -294,7 +294,7 @@ describe('reading the actions off a task', () => {
     for (const t of ['[pscustomobject]@{ Actions = $null }', '[pscustomobject]@{ Actions = @() }']) {
       const text = actionTextOf(t);
       assert.equal(text.trim(), '', `expected whitespace, got ${JSON.stringify(text)}`);
-      belongs(text, String.raw`C:\Users\Adam\.ownmind`, true,
+      belongs(text, String.raw`C:\Users\member-5\.ownmind`, true,
         'unreadable actions must not convict a task');
     }
   });
@@ -315,7 +315,7 @@ describe('ensure-scanner-schedule.ps1 uses the rule', () => {
     const gate = src.slice(0, src.indexOf('register-scanner-task.ps1'));
     assert.match(gate, /Test-ScheduleHealthy/,
       'the health gate still asks only whether a task exists and is enabled, so a task '
-      + 'belonging to another installation is credited as healthy — Adam and Eric, 2026-08-10');
+      + 'belonging to another installation is credited as healthy — member-5 and member-6, 2026-08-10');
   });
 
   it('it dot-sources the rule rather than keeping a third copy', () => {
