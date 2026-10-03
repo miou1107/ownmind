@@ -41,16 +41,12 @@ export const MAX_REASON_CHARS = 200;
 const MASK = '[REDACTED]';
 
 /**
- * Formats secret-detect.js does not carry, because there they would block memory writes and
- * commits, and here they only cost a few characters of a reply. Each has a fixed prefix.
+ * Looser variants of formats secret-detect.js carries, kept out of there because a looser rule
+ * would block memory writes and commits, while here it only costs a few characters of a reply.
+ * (GitLab, Slack, Google, Stripe and friends moved into secret-detect.js in v1.30.50.)
  */
 const EXTRA_FORMATS = [
-  /github_pat_[A-Za-z0-9_]{22,}/g,              // GitHub fine-grained token
   /gh[opsur]_[A-Za-z0-9]{30,}/g,                 // GitHub classic, a little shorter than detect's floor
-  /glpat-[A-Za-z0-9_-]{20,}/g,                   // GitLab personal access token
-  /xox[abposr]-[A-Za-z0-9-]{10,}/g,              // Slack
-  /AIza[0-9A-Za-z_-]{35}/g,                      // Google API key
-  /\b[rs]k_(?:live|test)_[0-9A-Za-z]{16,}/g,     // Stripe
   /\bnpm_[A-Za-z0-9]{36}\b/g,                    // npm
   /\b(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])/g,    // AWS access key id, temporary ones included
 ];
@@ -68,12 +64,6 @@ const PRIVATE_KEY_BLOCK =
 const WEBHOOK_URLS = [
   /(hooks\.slack\.com\/services\/)[^\s"'`<>)]+/gi,
   /(discord(?:app)?\.com\/api\/webhooks\/)[^\s"'`<>)]+/gi,
-];
-
-/** More formats, each with a fixed prefix. */
-const EXTRA_FORMATS_2 = [
-  /\bhf_[A-Za-z0-9]{30,}/g,                      // Hugging Face
-  /\bSG\.[\w-]{16,}\.[\w-]{16,}/g,               // SendGrid
 ];
 
 /**
@@ -159,7 +149,7 @@ export function redact(text, { secrets = [] } = {}) {
 
   out = out.replace(PRIVATE_KEY_BLOCK, '[REDACTED PRIVATE KEY]');
   for (const format of SHARED_FORMATS) out = maskFormat(out, format);
-  for (const pattern of [...EXTRA_FORMATS, ...EXTRA_FORMATS_2]) out = out.replace(pattern, MASK);
+  for (const pattern of EXTRA_FORMATS) out = out.replace(pattern, MASK);
   for (const pattern of WEBHOOK_URLS) out = out.replace(pattern, `$1${MASK}`);
 
   return out

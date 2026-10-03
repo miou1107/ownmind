@@ -46,6 +46,9 @@ import {
   getClientVersion,
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
+import { checkStandardUpload } from '../src/utils/standard-upload-check.js';
+import { checkStandardFile } from './lib/standard-file-guard.js';
+import { randomUUID } from 'crypto';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
 import { enrichErrorDetails } from './lib/enrich-error.js';
 // v1.26.142 — the update lock is taken and released inside shared/auto-update.js now, and
@@ -1448,26 +1451,38 @@ async function handleTool(name, args) {
 
     case "ownmind_upload_standard": {
       const { file_path, title } = args;
-      if (!fs.existsSync(file_path)) {
-        throw new Error(`File not found: ${file_path}`);
-      }
-      const rawContent = fs.readFileSync(file_path, 'utf8');
-      const standardTitle = title || path.basename(file_path, '.md');
+      // Security review 2026-10-03 item 10: this used to read any path it was handed and
+      // publish it to the whole team. Markdown only, no credential folders, and a secret scan
+      // before anything is staged — the server runs the same scan again.
+      const fileCheck = checkStandardFile(file_path);
+      if (!fileCheck.ok) throw new Error(fileCheck.error);
+      const rawContent = fileCheck.content;
+      const standardTitle = title || path.basename(file_path).replace(/\.(md|markdown)$/i, '');
       const chunks = parseStandardMarkdown(rawContent, 3);
-      
-      const sessionId = Math.random().toString(36).substring(2, 10);
-      pendingUploads.set(sessionId, { 
-        parent_title: standardTitle, 
-        chunks, 
-        created_at: Date.now() 
+      const secretCheck = checkStandardUpload({ parent_title: standardTitle, chunks });
+      if (!secretCheck.ok) {
+        // The matched fragment stays out of this message, and so does the section's title: a
+        // key pasted as a heading makes the title the secret itself, and this message goes
+        // into the conversation the upload was meant to keep it out of.
+        const where = secretCheck.body.section ? `section ${secretCheck.body.section} of ${chunks.length}` : 'the title';
+        throw new Error(`Not uploaded: ${where} contains something that looks like a key or password (${secretCheck.body.detected_by || 'secret scan'}). Team standards are visible to the whole team; remove it and try again.`);
+      }
+
+      const sessionId = randomUUID();
+      pendingUploads.set(sessionId, {
+        parent_title: standardTitle,
+        chunks,
+        created_at: Date.now()
       });
-      
+
       return {
         session_id: sessionId,
         parent_title: standardTitle,
+        file: fileCheck.realPath,
+        bytes: fileCheck.size,
         chunk_count: chunks.length,
-        preview: chunks.map(c => ({ title: c.title, level: c.level })),
-        notice: "[OwnMind] Preview generated. Review each chunk and decide whether any should be saved as an iron_rule. If everything looks good, call ownmind_confirm_upload with this session_id."
+        preview: chunks.map(c => ({ title: c.title, level: c.level, starts_with: String(c.content || '').replace(/\s+/g, ' ').trim().slice(0, 80) })),
+        notice: "[OwnMind] Preview generated. This will be published to EVERY member of the team. Show the user the file path and the section list, and call ownmind_confirm_upload only after they say yes. Review each chunk and decide whether any should be saved as an iron_rule."
       };
     }
 

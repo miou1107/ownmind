@@ -354,6 +354,24 @@ export const SECRET_REGEXES = [
     name: 'ownmind_predefined_key',
     pattern: /\b(?:vin-)?ownmind-(?:admin|super|user|api)-[A-Za-z0-9-]{2,}\b/i,
   },
+  // v1.30.50 — security review 2026-10-03, item 10. A team standard upload carrying an SSH key
+  // passed every rule here: nothing knew what a private key looks like. Each entry below has a
+  // fixed prefix no prose produces, so the false-positive cost is close to nil. They were first
+  // added to hooks/lib/redact.js alone (v1.30.49); they live here so the memory write boundary,
+  // the commit scan, the standard upload and the reply redaction all share one list.
+  //
+  // Only the header line is matched: it is enough to know, and a cut-off paste still has it.
+  {
+    name: 'private_key_block',
+    pattern: /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----/,
+  },
+  { name: 'github_fine_grained_pat', pattern: /github_pat_[A-Za-z0-9_]{22,}/ },
+  { name: 'gitlab_pat', pattern: /glpat-[A-Za-z0-9_-]{20,}/ },
+  { name: 'slack_token', pattern: /xox[abposr]-[A-Za-z0-9-]{10,}/ },
+  { name: 'google_api_key', pattern: /AIza[0-9A-Za-z_-]{35}/ },
+  { name: 'stripe_key', pattern: /\b[rs]k_(?:live|test)_[0-9A-Za-z]{16,}/ },
+  { name: 'huggingface_token', pattern: /\bhf_[A-Za-z0-9]{30,}/ },
+  { name: 'sendgrid_key', pattern: /\bSG\.[\w-]{16,}\.[\w-]{16,}/ },
   // v1.19.10: default-password literal pattern (Password + 8+ digits).
   // Tied to the 2026-05-22 incident with 'Password42760988'-style
   // default templates.

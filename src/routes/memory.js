@@ -21,6 +21,7 @@ import { attachStandardFragments, planChunkSync } from '../utils/standard-fragme
 import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-validator.js';
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
+import { checkStandardUpload } from '../utils/standard-upload-check.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
 import { createEnforcementBundleRouter } from './enforcement-bundle.js';
 import {
@@ -2254,6 +2255,12 @@ router.post('/batch-sync-standard', async (req, res) => {
     }
 
     const { parent_title, chunks, sync_token } = req.body;
+
+    // Security review 2026-10-03 item 10: the one bulk write the secret scan never ran on, for
+    // the one kind of memory the whole team reads. Before anything else, so a refusal writes
+    // nothing — not even a parent row.
+    const secretCheck = checkStandardUpload({ parent_title, chunks });
+    if (!secretCheck.ok) return res.status(secretCheck.status).json(secretCheck.body);
 
     // Sync token check.
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
