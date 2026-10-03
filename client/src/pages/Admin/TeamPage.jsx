@@ -6,6 +6,7 @@ import { apiGet } from '../../api';
 import { mergeUsersWithUsage } from './user-merge.js';
 import { buildInstallPrompt, currentApiUrl } from '../../utils/install-prompt.js';
 import RowMenu from './RowMenu.jsx';
+import { canRevealKeyOf } from './menu-visibility.js';
 import AddUserModal from './AddUserModal.jsx';
 import EditUserModal from './EditUserModal.jsx';
 import PasswordModal from './PasswordModal.jsx';
@@ -14,7 +15,7 @@ import DeleteUserModal from './DeleteUserModal.jsx';
 // 使用者管理 — Stage 2 of the single-console consolidation.
 //
 // Two parallel API calls: /api/admin/users (auth-owning source of truth for
-// name/role/api_key/must_change_password) and /api/usage/team-stats (per-user
+// name/role/api_key_prefix/must_change_password; full keys are fetched one at a time) and /api/usage/team-stats (per-user
 // tokens + session count for the 用量資料 column). They merge on user.id via
 // mergeUsersWithUsage(); users with no team-stats row render as "尚無資料"
 // italic — not zero. This is the only console page where every member is
@@ -85,10 +86,19 @@ export default function TeamPage() {
     window.setTimeout(() => setToast(''), 3000);
   };
 
+  // The list carries only a key prefix; the full key is fetched one user at a time, and the
+  // server hands it over only for yourself or someone ranked below you.
+  const fetchKey = async (row) => {
+    const r = await apiGet(`/api/admin/users/${row.id}/api-key`);
+    if (!r.ok || !r.data?.api_key) throw new Error(r.error || t('team.toast.copy_failed'));
+    return r.data.api_key;
+  };
+
   const handleSelect = async (menuId, row) => {
     if (menuId === 'install-prompt') {
       try {
-        const prompt = buildInstallPrompt(row, currentApiUrl(window.location));
+        const apiKey = await fetchKey(row);
+        const prompt = buildInstallPrompt({ ...row, api_key: apiKey }, currentApiUrl(window.location));
         await navigator.clipboard.writeText(prompt);
         showToast(t('team.toast.copied_install'));
       } catch (err) {
@@ -154,19 +164,21 @@ export default function TeamPage() {
                   </td>
                   <td className="px-3 py-3 font-mono text-xs text-slate-500">
                     <span className="inline-flex items-center gap-1">
-                      {row.api_key?.slice(0, 8)}…
-                      <button
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(row.api_key || '');
-                            showToast(t('team.toast.copied_key'));
-                          } catch { showToast(t('team.toast.copy_failed')); }
-                        }}
-                        aria-label={t('common.copy')}
-                        className="text-slate-400 hover:text-slate-700"
-                      >
-                        <Copy size={12} />
-                      </button>
+                      {row.api_key_prefix}…
+                      {canRevealKeyOf(actor, row) && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(await fetchKey(row));
+                              showToast(t('team.toast.copied_key'));
+                            } catch { showToast(t('team.toast.copy_failed')); }
+                          }}
+                          aria-label={t('common.copy')}
+                          className="text-slate-400 hover:text-slate-700"
+                        >
+                          <Copy size={12} />
+                        </button>
+                      )}
                     </span>
                   </td>
                   <td className="px-3 py-3">

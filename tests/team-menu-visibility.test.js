@@ -31,14 +31,25 @@ describe('visibleMenuItems — always emits four IDs in the fixed order', () => 
     }
   });
 
-  it('items 1 and 2 (install-prompt, edit) are always visible', () => {
+  it('edit is always visible', () => {
     for (const actor of [SUPER, ADMIN, MEMBER]) {
       for (const row of [SUPER, ADMIN, MEMBER]) {
-        const out = visibleMenuItems(actor, row);
-        assert.ok(out.includes('install-prompt'),
-          `install-prompt missing for ${actor.role} viewing ${row.role}`);
-        assert.ok(out.includes('edit'),
+        assert.ok(visibleMenuItems(actor, row).includes('edit'),
           `edit missing for ${actor.role} viewing ${row.role}`);
+      }
+    }
+  });
+
+  // The install prompt carries the row's full API key, so it shows only where the server
+  // will reveal that key: yourself, or someone ranked below you (tests/admin-api-key-reveal.test.js).
+  // It used to be always visible, which let an admin copy a super_admin's key.
+  it('install-prompt shows for yourself and for lower ranks only', () => {
+    const rank = { user: 0, admin: 1, super_admin: 2 };
+    for (const actor of [SUPER, ADMIN, MEMBER]) {
+      for (const row of [SUPER, ADMIN, MEMBER]) {
+        const expected = actor.id === row.id || rank[actor.role] > rank[row.role];
+        assert.equal(visibleMenuItems(actor, row).includes('install-prompt'), expected,
+          `${actor.role} viewing ${row.role}`);
       }
     }
   });
@@ -128,10 +139,10 @@ describe('visibleMenuItems — combined scenarios from spec', () => {
     );
   });
 
-  it('admin viewing a super_admin: items 1, 2 visible; items 3, 4 not', () => {
+  it('admin viewing a super_admin: only edit (no install prompt: it would carry their key)', () => {
     assert.deepEqual(
       visibleMenuItems(ADMIN, SUPER),
-      ['install-prompt', 'edit'],
+      ['edit'],
     );
   });
 });

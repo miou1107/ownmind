@@ -84,11 +84,14 @@ router.get('/users', async (req, res) => {
   try {
     const result = await query(
       // v1.26.49: added must_change_password so the team-management page can
-      // show whether each user is still on their initial password. Widening the
-      // SELECT is safe — no writers rely on the shape and the field carries no
-      // secret. See openspec/changes/archive/v1.26.49-team-management-page/spec.md
-      // Requirement 2.
-      'SELECT id, name, email, role, api_key, must_change_password, created_at, updated_at FROM users ORDER BY created_at DESC'
+      // show whether each user is still on their initial password (spec:
+      // openspec/changes/archive/v1.26.49-team-management-page/spec.md, Requirement 2).
+      //
+      // v1.30.38: the full api_key is not in this list. Authentication looks a user up by key alone,
+      // so every admin holding every key — the super_admin's included — let any admin act
+      // as the super_admin. The prefix is for display; the full key comes one user at a
+      // time from GET /users/:id/api-key (src/routes/admin-api-key.js).
+      'SELECT id, name, email, role, LEFT(api_key, 8) AS api_key_prefix, must_change_password, created_at, updated_at FROM users ORDER BY created_at DESC'
     );
     res.json(result.rows);
   } catch (err) {

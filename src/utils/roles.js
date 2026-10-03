@@ -18,3 +18,20 @@ export const ROLE_RANK = Object.freeze({ user: 0, admin: 1, super_admin: 2 });
 export function isAtLeast(userRole, required) {
   return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[required] ?? 99);
 }
+
+/**
+ * May `actor` see `target`'s full API key? Their own, or a strictly lower rank's.
+ *
+ * Authentication finds the user by key alone, so a key is the account. Equal rank is
+ * refused on purpose: an admin holding another admin's key, or a super_admin another
+ * super_admin's, could act as them with nothing in the audit log saying so.
+ * client/src/pages/Admin/menu-visibility.js mirrors this rule; a test pins the two together.
+ *
+ * @param {{ id: number, role: string }} actor
+ * @param {{ id: number, role: string }} target
+ */
+export function mayRevealKeyOf(actor, target) {
+  if (!actor || !target) return false;
+  if (actor.id === target.id) return true;
+  return (ROLE_RANK[actor.role] ?? -1) > (ROLE_RANK[target.role] ?? 99);
+}

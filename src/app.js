@@ -149,6 +149,7 @@ import { createNarrativeRouter } from './routes/me-narrative.js';
 import { createDebugRouter } from './routes/debug.js';
 import setupRoutes from './routes/setup.js';
 import adminPasswordResetRoutes from './routes/admin-password-reset.js';
+import adminApiKeyRoutes from './routes/admin-api-key.js';
 import bugReportsRoutes from './routes/bug-reports.js';
 import { createVersionRouter } from './routes/version.js';
 import { createChangelogRouter } from './routes/changelog.js';
@@ -163,6 +164,10 @@ app.use('/api/setup', setupRoutes);
 // v1.19.9: admin emergency reset of another user's password (must be mounted before /api/admin)
 // the path is /api/admin/users/:id/reset-password
 app.use('/api/admin/users', adminPasswordResetRoutes);
+
+// One user's full API key, for yourself or someone below you (the list carries only a
+// prefix). Mounted before /api/admin for the same reason as the reset above.
+app.use('/api/admin/users', adminApiKeyRoutes);
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/compliance', complianceRoutes);

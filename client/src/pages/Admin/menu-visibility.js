@@ -12,6 +12,20 @@
 
 const ORDER = ['install-prompt', 'edit', 'password', 'delete'];
 
+const RANK = { user: 0, admin: 1, super_admin: 2 };
+
+/**
+ * Whether the server will hand `actor` the full API key of `row`: their own, or a strictly
+ * lower rank's. Mirrors mayRevealKeyOf in src/utils/roles.js (the client bundle cannot
+ * import server code); tests/admin-api-key-reveal.test.js checks the two agree on every
+ * pairing.
+ */
+export function canRevealKeyOf(actor, row) {
+  if (!actor || !row) return false;
+  if (actor.id === row.id) return true;
+  return (RANK[actor.role] ?? -1) > (RANK[row.role] ?? 99);
+}
+
 /**
  * @param {{ id: number, role: 'user'|'admin'|'super_admin' }} actor  Who's clicking.
  * @param {{ id: number, role: 'user'|'admin'|'super_admin' }} row    Whose menu is being opened.
@@ -22,9 +36,11 @@ export function visibleMenuItems(actor, row) {
   const actorIsSuper = actor.role === 'super_admin';
 
   const show = {
-    // Every actor can copy an install prompt for anyone: the api_key is already
-    // visible in the row above, so surfacing the prompt is not an escalation.
-    'install-prompt': true,
+    // The prompt carries the row's full API key, so it is offered only where the server
+    // will reveal that key: yourself, or someone ranked below you. It used to be offered
+    // for everyone, on the reasoning that the key was already in the row — which was the
+    // flaw: an admin could copy a super_admin's key and become them.
+    'install-prompt': canRevealKeyOf(actor, row),
 
     // Every actor can edit any row's role or display name. Server enforces the
     // hard rules (admin cannot touch super_admin, cannot demote the last
