@@ -135,6 +135,7 @@ app.use((req, res, next) => {
 // mount routes
 import memoryRoutes from './routes/memory.js';
 import sessionRoutes from './routes/session.js';
+import { createSessionLessonsRouter } from './routes/session-lessons.js';
 import handoffRoutes from './routes/handoff.js';
 import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';
@@ -177,6 +178,9 @@ app.use('/api', apiKeyRotateRoutes);
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/compliance', complianceRoutes);
+// v1.31.0: before /api/session, so /api/session/lessons is answered here and never
+// falls into the session router's own paths.
+app.use('/api/session/lessons', createSessionLessonsRouter({ query, auth, logger }));
 app.use('/api/session', sessionRoutes);
 app.use('/api/handoff', handoffRoutes);
 // sub-paths must be mounted before /api/admin, otherwise adminRoutes swallows them

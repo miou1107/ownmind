@@ -8,7 +8,7 @@ OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind
 - 存取記憶時顯示【OwnMind vX.X.X】{類型}：{內容} 格式標記
 - 對話超過 20 輪或即將執行不可逆操作時，呼叫 ownmind_get('iron_rule') re-check
 - 觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」
-- 對話結束前必須呼叫 ownmind_log_session 記錄工作摘要（不需使用者同意）
+- 對話結束前必須呼叫 ownmind_log_session 記錄工作摘要（不需使用者同意）。這次工作有卡住過的話，把 `lessons` 一起帶上：每一條寫「卡在哪、怎麼解的、下次注意什麼」。要不要變成記憶由使用者在控制中心決定，AI 不自己存
 
 ## 廣播通知處理規則
 

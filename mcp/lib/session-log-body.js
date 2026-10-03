@@ -18,11 +18,17 @@
  *   model   — optional, and never invented. Nothing in this process knows it, and
  *             writing "unknown" would put a fabricated value into the column that feeds
  *             the statistics dashboard's model distribution. Absent means absent.
+ *   lessons — v1.31.0: optional, normalised by shared/session-lessons.js, and absent from
+ *             the body when nothing usable was passed. Never required: requiring it would
+ *             discard the whole session record to protect a list the AI may honestly have
+ *             nothing to put in — the exact trade v1.26.61 refused for `model`.
  *
  * The trade this replaces: requiring `model` discarded the whole session record — the
  * summary, the project, the turn count, the friction points, the suggestions — to protect
  * one string that was missing anyway.
  */
+
+import { normalizeLessons } from '../../shared/session-lessons.js';
 
 /**
  * Absent for a field this module *defaults* — tool, model, machine.
@@ -68,6 +74,9 @@ export function buildSessionLogBody(args, { clientTool }) {
   if (!blankOrSpaces(a.model)) body.model = a.model;
   if (!blankOrSpaces(a.machine)) body.machine = a.machine;
   if (a.details !== undefined) body.details = a.details;
+
+  const { lessons } = normalizeLessons(a.lessons);
+  if (lessons.length > 0) body.lessons = lessons;
 
   return body;
 }

@@ -7,6 +7,8 @@ import { computePeriodRange, computeReportData } from '../utils/report.js';
 import { buildSessionRecentQuery } from '../lib/session-query.js';
 import { requireFields } from '../utils/require-fields.js';
 import { bucketLabel } from '../utils/session-buckets.js';
+import { normalizeLessons } from '../../shared/session-lessons.js';
+import { storeSessionLessons } from '../lib/session-lessons-store.js';
 
 const router = Router();
 router.use(auth);
@@ -61,7 +63,21 @@ router.post('/', async (req, res) => {
       [req.user.id, session_id || null, tool, model, machine || null, summary, cleanDetails || null]
     );
 
-    res.status(201).json(result.rows[0]);
+    const row = result.rows[0];
+
+    // v1.31.0: the lessons this session learned, one row each, waiting for the person to
+    // promote or dismiss them. A lesson that quotes a secret is dropped here and counted,
+    // never stored — the same door every memory write goes through.
+    const { lessons } = normalizeLessons(req.body.lessons);
+    if (lessons.length > 0) {
+      const project = (cleanDetails && typeof cleanDetails.project === 'string' && cleanDetails.project) || null;
+      const { saved, rejected } = await storeSessionLessons({
+        query, logger, userId: req.user.id, sessionLogId: row.id, project, lessons, sanitize,
+      });
+      return res.status(201).json({ ...row, lessons_saved: saved, lessons_rejected: rejected });
+    }
+
+    res.status(201).json(row);
   } catch (err) {
     logger.error('session log failed', { error: err.message });
     res.status(500).json({ error: 'Failed to record session' });

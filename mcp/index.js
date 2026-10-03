@@ -665,11 +665,24 @@ const TOOLS = [
   },
   {
     name: "ownmind_log_session",
-    description: "Log a work session's summary and context. Must be called before a conversation ends; does not require user confirmation.",
+    description: "Log a work session's summary and context. Must be called before a conversation ends; does not require user confirmation. Pass `lessons` whenever the work got stuck at any point: each one says where it got stuck, what unstuck it, and what to do differently next time. The person promotes or dismisses them later in the console; the AI never writes them into memory itself.",
     inputSchema: {
       type: "object",
       properties: {
         summary: { type: "string", description: "Session summary (1-2 sentences describing what was done)" },
+        lessons: {
+          type: "array",
+          description: "(v1.31.0) What this session learned. One entry per time the work got stuck. Leave it out only when nothing got stuck.",
+          items: {
+            type: "object",
+            properties: {
+              stuck: { type: "string", description: "Where the work got stuck, in one sentence" },
+              fix: { type: "string", description: "(optional) What unstuck it" },
+              next_time: { type: "string", description: "(optional) What to do differently next time" },
+            },
+            required: ["stuck"],
+          },
+        },
         tool: { type: "string", description: "(optional) Tool used (e.g., claude-code, cursor, codex). Defaults to the tool hosting this MCP." },
         model: { type: "string", description: "(optional) Model used (e.g., claude-opus-5, gpt-5). Supply it when you know it; it is recorded as unreported rather than guessed." },
         machine: { type: "string", description: "Machine the session ran on (optional)" },
@@ -1286,7 +1299,25 @@ async function handleTool(name, args) {
       const data = await callApi("POST", "/api/session", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
       sessionLogged = true;
-      logEvent('session_log', { summary: args.summary });
+      logEvent('session_log', { summary: args.summary, lessons: body.lessons ? body.lessons.length : 0 });
+      // v1.31.0: a reminder, declared as one. It raises the odds the next close carries
+      // lessons; it does not make it. Refusing the close instead would discard the whole
+      // session record to protect a list the AI may honestly have nothing to put in.
+      if (body.lessons && data && data.lessons_saved === undefined) {
+        // The server answered without the field only a v1.31.0+ server sets: it is older,
+        // ignored `lessons`, and logged the session without them. Say so rather than let
+        // the AI report lessons as kept.
+        return {
+          ...data,
+          lessons_notice: 'This OwnMind server is older than v1.31.0 and does not keep lessons; the session was logged without them.',
+        };
+      }
+      if (!body.lessons) {
+        return {
+          ...data,
+          lessons_notice: 'No lessons were recorded for this session. If the work got stuck anywhere, call ownmind_log_session again with `lessons` so the person can keep what was learned.',
+        };
+      }
       return data;
     }
 

@@ -5,6 +5,7 @@ import {
   FileText, TriangleAlert, CalendarDays, UsersRound, LineChart,
   UserCircle, Shield, Key, Users, AlertOctagon,
   Sliders, Megaphone, History, Sparkles,
+  Lightbulb,
 } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { NAV_SECTIONS, visibleSections } from './nav-sections';
@@ -16,6 +17,7 @@ const ICONS = {
   '/portal/usage': BarChart3,
   '/portal/project-history': FolderClock,
   '/portal/handoffs': GitBranch,
+  '/portal/lessons': Lightbulb,
   '/portal/reports': Bug,
   '/portal/narrative': FileText,
   '/portal/pitfalls': TriangleAlert,

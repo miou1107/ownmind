@@ -37,6 +37,8 @@ export const NAV_SECTIONS = [
       { path: '/portal/usage', labelKey: 'nav.usage', minRole: 'user' },
       { path: '/portal/project-history', labelKey: 'nav.project_history', minRole: 'user' },
       { path: '/portal/handoffs', labelKey: 'nav.handoffs', minRole: 'user' },
+      // v1.31.0: personal — GET /api/session/lessons filters WHERE user_id = $1.
+      { path: '/portal/lessons', labelKey: 'nav.lessons', minRole: 'user' },
       { path: '/portal/reports', labelKey: 'nav.reports', minRole: 'user' },
       { path: '/portal/narrative', labelKey: 'nav.narrative', minRole: 'user' },
       { path: '/portal/pitfalls', labelKey: 'nav.pitfalls', minRole: 'user' },

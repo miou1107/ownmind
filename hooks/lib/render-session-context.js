@@ -181,6 +181,14 @@ export function renderSessionContext(data, broadcasts, {
     lines.push('');
   }
 
+  // v1.31.0: lessons this person has not yet promoted or dismissed. A reminder for the
+  // person, relayed through the AI; it changes nothing about what the AI must do.
+  if (Number.isInteger(d.lessons_waiting) && d.lessons_waiting > 0) {
+    lines.push('## Lessons waiting: ' + d.lessons_waiting);
+    lines.push('Tell the user once: lessons from earlier sessions are waiting on the console page /portal/lessons to be kept or dismissed.');
+    lines.push('');
+  }
+
   lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
 
   // v1.26.141: everything above is a push — here is what is known. Nothing was a pull, and

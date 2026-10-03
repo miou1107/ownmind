@@ -14,6 +14,7 @@ import VaultPage from './pages/Preference/VaultPage';
 import UsagePage from './pages/Portal/UsagePage';
 import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
 import HandoffsPage from './pages/Portal/HandoffsPage';
+import LessonsPage from './pages/Portal/LessonsPage';
 import ReportsPage from './pages/Portal/ReportsPage';
 import NarrativePage from './pages/Portal/NarrativePage';
 import PitfallsPage from './pages/Portal/PitfallsPage';
@@ -32,6 +33,7 @@ const REAL_PAGES = {
   '/portal/usage': <UsagePage />,
   '/portal/project-history': <ProjectHistoryPage />,
   '/portal/handoffs': <HandoffsPage />,
+  '/portal/lessons': <LessonsPage />,
   '/portal/reports': <ReportsPage />,
   '/portal/narrative': <NarrativePage />,
   '/portal/pitfalls': <PitfallsPage />,

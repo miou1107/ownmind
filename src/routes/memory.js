@@ -435,7 +435,20 @@ Common actions values: code_edit, git_commit, git_push, deploy, debug, research,
 router.get('/sync-token', async (req, res) => {
   try {
     const sync_token = await generateSyncToken(req.user.id);
-    res.json({ sync_token });
+    // v1.31.0: the token covers what the client caches; the count of waiting lessons is
+    // not cached but overlaid on every start, so it rides here instead of moving the token
+    // (which would re-download every account's init once per closed session).
+    let lessons_waiting = null;
+    try {
+      const r = await query(
+        "SELECT COUNT(*)::int AS n FROM session_lessons WHERE user_id = $1 AND status = 'new'",
+        [req.user.id],
+      );
+      lessons_waiting = r.rows[0]?.n ?? 0;
+    } catch (err) {
+      logger.warn('lessons_waiting count failed', { error: err.message });
+    }
+    res.json({ sync_token, lessons_waiting });
   } catch (err) {
     logger.error('GET /sync-token failed', { error: err.message });
     res.status(500).json({ error: 'Failed to obtain sync-token' });
@@ -519,6 +532,20 @@ router.get('/init', async (req, res) => {
     const ironRules = memories.filter(m => m.type === 'iron_rule');
     const teamStandards = teamStandardsResult.rows;
     const activeHandoff = handoffResult.rows[0] || null;
+
+    // v1.31.0: how many lessons wait for this person on the console page. Counted inside a
+    // try so a database that has not run migration 027 still answers init; null then means
+    // "could not count", which the renderer treats as nothing to say.
+    let lessonsWaiting = null;
+    try {
+      const lessonsResult = await query(
+        "SELECT COUNT(*)::int AS n FROM session_lessons WHERE user_id = $1 AND status = 'new'",
+        [req.user.id],
+      );
+      lessonsWaiting = lessonsResult.rows[0]?.n ?? 0;
+    } catch (err) {
+      logger.warn('lessons_waiting count failed', { error: err.message });
+    }
 
     // v1.19: group by tier (Critical / Default / Advisory) for display;
     // Advisory shows only counts.
@@ -833,6 +860,7 @@ router.get('/init', async (req, res) => {
       // OS-detected language, so sending null here (rather than omitting the key) is safe.
       locale: accountLocale || null,
       active_handoff: activeHandoff,
+      lessons_waiting: lessonsWaiting,
       weekly_summary: weeklySummary,
       memory_health: memoryHealth,
       pending_review: pendingReview,

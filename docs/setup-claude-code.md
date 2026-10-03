@@ -93,7 +93,7 @@ Claude Code 輸入框下方的 🟢／🔴 OwnMind 按鈕，用來看 OwnMind �
 | ownmind_handoff_create | 建立交接 |
 | ownmind_handoff_accept | 接受交接 |
 | ownmind_dismiss_notice | 關掉一則 OwnMind 提醒（每個工具都不再出現） |
-| ownmind_log_session | 記錄 session |
+| ownmind_log_session | 記錄 session；帶 `lessons` 記下這次卡在哪、怎麼解、下次注意什麼（v1.31.0） |
 | ownmind_get_secret | 取得密鑰 |
 | ownmind_list_secrets | 列出密鑰 |
 | ownmind_set_secret | 儲存密鑰 |

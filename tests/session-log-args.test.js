@@ -138,7 +138,9 @@ describe('the declared contract matches what the code does', () => {
     // (`details` has its own properties), so the naive slice ended before `required`.
     const next = mcp.indexOf('name: "ownmind_', from + 10);
     const block = mcp.slice(from, next > from ? next : undefined);
-    const required = block.match(/required: \[([^\]]*)\]/);
+    // v1.31.0 — the list at the inputSchema's own indentation (six spaces). `lessons` items
+    // carry their own `required: ["stuck"]` deeper in, and the first match would be that one.
+    const required = block.match(/\n {6}required: \[([^\]]*)\]/);
     assert.ok(required, 'ownmind_log_session has no required list');
     assert.equal(
       required[1].replace(/["'\s]/g, ''),

@@ -133,6 +133,18 @@ export function shouldRefreshCache(cache, serverSyncToken, now = Date.now()) {
  * @returns {Promise<string|null>} 12-char hex, or null on failure.
  */
 export async function fetchSyncTokenLight(apiUrl, apiKey, fetchFn = globalThis.fetch) {
+  const info = await fetchSyncTokenInfo(apiUrl, apiKey, fetchFn);
+  return info ? info.sync_token : null;
+}
+
+/**
+ * v1.31.0 — the same request, keeping the fields the server sends beside the token. The
+ * count of waiting lessons travels here because it is live state, not cached state: a
+ * fresh cache must still say what the server says now. See overlayLiveFields.
+ *
+ * @returns {Promise<{ sync_token: string, lessons_waiting?: number }|null>}
+ */
+export async function fetchSyncTokenInfo(apiUrl, apiKey, fetchFn = globalThis.fetch) {
   if (!apiUrl || !apiKey) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SYNC_TOKEN_TIMEOUT_MS);
@@ -145,12 +157,26 @@ export async function fetchSyncTokenLight(apiUrl, apiKey, fetchFn = globalThis.f
     });
     if (!res || !res.ok) return null;
     const body = await res.json();
-    return body && typeof body.sync_token === 'string' ? body.sync_token : null;
+    if (!body || typeof body.sync_token !== 'string') return null;
+    const info = { sync_token: body.sync_token };
+    if (Number.isInteger(body.lessons_waiting)) info.lessons_waiting = body.lessons_waiting;
+    return info;
   } catch {
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Fields that are true now rather than true when the cache was written. A fresh cache is
+ * served with these replaced by what the sync-token answer just said; a cache served
+ * without a server answer keeps whatever it had, which the renderer treats as unknown.
+ */
+export function overlayLiveFields(data, info) {
+  if (!data || typeof data !== 'object' || !info) return data;
+  if (!Number.isInteger(info.lessons_waiting)) return data;
+  return { ...data, lessons_waiting: info.lessons_waiting };
 }
 
 /**
@@ -236,9 +262,9 @@ export async function runConditionalSync({
 
   if (!cacheStale24hr && cache) {
     // step 2: compare against server sync_token.
-    const serverToken = await fetchSyncTokenLight(apiUrl, apiKey, fetchFn);
-    if (serverToken && cache.sync_token === serverToken) {
-      return { source: 'cache_fresh', data: cache.data, refreshed: false };
+    const info = await fetchSyncTokenInfo(apiUrl, apiKey, fetchFn);
+    if (info && cache.sync_token === info.sync_token) {
+      return { source: 'cache_fresh', data: overlayLiveFields(cache.data, info), refreshed: false };
     }
     // When serverToken can't be obtained, shouldRefreshCache returns true → full init.
   }
