@@ -36,6 +36,28 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.38 修改（管理員不能再拿到最高管理員的金鑰）
+
+新增檔：
+```
+src/routes/admin-api-key.js           — GET /api/admin/users/:id/api-key：一次給一個人的完整金鑰，只限自己或職級
+                                       比自己低的人；寫稽核紀錄（不含金鑰）、不准快取
+tests/admin-api-key-reveal.test.js    — 8 種職級組合誰拿得到誰的、稽核紀錄、不快取、404/400、清單不含完整金鑰、
+                                       後台和伺服器的規則在每種組合都一致
+```
+
+修改檔：
+```
+src/routes/admin.js                   — GET /users 只回 LEFT(api_key, 8) AS api_key_prefix
+src/utils/roles.js                    — mayRevealKeyOf：自己，或職級嚴格低於自己
+src/app.js                            — 掛上新入口
+client/src/pages/Admin/menu-visibility.js — canRevealKeyOf（跟伺服器同一條規則）；安裝指令只在拿得到金鑰時顯示
+client/src/pages/Admin/TeamPage.jsx   — 顯示前 8 碼；複製金鑰、複製安裝指令改成按下去才跟伺服器要
+tests/team-menu-visibility.test.js    — 原本寫死「安裝指令對誰都顯示」，就是這個漏洞，改成新規則
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.38
+```
+
 ## v1.30.37 修改（Windows 的自動更新保留網址搬家這一步的錯誤訊息）
 
 修改檔：
