@@ -36,6 +36,31 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.43 修改（被靜靜關掉的 git 小幫手：上傳、切換分支、拉更新恢復）
+
+新增檔：
+```
+hooks/ownmind-git-passthrough         — 裝成 pre-push、post-checkout、post-merge：先交給 OwnMind 接手前的全域位置
+                                       （.previous-hooks-path），再交給程式庫自己的（worktree 用 --git-common-dir）；
+                                       程式庫沒有自己的、但用 Git LFS 時改跑 git lfs <hook>；參數、stdin、結束代碼原樣傳；
+                                       帶 OWNMIND-PASSTHROUGH-HOOK 標記，安裝程式只覆蓋有標記的檔
+tests/git-hook-passthrough.test.js    — 用真的 git：先重現「沒有轉接時程式庫的 pre-push 被跳過」；轉接後 pre-push 收到
+                                       參數和 stdin、拒絕會擋下推送、post-checkout 有跑、原本的全域位置先跑、指回自己不會循環、
+                                       worktree 找到主程式庫、指定別的程式庫時不誤用目前資料夾的、LFS 沒有自己的小幫手時呼叫
+                                       git lfs、沒用 LFS 不呼叫、不覆蓋使用者自己的 pre-push；四支安裝／更新程式清單一致
+```
+
+修改檔：
+```
+hooks/ownmind-git-pre-commit, ownmind-git-commit-msg, ownmind-git-post-commit, ownmind-git-pre-merge-commit
+                                     — 先交給 .previous-hooks-path 記下的原本全域位置；找程式庫改用 --git-common-dir
+install.sh, install.ps1               — 裝三種轉接（不覆蓋沒有標記的檔）；改全域位置前把原本的值記進 .previous-hooks-path
+                                       （只記一次，不記 OwnMind 自己的資料夾）
+scripts/update.sh, scripts/update.ps1 — 已裝 OwnMind pre-commit 的電腦，自動更新時補上三種轉接（不覆蓋沒有標記的檔）
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.43
+```
+
 ## v1.30.42 修改（成員不能再看到別人的私人鐵律）
 
 新增檔：
