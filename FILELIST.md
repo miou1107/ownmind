@@ -36,6 +36,31 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.39 修改（金鑰可以更換）
+
+新增檔：
+```
+src/routes/api-key-rotate.js          — POST /api/me/rotate-key（自己）、POST /api/admin/users/:id/rotate-key（職級比自己低的人）；
+                                       舊金鑰立刻失效，新金鑰只回傳一次，稽核紀錄不含任何金鑰
+scripts/install-helpers/swap-api-key.cjs — 這台電腦換金鑰：--rotate（請伺服器發新的再換）、--set（新金鑰從標準輸入）；
+                                       換所有工具設定、讀回確認、用新金鑰問伺服器確認是同一個帳號；
+                                       失敗時新金鑰先存 ~/.ownmind/new-api-key.txt（0600）
+tests/api-key-rotate.test.js          — 自己換、6 種職級組合誰能換誰、被拒絕不改且有稽核、404/400、後台選單只在伺服器允許時出現
+tests/swap-api-key.test.js            — 六個工具都換、別的帳號不動、註解不動、壞檔不寫、伺服器判定身分、失敗保留新金鑰、
+                                       不認得的金鑰不改
+```
+
+修改檔：
+```
+src/app.js                            — 掛上 /api 底下的兩個換金鑰入口
+scripts/install-helpers/migrate-api-url.cjs — 匯出 load / tomlLines / writeAtomic 給換金鑰小工具共用
+client/src/pages/Admin/menu-visibility.js, RowMenu.jsx, TeamPage.jsx — 選單多「更換金鑰」，確認後換、複製新的安裝指令
+client/src/i18n/zh.json, en.json, ja.json — 新文字
+tests/team-menu-visibility.test.js    — 選單多一項
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.39
+```
+
 ## v1.30.38 修改（管理員不能再拿到最高管理員的金鑰）
 
 新增檔：

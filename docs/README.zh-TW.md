@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.38** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.39** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **外流的金鑰永遠收不回來** — 以前伺服器沒有任何地方會換金鑰，改密碼也不換。現在可以換了：`POST /api/me/rotate-key`（換自己的）、`POST /api/admin/users/:id/rotate-key`（換職級比自己低的人的），團隊管理頁也多了「更換金鑰」，每次都寫稽核紀錄、紀錄裡不含金鑰。電腦上跑 `node ~/.ownmind/scripts/install-helpers/swap-api-key.cjs --rotate`（自己其他電腦用 `--set`，金鑰從鍵盤貼上），會換掉所有工具設定裡的金鑰、讀回確認，再用新金鑰問伺服器是不是同一個帳號，確認了才算完成。要更新伺服器才生效。沒有人按「更換」，什麼都不會變。 `v1.30.39`
 - **任何管理員都能複製最高管理員的金鑰，直接變成最高管理員** — 使用者清單會回傳每個人完整的金鑰，而 OwnMind 登入只認金鑰，所以團隊管理頁的複製按鈕讓「管理員不能動最高管理員」的限制全部失效。現在清單只給前 8 碼；完整金鑰要用 `GET /api/admin/users/:id/api-key` 一次查一個人，只能查自己或職級比自己低的人，每次查都寫進稽核紀錄。後台也照這個規則顯示按鈕。要更新伺服器才生效。金鑰目前還不能更換，這一版之前被複製走的金鑰收不回來。 `v1.30.38`
 - **Windows 上，網址搬家這一步的警告沒有人看得到** — v1.30.36 說網址旁邊沒有金鑰、或設定檔讀不懂時，會寫進更新的錯誤紀錄。這只在 Mac 和 Linux 上成立，Windows 的 `update.ps1` 跑這一步時沒有接住錯誤訊息。現在會跟同一支程式的其他步驟一樣，寫進 `~/.ownmind/logs/update-errors.log`，已在 Windows PowerShell 5.1 上實測。 `v1.30.37`
 - **伺服器搬家後，只有 Claude Code 跟著換網址，Codex、Windsurf、OpenCode、Cursor 都還連舊的** — 自動更新只拿 Claude Code 連的網址去問伺服器「我該連哪裡」，答案一樣就收工。Claude Code 已經換好的電腦，其他工具根本沒被看到。2026-10-02 舊主機的連線紀錄裡還看得到它們，能用只是因為舊主機會轉送到新主機。現在自動更新會找出這台電腦上所有工具的網址（Claude Code、Cursor、Windsurf、OpenCode、Gemini CLI，還有 Codex 的設定檔，只改網址那一段），每個網址各問它自己的伺服器，伺服器說搬了才改，改完讀回來確認。問的時候只用跟那個網址存在一起的金鑰（Codex 設定裡兩組伺服器各用各的，被註解掉的不算），沒有才用環境變數 `OWNMIND_API_KEY`；沒有金鑰的網址、讀不懂的設定檔都會寫進錯誤紀錄，不會靜靜跳過。設定檔是捷徑的話改的是它連過去的檔，權限維持原樣，失敗也不會留下暫存檔。 `v1.30.36`
