@@ -36,6 +36,27 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.50 修改（上傳團隊規範的工具不能再讀任意檔案；伺服器也檢查金鑰）
+
+新增檔：
+```
+mcp/lib/standard-file-guard.js        — checkStandardFile：只收 Markdown 一般檔、≤512KB、解捷徑與短檔名、不收硬連結／網路路徑／
+                                       憑證資料夾；同一次開檔檢查並讀取，回傳內容
+src/utils/standard-upload-check.js    — checkStandardUpload：標題與每段跑 validateMemoryContent，另擋網址密碼與真值環境變數；
+                                       檢查 level／hash；回應不帶段落標題與比對到的字
+tests/standard-upload-guard.test.js   — 伺服器與工具都先檢查、私鑰／環境變數／網址密碼被擋、佔位字放行、硬連結、網路路徑、
+                                       錯誤訊息不含標題
+```
+
+修改檔：
+```
+mcp/index.js                          — ownmind_upload_standard 改用上面兩個檢查，預覽多列檔案與每段開頭，UUID 暫存編號
+src/routes/memory.js                  — batch-sync-standard 在同步憑證與任何寫入前呼叫 checkStandardUpload
+shared/secret-detect.js               — 新增私鑰與 7 種金鑰格式
+hooks/lib/redact.js                   — 移到 secret-detect 的格式從自己的清單拿掉
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.30.49 修改（送去伺服器檢查的回話，遮蔽金鑰的規則加強）
 
 新增檔：

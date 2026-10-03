@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.49** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.50** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **上傳團隊規範的工具可以讀任意檔案、發給全團隊** — AI 可以叫它讀 `~/.ssh/id_rsa` 或 `~/.claude.json`，而 `POST /api/memory/batch-sync-standard` 從來不做其他記憶寫入都有的機密檢查。現在工具只讀 512KB 以內的 `.md`／`.markdown` 一般檔案（解開捷徑、Windows 短檔名後判斷，檢查和讀取用同一次開檔），不收硬連結、網路路徑和存放憑證的資料夾，暫存前先掃描，預覽會列出檔案位置和每段開頭幾個字。伺服器在寫入前掃描規範標題和每一段，並檢查 `level`／`hash`。私鑰、GitLab、Slack、Google、Stripe、Hugging Face、SendGrid 的金鑰格式移進 `shared/secret-detect.js`，寫入記憶和提交前檢查也會擋；上傳另外擋連線網址裡的密碼，和值看起來是真的的環境變數（範例佔位字不擋）。被擋時只說第幾段，不說段落標題。**影響使用者：** 只能上傳 Markdown；含這些金鑰格式的規範、記憶、提交會被擋。電腦端＋伺服器（要部署）。`v1.30.50`
 - **送去伺服器檢查的回話，遮蔽金鑰的規則只認兩種寫法** — 「名稱=值」（名稱和等號中間不能有東西）和「Bearer 值」。JSON 設定檔、含空格的密碼、前面沒寫名稱的 GitHub／OpenAI／Anthropic／AWS 金鑰、整段私鑰、網址裡的密碼、`--token 值`、「密碼：值」，還有使用者自己的 OwnMind 金鑰（沒有固定開頭），全都原文送出。`hooks/lib/redact.js` 現在直接比對遮掉使用者自己的金鑰；`shared/secret-detect.js` 擋的所有金鑰格式都遮（直接引用，兩邊不會各改各的），另加更多有固定開頭的格式、私鑰、網址和 `curl -u` 的密碼、`Authorization`／`Cookie` 標頭、XML 欄位、Webhook 網址，以及環境變數／YAML／JSON（含跳脫過的）／指令參數／中文的「名稱：值」。講到金鑰的中文句子不會被整句遮掉。每條規則都有長度上限：初版在 200KB 的輸入上最慢要 18 秒（在回話結束的掛勾裡同步執行），現在不到 20 毫秒。存在電腦上的回話摘要也會先遮蔽。**影響使用者：** 伺服器看到的回話會多一些 `[REDACTED]`。電腦端。`v1.30.49`
 - **每台電腦都會更新到 GitHub 主分支最新的提交** — 每天的自動更新、開場掛勾、AI 收到升級通知時執行的指令、兩支手動升級程式、安裝程式，全都 `git pull` 主分支，所以修到一半、或不小心推上去的提交，大家下次開對話就裝到了。現在一律只更新到「主分支上最新的版本號標籤」（`vX.Y.Z`；`shared/release-target.js`、`scripts/install-helpers/update-to-release.mjs`）；已經比它新的電腦停在原地，任何路線都不會把電腦退回舊版。抓標籤時以 GitHub 為準（`--force --prune --prune-tags`），標籤被移動或刪除都不會卡住更新。更新時的 `npm install` 加上 `--ignore-scripts`，同步腳本另外裝的兩個套件鎖定版本。伺服器給 AI 的自動更新說明和 `check-sync` 也改成跟正式版比對。這不能證明版本是誰發的（拍板不做簽章）。**影響使用者：** 修正要等推了版本號標籤才會到大家電腦上。電腦端；說明文字要部署伺服器。`v1.30.48`
 - **「OwnMind 按鈕」的測試在 Windows 上失敗，從 v1.30.45 起 GitHub 的檢查一直是紅的** — `ensure-monitor-mod.cjs` 只有在 `--platform` 跟實際系統不同時才跳過「功能資料夾在不在硬碟上」的檢查；在 Mac 上成立，在 Windows 上 `--platform win32` 就是實際系統，於是測試用的假路徑 `C:\Users\amy` 被判定不見、設定被移除。現在只要有傳 `--platform`（只有測試會用，安裝程式從不傳）就跳過。**影響使用者：** 沒有；真實安裝從來沒受影響。`v1.30.47`
