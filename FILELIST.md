@@ -87,7 +87,7 @@ src/routes/release.js                      — createReleaseRouter：GET /check�
                                              POST /tag（每張審過的卡寫 released_in，有沒審過的就拒絕並點名）
 scripts/release-check.js                   — 手動跑的版本，--base／--milestone／--tag
 docs/release-check.md                      — 什麼時候跑、印什麼、不能跑的時候怎麼辦
-openspec/changes/v1.31.4-release-check/    — proposal / spec / tasks
+openspec/changes/v1.31.5-release-check/    — proposal / spec / tasks
 tests/release-check.test.js                — 21 條：指令判斷（含引號裡的字、列表旗標）、假 git 的事實與報告（含基準分支已刪、不在倉庫）、
                                              注入網路的執行器、真 git 倉庫驅動 hook（擋／放／不理／規則查不到也擋／沒金鑰也擋）、
                                              伺服器半邊對假資料庫（含可見性）、寫標籤遇到沒審過的卡
