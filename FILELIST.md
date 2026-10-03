@@ -1,5 +1,34 @@
 # OwnMind 檔案結構
 
+## v1.31.6 修改（資安掃描的 8 個低等級問題）
+
+新增檔：
+```
+shared/private-file.js                — 只限本人讀寫的寫檔／附加（0600 檔、0700 資料夾，舊檔下次寫入收緊）
+src/utils/safe-equal.js               — 固定時間比對秘密字串
+src/utils/error-response.js           — 最後一道錯誤處理回什麼：4xx 回原因，5xx 回通用訊息
+tests/security-low-findings.test.js   — 8 項的測試
+```
+
+修改檔：
+```
+hooks/lib/local-judge.js              — 加 --tools ''，從空暫存資料夾執行
+hooks/lib/sync-memory-files.js        — 只寫已知類型＋純數字編號的記憶檔
+hooks/lib/conditional-sync.js         — 開場快取 0600
+hooks/lib/enforcement-cache.js        — 強制規則快取 0600
+hooks/ownmind-git-pre-commit.js       — 鐵律快取 0600
+hooks/ownmind-reply-lint.js           — 待送佇列 0600
+mcp/offline.js                        — 快取認帳號、佇列標記帳號、改寫佇列用換名、0600
+mcp/index.js                          — 離線讀取認帳號、編號跳脫、鐵律快取 0600
+client/vite.config.js                 — 不產生原始碼對照檔
+src/app.js                            — 最後一道錯誤處理改用 errorResponse
+src/routes/admin.js                   — SETUP_TOKEN 固定時間比對
+src/routes/broadcast.js, src/routes/memory.js, src/routes/admin-work-log.js — 5xx 不回 err.message
+src/utils/memory-error-classifier.js  — 丟出的 5xx 不回原訊息
+tests/local-judge.test.js, tests/sync-memory-files.test.js — 跟著改
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.31.4 修改（打「收工」就先跑六項檢查，結果開在面板上，每位成員預設開啟）
 
 新增檔：

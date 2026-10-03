@@ -12,7 +12,7 @@ import { writePrivateFile, appendPrivateFile } from '../shared/private-file.js';
 import { tempDir } from './helpers/temp-dir.js';
 
 /**
- * The low-severity findings of the 2026-10-03 security scan (v1.31.4).
+ * The low-severity findings of the 2026-10-03 security scan (v1.31.6).
  */
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');

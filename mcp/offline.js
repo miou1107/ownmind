@@ -211,7 +211,7 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
   /**
    * @param {string} [fingerprint] the account now configured. A write queued under another
    *   key is not sent with this one — it would land in somebody else's memories — and stays
-   *   queued for when that key is back. Entries from before v1.31.4 carry no stamp; they were
+   *   queued for when that key is back. Entries from before v1.31.6 carry no stamp; they were
    *   queued by whichever key was configured then, almost always this one, and are sent.
    */
   async function replayQueue(callApi, currentSyncToken, fingerprint) {
