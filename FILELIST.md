@@ -36,6 +36,15 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.51 修改（修正 v1.30.50 新測試在自動檢查失敗）
+
+修改檔：
+```
+mcp/lib/standard-file-guard.js        — 網路路徑判斷移到最前面（各平台訊息一致）
+tests/standard-upload-guard.test.js   — 檔案位置改用 realpathSync.native 比對
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.30.50 修改（上傳團隊規範的工具不能再讀任意檔案；伺服器也檢查金鑰）
 
 新增檔：
