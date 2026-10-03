@@ -194,9 +194,14 @@ describe('interactive-upgrade.sh — dirty tree auto-recover', () => {
     assert.match(content, /upgrade_dirty_tree/);
   });
 
-  it('when dirty, force-aligns with git fetch + git reset --hard origin/main (backup safety net runs first)', () => {
-    assert.match(content, /git\s+fetch/);
-    assert.match(content, /git\s+reset\s+--hard\s+origin\/main/);
+  // v1.30.48: aligned to the newest release tag (update-to-release.mjs --print fetches it),
+  // not to origin/main.
+  it('when dirty, force-aligns with git reset --hard to the newest release (backup safety net runs first)', () => {
+    assert.match(content, /update-to-release\.mjs --print/);
+    assert.match(content, /ALIGN_TO="refs\/tags\/\$\{RELEASE\}"/);
+    assert.match(content, /git\s+reset\s+--hard\s+"\$\{ALIGN_TO\}"/);
+    // Never backwards: a checkout already ahead of the release keeps its commit.
+    assert.match(content, /merge-base --is-ancestor "\$\{ALIGN_TO\}" HEAD[^\n]*&& ALIGN_TO="HEAD"/);
   });
 });
 
@@ -211,9 +216,11 @@ describe('interactive-upgrade.ps1 — dirty tree auto-recover (Windows)', () => 
     assert.match(content, /upgrade_dirty_tree/);
   });
 
-  it('when dirty, runs git fetch + reset --hard origin/main', () => {
-    assert.match(content, /git\s+fetch/);
-    assert.match(content, /git\s+reset\s+--hard\s+origin\/main/);
+  it('when dirty, runs reset --hard to the newest release', () => {
+    assert.match(content, /update-to-release\.mjs --print/);
+    assert.match(content, /\$alignTo = "refs\/tags\/\$release"/);
+    assert.match(content, /git\s+reset\s+--hard\s+\$alignTo/);
+    assert.match(content, /merge-base --is-ancestor \$alignTo HEAD/);
   });
 });
 

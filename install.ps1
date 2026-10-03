@@ -272,12 +272,24 @@ foreach ($dir in @($ClaudeDir, $SkillDir, $HookDir)) {
 }
 
 # --- 1. Clone MCP Server ---
+# v1.30.48: installs and re-installs land on the newest release tag on main, not main's tip,
+# the same as every automatic update (update-to-release.mjs; see install.sh). A checkout too
+# old to have the helper falls back to the pull once.
+$ReleaseHelper = Join-Path $OwnmindDir "scripts\install-helpers\update-to-release.mjs"
 if (Test-Path $OwnmindDir) {
   Write-Host "[INFO] Updating OwnMind MCP server"
-  git -C $OwnmindDir pull -q
+  if (Test-Path $ReleaseHelper) {
+    Push-Location $OwnmindDir
+    & node $ReleaseHelper | Out-Null
+    $updateCode = $LASTEXITCODE
+    Pop-Location
+    $global:LASTEXITCODE = $updateCode
+  } else {
+    git -C $OwnmindDir pull -q
+  }
   if ($LASTEXITCODE -ne 0) {
     Maybe-LoadReportError
-    Report-Error -Kind "install_git_pull_failed" -Detail "git pull 失敗於 $OwnmindDir"
+    Report-Error -Kind "install_git_pull_failed" -Detail "更新 $OwnmindDir 失敗（更新到最新正式版，或舊版的 git pull）"
     Write-Error "git pull failed. Run bootstrap or fix manually and retry"
     exit 1
   }
@@ -289,6 +301,16 @@ if (Test-Path $OwnmindDir) {
     Write-Error "git clone failed (network or GitHub access)"
     exit 1
   }
+  # A fresh clone is main's tip; step back to the newest release. Nothing local to lose.
+  Push-Location $OwnmindDir
+  $release = "$(& node $ReleaseHelper --print)".Trim()
+  if ($LASTEXITCODE -eq 0 -and $release -match '^v\d') {
+    git reset -q --hard "refs/tags/$release"
+    if ($LASTEXITCODE -ne 0) { Write-Host "[WARN] Could not move to release $release; installing main" }
+  } else {
+    Write-Host "[WARN] No release found ($release); installing main's latest commit"
+  }
+  Pop-Location
 }
 Maybe-LoadReportError
 

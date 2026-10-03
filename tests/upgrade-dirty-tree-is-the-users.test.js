@@ -309,11 +309,14 @@ describe('nothing stashes the user\'s work without putting it back', () => {
       + 'uncommitted stays in the stash list');
   });
 
-  it('the session-start hook pulls with --autostash', () => {
-    const body = read('hooks/ownmind-session-start.sh');
-    assert.match(body, /git pull -q --rebase --autostash/);
+  it('the session-start hook updates through the helper, which pulls with --autostash', () => {
+    // v1.30.48: the hook calls update-to-release.mjs (newest release, not main's tip); the
+    // pull itself, and its --autostash, moved there.
+    assert.match(read('hooks/ownmind-session-start.sh'), /update-to-release\.mjs/);
+    const helper = read('scripts/install-helpers/update-to-release.mjs');
+    assert.match(helper, /'pull', '-q', '--rebase', '--autostash'/);
     // The fallback must not carry --autostash: on git older than 2.6 the flag is unknown,
     // and the point of a fallback is to work where the primary path did not.
-    assert.match(body, /git pull -q --ff-only/);
+    assert.match(helper, /'pull', '-q', '--ff-only'/);
   });
 });

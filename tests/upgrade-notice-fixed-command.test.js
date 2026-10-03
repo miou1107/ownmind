@@ -53,8 +53,9 @@ describe('buildUpgradeNotice — the command comes from the client, never the se
     assert.equal(stripUpgradeAction(undefined), null);
   });
 
-  it('the fixed command is the one the server used to send', () => {
-    assert.match(UPGRADE_COMMAND, /cd ~\/\.ownmind && git pull/);
+  it('the fixed command updates the checkout, then syncs it', () => {
+    // v1.30.48: to the newest release, not main's tip (tests/update-to-release-tag.test.js).
+    assert.match(UPGRADE_COMMAND, /cd ~\/\.ownmind && node scripts\/install-helpers\/update-to-release\.mjs/);
     assert.match(UPGRADE_COMMAND, /bash ~\/\.ownmind\/scripts\/update\.sh/);
   });
 });

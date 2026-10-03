@@ -52,14 +52,28 @@ $gitDir = Join-Path $OwnmindDir '.git'
 if (Test-Path $gitDir) {
     $gitCmd = Get-Command git -ErrorAction SilentlyContinue
     if ($gitCmd) {
-        git -C $OwnmindDir fetch origin main --quiet 2>$null | Out-Null
+        # v1.30.48: compared with the newest release tag on main, which is what updates install,
+        # not with main's tip (see check-sync.sh). Falls back to main on an older checkout.
+        $target = 'origin/main'
+        $helper = Join-Path $OwnmindDir 'scripts\install-helpers\update-to-release.mjs'
+        $release = ''
+        if (Test-Path $helper) {
+            Push-Location $OwnmindDir
+            $release = "$(& node $helper --print 2>$null)".Trim()
+            # Offline: the tags already here, not main (see check-sync.sh).
+            if ($LASTEXITCODE -ne 0) { $release = "$(& node $helper --print --no-fetch 2>$null)".Trim() }
+            Pop-Location
+        }
+        if ($release -match '^v\d') { $target = "refs/tags/$release" }
+        else { git -C $OwnmindDir fetch origin main --quiet 2>$null | Out-Null }
         $localHead  = (git -C $OwnmindDir rev-parse HEAD 2>$null)
-        $remoteHead = (git -C $OwnmindDir rev-parse origin/main 2>$null)
+        $remoteHead = (git -C $OwnmindDir rev-parse "$target^{commit}" 2>$null)
         if ($localHead -and $remoteHead) {
-            if ($localHead -eq $remoteHead) {
+            git -C $OwnmindDir merge-base --is-ancestor $target HEAD 2>$null
+            if ($LASTEXITCODE -eq 0) {
                 $L1 = 'in_sync'
             } else {
-                $behind = (git -C $OwnmindDir rev-list --count "HEAD..origin/main" 2>$null)
+                $behind = (git -C $OwnmindDir rev-list --count "HEAD..$target" 2>$null)
                 if (-not $behind) { $behind = '?' }
                 $L1 = 'behind'
                 $L1Detail = "count=$behind"

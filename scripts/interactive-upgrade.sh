@@ -251,19 +251,27 @@ if [ -n "${UNTRACKED}" ]; then
   } >>"${LOG_FILE}" 2>/dev/null || true
 fi
 if [ -n "${DIRTY}" ]; then
-  STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
+  STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to the newest release (backup already saved)"
   echo "${DIRTY}" > "${LOG_FILE}.dirty"
-  report_error "upgrade_dirty_tree" "tracked files modified (git status --porcelain --untracked-files=no non-empty); auto reset --hard to origin/main; tree: $(last_log_lines "${LOG_FILE}.dirty")" "${LOG_FILE}.dirty"
-  if git fetch origin >>"${LOG_FILE}" 2>&1 \
-     && git reset --hard origin/main >>"${LOG_FILE}" 2>&1; then
-    OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
+  report_error "upgrade_dirty_tree" "tracked files modified (git status --porcelain --untracked-files=no non-empty); auto reset --hard to the newest release; tree: $(last_log_lines "${LOG_FILE}.dirty")" "${LOG_FILE}.dirty"
+  # v1.30.48: the newest release tag on main, not main's tip (update-to-release.mjs).
+  # A checkout already ahead of the release only loses its edits; it is not moved back.
+  RELEASE=$(node scripts/install-helpers/update-to-release.mjs --print 2>>"${LOG_FILE}")
+  ALIGN_TO="refs/tags/${RELEASE}"
+  git merge-base --is-ancestor "${ALIGN_TO}" HEAD >>"${LOG_FILE}" 2>&1 && ALIGN_TO="HEAD"
+  if case "${RELEASE}" in v[0-9]*) true ;; *) false ;; esac \
+     && git reset --hard "${ALIGN_TO}" >>"${LOG_FILE}" 2>&1; then
+    OK "pull" "Force-aligned to ${RELEASE} (dirty changes overwritten; previous state in backup)"
   else
-    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
+    report_error "upgrade_git_pull_failed" "fetch + reset --hard to release '${RELEASE}' failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     rollback
     FAIL "git_pull" "Force-align failed (network or permissions); $(rollback_note)"
   fi
-elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
-  OK "pull" "git pull complete"
+# v1.30.48: the newest release tag on main, not main's tip. A checkout already ahead of it
+# stays put (CURRENT); NO_RELEASE changes nothing.
+elif PULL_RESULT=$(node scripts/install-helpers/update-to-release.mjs 2>>"${LOG_FILE}"); then
+  echo "${PULL_RESULT}" >>"${LOG_FILE}"
+  OK "pull" "Update complete (${PULL_RESULT})"
 else
   # v1.26.144 — this branch used to be unreachable on macOS and Linux, because the tree was
   # always read as dirty and the reset above ran instead. Now it is the live path, so its
@@ -272,16 +280,16 @@ else
   # it replaced did not refuse — it overwrote the file and reported success — so refusing is
   # the safe direction, and naming the untracked paths is what turns a stalled upgrade into
   # one somebody can finish by hand.
-  report_error "upgrade_git_pull_failed" "git pull --ff-only failed: $(last_log_lines "${LOG_FILE}")${UNTRACKED:+; untracked: $(echo "${UNTRACKED}" | tr '\n' ' ')}" "${LOG_FILE}"
+  report_error "upgrade_git_pull_failed" "update to the newest release failed: $(last_log_lines "${LOG_FILE}")${UNTRACKED:+; untracked: $(echo "${UNTRACKED}" | tr '\n' ' ')}" "${LOG_FILE}"
   rollback
-  FAIL "git_pull" "git pull failed; $(rollback_note). Manual check: cd ~/.ownmind && git status"
+  FAIL "git_pull" "Update failed; $(rollback_note). Manual check: cd ~/.ownmind && git status"
 fi
 
 # --- 3. npm install (MCP deps) ---
 if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
   STEP "npm_install" "Updating MCP dependencies"
   cd "${OWNMIND_DIR}/mcp" || true
-  if npm install --silent >>"${LOG_FILE}" 2>&1; then
+  if npm install --silent --ignore-scripts >>"${LOG_FILE}" 2>&1; then
     OK "npm_install" "MCP dependencies updated"
   else
     if is_file_lock_error "${LOG_FILE}"; then

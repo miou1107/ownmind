@@ -116,7 +116,7 @@ if (Test-RootDepNeeded -Package "js-yaml" -MinVersion "4.3.2") {
   Push-Location $OwnMindDir
   try {
     $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
-    & npm install js-yaml@^4.3.2 --no-save --silent --no-audit --no-fund 2>>$errLog
+    & npm install js-yaml@4.3.2 --no-save --ignore-scripts --silent --no-audit --no-fund 2>>$errLog
     if ($LASTEXITCODE -eq 0) {
       Write-Host "   [ OK ] js-yaml ready"
     } else {
@@ -134,7 +134,7 @@ if (Test-RootDepNeeded -Package "node-machine-id" -MinVersion "1.1.12") {
   Push-Location $OwnMindDir
   try {
     $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
-    & npm install node-machine-id@^1.1.12 --no-save --silent --no-audit --no-fund 2>>$errLog
+    & npm install node-machine-id@1.1.12 --no-save --ignore-scripts --silent --no-audit --no-fund 2>>$errLog
     if ($LASTEXITCODE -eq 0) {
       Write-Host "   [ OK ] node-machine-id ready"
     } else {

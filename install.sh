@@ -169,9 +169,22 @@ safe_cp() {
   fi
   cp "$src" "$dest"
 }
+# v1.30.48: installs and re-installs land on the newest release tag on main, not main's tip,
+# the same as every automatic update (scripts/install-helpers/update-to-release.mjs). The
+# upgraders re-run this script after moving to the release; a plain `git pull` here used to
+# carry them on to main's tip. A checkout too old to have the helper falls back to the pull
+# once, and the helper takes over from its next update.
+RELEASE_HELPER="scripts/install-helpers/update-to-release.mjs"
 if [ -d "$OWNMIND_DIR" ]; then
   echo "[INFO] Updating OwnMind MCP server"
-  if ! git -C "$OWNMIND_DIR" pull -q; then
+  if [ -f "$OWNMIND_DIR/$RELEASE_HELPER" ]; then
+    if ! (cd "$OWNMIND_DIR" && node "$RELEASE_HELPER" >/dev/null); then
+      maybe_load_report_error
+      report_error "install_git_pull_failed" "update to the newest release failed (existing OwnMind directory cannot be updated)"
+      echo "[ERROR] Updating OwnMind failed. Run bootstrap.sh or fix manually"
+      exit 1
+    fi
+  elif ! git -C "$OWNMIND_DIR" pull -q; then
     maybe_load_report_error
     report_error "install_git_pull_failed" "git pull failed (existing OwnMind directory cannot be updated)"
     echo "[ERROR] git pull failed. Run bootstrap.sh or fix manually"
@@ -183,6 +196,13 @@ else
     report_error "install_git_clone_failed" "git clone github.com/miou1107/ownmind failed"
     echo "[ERROR] git clone failed (network or GitHub access)"
     exit 1
+  fi
+  # A fresh clone is main's tip; step back to the newest release. Nothing local to lose.
+  if RELEASE=$(cd "$OWNMIND_DIR" && node "$RELEASE_HELPER" --print) \
+     && case "$RELEASE" in v[0-9]*) true ;; *) false ;; esac; then
+    git -C "$OWNMIND_DIR" reset -q --hard "refs/tags/$RELEASE" || echo "[WARN] Could not move to release $RELEASE; installing main"
+  else
+    echo "[WARN] No release found (${RELEASE:-helper failed}); installing main's latest commit"
   fi
 fi
 maybe_load_report_error

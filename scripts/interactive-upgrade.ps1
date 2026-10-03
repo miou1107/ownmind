@@ -277,23 +277,37 @@ if ($untracked) {
   $untracked | Out-File -Append $LogFile -Encoding utf8
 }
 if ($dirty) {
-  Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
+  Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to the newest release (backup already saved)"
   $dirtyLog = "$LogFile.dirty"
   $dirty | Out-File -FilePath $dirtyLog -Encoding utf8
-  Report-Error -Kind "upgrade_dirty_tree" -Detail "tracked files modified (git status --porcelain --untracked-files=no non-empty); auto reset --hard to origin/main; tree: $(Get-LastLogLines $dirtyLog)" -ContextFile $dirtyLog
-  git fetch origin 2>&1 | Out-File -Append $LogFile -Encoding utf8
-  if ($LASTEXITCODE -eq 0) {
-    git reset --hard origin/main 2>&1 | Out-File -Append $LogFile -Encoding utf8
+  Report-Error -Kind "upgrade_dirty_tree" -Detail "tracked files modified (git status --porcelain --untracked-files=no non-empty); auto reset --hard to the newest release; tree: $(Get-LastLogLines $dirtyLog)" -ContextFile $dirtyLog
+  # v1.30.48: the newest release tag on main, not main's tip (update-to-release.mjs).
+  # stderr is captured with the output and written as UTF-8: `2>>` in PowerShell 5.1 appends
+  # UTF-16 into a log that is otherwise UTF-8.
+  $relOut = & node scripts/install-helpers/update-to-release.mjs --print 2>&1
+  $relCode = $LASTEXITCODE
+  $relOut | Out-File -Append $LogFile -Encoding utf8
+  $release = "$($relOut | Where-Object { $_ -is [string] } | Select-Object -Last 1)".Trim()
+  if ($relCode -eq 0 -and $release -match '^v\d') {
+    # A checkout already ahead of the release only loses its edits; it is not moved back.
+    $alignTo = "refs/tags/$release"
+    git merge-base --is-ancestor $alignTo HEAD
+    if ($LASTEXITCODE -eq 0) { $alignTo = "HEAD" }
+    git reset --hard $alignTo 2>&1 | Out-File -Append $LogFile -Encoding utf8
+  } else {
+    $global:LASTEXITCODE = 1
   }
   if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard to release '$release' failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "git_pull" "Force-align failed (network or permissions); $(RollbackNote)"
   }
-  OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
+  OK "pull" "Force-aligned to $release (dirty changes overwritten; previous state in backup)"
 } else {
-  $pullOut = git pull --ff-only 2>&1
+  # v1.30.48: the newest release tag on main, not main's tip. A checkout already ahead of it
+  # stays put (CURRENT); NO_RELEASE changes nothing.
+  $pullOut = & node scripts/install-helpers/update-to-release.mjs 2>&1
   # Capture the exit code before anything else runs.
   $pullCode = $LASTEXITCODE
   # v1.26.98 — $pullOut used to be captured and then dropped on the floor: it was never written
@@ -306,12 +320,12 @@ if ($dirty) {
     # release has started tracking: --ff-only refuses rather than overwriting it. Naming the
     # untracked paths is what turns a stalled upgrade into one somebody can finish by hand.
     $untrackedNote = if ($untracked) { "; untracked: $($untracked -join ' ')" } else { "" }
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $(Get-LastLogLines $LogFile)$untrackedNote" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "update to the newest release failed: $(Get-LastLogLines $LogFile)$untrackedNote" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "git pull failed; $(RollbackNote)"
+    Fail "git_pull" "Update failed; $(RollbackNote)"
   }
-  OK "pull" "git pull complete"
+  OK "pull" "Update complete ($("$pullOut".Trim()))"
 }
 
 # --- 3. npm install (MCP) ---
@@ -319,7 +333,7 @@ $mcpDir = Join-Path $OwnMindDir "mcp"
 if (Test-Path (Join-Path $mcpDir "package.json")) {
   Step "npm_install" "Updating MCP dependencies"
   Set-Location $mcpDir
-  npm install --silent 2>&1 | Out-File -Append $LogFile -Encoding utf8
+  npm install --silent --ignore-scripts 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -ne 0) {
     if (Test-FileLockError $LogFile) {
       Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running): $(Get-LastLogLines $LogFile)" -ContextFile $LogFile

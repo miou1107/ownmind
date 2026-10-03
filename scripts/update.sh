@@ -132,7 +132,7 @@ needs_root_dep() {
 # below the one package.json declares.
 if needs_root_dep js-yaml 4.3.2; then
   echo "   📦 Installing / updating conditional-sync dependency: js-yaml..."
-  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.3.2 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
+  (cd "$OWNMIND_DIR" && npm install js-yaml@4.3.2 --no-save --ignore-scripts --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
     && echo "   ✅ js-yaml ready" \
     || echo "   ⚠️ js-yaml install failed (see ~/.ownmind/logs/update-err.log); big skill sync will fall back to skip — other features unaffected"
 fi
@@ -142,7 +142,7 @@ fi
 # was unstable under Docker / VPN.
 if needs_root_dep node-machine-id 1.1.12; then
   echo "   📦 Installing / updating bug-report-tool dependency: node-machine-id..."
-  (cd "$OWNMIND_DIR" && npm install node-machine-id@^1.1.12 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
+  (cd "$OWNMIND_DIR" && npm install node-machine-id@1.1.12 --no-save --ignore-scripts --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
     && echo "   ✅ node-machine-id ready" \
     || echo "   ⚠️ node-machine-id install failed; ownmind_report_bug will use a fallback fingerprint (less stable, still functional)"
 fi

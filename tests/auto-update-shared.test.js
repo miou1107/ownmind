@@ -39,7 +39,7 @@ afterEach(async () => {
 /**
  * An execFile that records what it was asked to run and answers from a script.
  *
- * `pending` decides whether `git log HEAD..origin/main` reports new commits, which is the
+ * `pending` decides whether `git log HEAD..refs/tags/<release>` reports new commits, which is the
  * branch between "nothing to do" and a real upgrade.
  */
 function fakeExec({ pending = '', failOn = null, failWith = new Error('boom') } = {}) {
@@ -48,6 +48,7 @@ function fakeExec({ pending = '', failOn = null, failWith = new Error('boom') } 
     calls.push({ cmd, args, opts });
     const label = `${cmd} ${args[0] ?? ''}`.trim();
     if (failOn && label.startsWith(failOn)) throw failWith;
+    if (cmd === 'git' && args[0] === 'tag') return { stdout: 'v1.26.143', stderr: '' };
     if (cmd === 'git' && args[0] === 'log') return { stdout: pending, stderr: '' };
     return { stdout: '', stderr: '' };
   };
@@ -149,8 +150,11 @@ describe('when there are new commits', () => {
     const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
     assert.equal(out.outcome, APPLIED);
     assert.equal(out.version, '1.26.142');
+    // v1.30.48: the release tag is looked up (tag list, then "is it on main") before the log.
     assert.deepEqual(calls.map((c) => `${c.cmd} ${c.args[0]}`), [
       'git fetch',
+      'git tag',
+      'git merge-base',
       'git log',
       'git pull',
       'npm install',
@@ -170,6 +174,7 @@ describe('when there are new commits', () => {
     let firstPull = true;
     const execFile = async (cmd, args = []) => {
       calls.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'git' && args[0] === 'tag') return { stdout: 'v1.26.143', stderr: '' };
       if (cmd === 'git' && args[0] === 'log') return { stdout: 'abc1234 x', stderr: '' };
       if (cmd === 'git' && args[0] === 'pull' && firstPull) {
         firstPull = false;
@@ -180,7 +185,7 @@ describe('when there are new commits', () => {
     const h = harness();
     const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
     assert.equal(out.outcome, APPLIED);
-    assert.ok(calls.includes('git pull -q --ff-only'));
+    assert.ok(calls.includes('git pull -q --ff-only origin refs/tags/v1.26.143'));
   });
 
   it('uses PowerShell and the shell for npm on Windows', async () => {
@@ -442,6 +447,7 @@ describe('a repository left mid-rebase', () => {
     const calls = [];
     const execFile = async (cmd, args = []) => {
       calls.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'git' && args[0] === 'tag') return { stdout: 'v1.26.143', stderr: '' };
       if (cmd === 'git' && args[0] === 'log') return { stdout: 'abc1234 x', stderr: '' };
       if (cmd === 'git' && args[0] === 'pull' && args.includes('--rebase')) {
         pulls += 1;
@@ -458,7 +464,7 @@ describe('a repository left mid-rebase', () => {
     const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
     assert.equal(pulls, 1);
     assert.ok(calls.includes('git rebase --abort'), 'the conflicted rebase is left in place');
-    assert.ok(calls.indexOf('git rebase --abort') < calls.indexOf('git pull -q --ff-only'));
+    assert.ok(calls.indexOf('git rebase --abort') < calls.indexOf('git pull -q --ff-only origin refs/tags/v1.26.143'));
     assert.equal(out.outcome, APPLIED);
   });
 
@@ -473,6 +479,7 @@ describe('a repository left mid-rebase', () => {
   it('carries on when the abort itself fails, rather than hiding the real error', async () => {
     fs.mkdirSync(path.join(dir, '.git', 'rebase-merge'), { recursive: true });
     const execFile = async (cmd, args = []) => {
+      if (cmd === 'git' && args[0] === 'tag') return { stdout: 'v1.26.143', stderr: '' };
       if (cmd === 'git' && args[0] === 'log') return { stdout: 'abc1234 x', stderr: '' };
       if (cmd === 'git' && args[0] === 'rebase') throw new Error('cannot abort');
       if (cmd === 'git' && args[0] === 'pull') throw new Error('in the middle of a rebase');
@@ -575,9 +582,12 @@ describe('when the remote history was rewritten', () => {
     const calls = [];
     const execFile = async (cmd, args = []) => {
       calls.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'git' && args[0] === 'tag') return { stdout: 'v1.26.143', stderr: '' };
       if (cmd === 'git' && args[0] === 'log') return { stdout: 'abc1234 x', stderr: '' };
       if (cmd === 'git' && args[0] === 'pull') throw new Error('fatal: refusing to merge unrelated histories');
       if (cmd === 'git' && args[0] === 'rev-parse') return { stdout: 'main\n', stderr: '' };
+      // "Is the release on main?" (v1.30.48) is a different question from the one below.
+      if (cmd === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor') return { stdout: '', stderr: '' };
       if (cmd === 'git' && args[0] === 'merge-base') {
         if (sharesHistory) return { stdout: 'deadbee\n', stderr: '' };
         throw new Error('fatal: no merge base');
@@ -596,7 +606,7 @@ describe('when the remote history was rewritten', () => {
     const h = harness();
     const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
     assert.notEqual(out.outcome, FAILED, `update must not stop at the pull: ${JSON.stringify(out)}`);
-    assert.ok(calls.some((c) => c === 'git reset --hard origin/main'),
+    assert.ok(calls.some((c) => c === 'git reset --hard refs/tags/v1.26.143'),
       `the checkout must be put back on the remote, calls were: ${calls.join(' | ')}`);
     assert.ok(h.events.some((e) => e.event === 'update_realigned_after_rewrite'),
       'a repair this destructive has to leave a record');

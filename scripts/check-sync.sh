@@ -37,14 +37,24 @@ L1="unknown"
 L1_DETAIL=""
 if [ -d "${OWNMIND_DIR}/.git" ]; then
   if command -v git >/dev/null 2>&1; then
-    git -C "${OWNMIND_DIR}" fetch origin main --quiet 2>/dev/null
+    # v1.30.48: compared with the newest release tag on main, which is what updates install,
+    # not with main's tip; a machine is in sync once it has that release (or is ahead of it).
+    # The helper fetches; offline it answers from the tags already here (--no-fetch), since
+    # falling back to main would report every untagged commit as "behind". Only a checkout
+    # without the helper compares with main.
+    RELEASE=$(cd "${OWNMIND_DIR}" && { node scripts/install-helpers/update-to-release.mjs --print 2>/dev/null \
+      || node scripts/install-helpers/update-to-release.mjs --print --no-fetch 2>/dev/null; })
+    case "${RELEASE}" in
+      v[0-9]*) TARGET="refs/tags/${RELEASE}" ;;
+      *) git -C "${OWNMIND_DIR}" fetch origin main --quiet 2>/dev/null; TARGET="origin/main" ;;
+    esac
     LOCAL_HEAD=$(git -C "${OWNMIND_DIR}" rev-parse HEAD 2>/dev/null)
-    REMOTE_HEAD=$(git -C "${OWNMIND_DIR}" rev-parse origin/main 2>/dev/null)
+    REMOTE_HEAD=$(git -C "${OWNMIND_DIR}" rev-parse "${TARGET}^{commit}" 2>/dev/null)
     if [ -n "${LOCAL_HEAD}" ] && [ -n "${REMOTE_HEAD}" ]; then
-      if [ "${LOCAL_HEAD}" = "${REMOTE_HEAD}" ]; then
+      if git -C "${OWNMIND_DIR}" merge-base --is-ancestor "${TARGET}" HEAD 2>/dev/null; then
         L1="in_sync"
       else
-        BEHIND=$(git -C "${OWNMIND_DIR}" rev-list --count "HEAD..origin/main" 2>/dev/null || echo "?")
+        BEHIND=$(git -C "${OWNMIND_DIR}" rev-list --count "HEAD..${TARGET}" 2>/dev/null || echo "?")
         L1="behind"
         L1_DETAIL="count=${BEHIND}"
       fi

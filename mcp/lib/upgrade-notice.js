@@ -11,9 +11,13 @@
 // compromised still controls other text the AI reads (the operations manual, broadcasts,
 // rules); this does not claim otherwise.
 
-/** The same command the server used to send (Git Bash on Windows). */
+/**
+ * The command the AI runs (Git Bash on Windows). Since v1.30.48 it moves to the newest
+ * release tag on main rather than `git pull`ing main's tip, and installs packages without
+ * running their install scripts, the same as the scheduled update (shared/auto-update.js).
+ */
 export const UPGRADE_COMMAND =
-  'cd ~/.ownmind && git pull --rebase && cd mcp && npm install && bash ~/.ownmind/scripts/update.sh';
+  'cd ~/.ownmind && node scripts/install-helpers/update-to-release.mjs && cd mcp && npm install --ignore-scripts && bash ~/.ownmind/scripts/update.sh';
 
 const VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
 

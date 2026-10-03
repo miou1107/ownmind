@@ -292,12 +292,11 @@ Note: list only **what hasn't been saved into OwnMind yet** — don't repeat ite
 
 ## Auto-Update Check
 
-Each ownmind_init also checks whether ~/.ownmind/ is at the latest version:
-1. Run \`cd ~/.ownmind && git fetch 2>&1\` to check the remote
-2. Run \`git log HEAD..origin/main --oneline\` to see new commits
-3. If updates exist, run \`cd ~/.ownmind && git pull && cd mcp && npm install\`
-4. If skill files changed, sync them to the local skill directory
-5. Display the update content like this:
+Each ownmind_init also checks whether ~/.ownmind/ has the newest release (updates go to the newest release tag, not to the latest commit on main):
+1. Run \`cd ~/.ownmind && node scripts/install-helpers/update-to-release.mjs\`. It prints UPDATED vX.Y.Z (moved to that release), CURRENT vX.Y.Z (nothing to do) or NO_RELEASE (nothing to do). If that file does not exist yet (an older install), run \`cd ~/.ownmind && git pull\` once instead.
+2. Only if it printed UPDATED (or you ran the pull), run \`cd ~/.ownmind/mcp && npm install --ignore-scripts && bash ~/.ownmind/scripts/update.sh\`
+3. If skill files changed, sync them to the local skill directory
+4. Display the update content like this:
 
 [OwnMind vX.X.X] Version update: a new version was detected and applied automatically
    - Added proactive iron rule protection

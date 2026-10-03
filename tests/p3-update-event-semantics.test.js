@@ -133,10 +133,12 @@ test('P3: hook must not unconditionally write update_applied after git pull (mus
   // After the fix: each step is wrapped in `if !; then log_event "update_failed"; exit; fi`.
   // Regression guard: the hook must not include the "git pull ... || git pull ..." pattern immediately
   // followed by log_event "update_applied" (no exit-code check in between). Use the count of `if ! ` instead.
+  // v1.30.48: fetch and pull became one step (update-to-release.mjs), so three are checked:
+  // the update, npm, update.sh.
   const ifNotCount = (hookSource.match(/if ! /g) || []).length;
   assert.ok(
-    ifNotCount >= 4,
-    `hook must explicitly check exit codes (if ! ...) for fetch/pull/npm/update.sh; currently only ${ifNotCount} occurrences of "if !"`
+    ifNotCount >= 3,
+    `hook must explicitly check exit codes (if ! ...) for update/npm/update.sh; currently only ${ifNotCount} occurrences of "if !"`
   );
 });
 

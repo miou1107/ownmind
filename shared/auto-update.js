@@ -29,6 +29,7 @@ import fs from 'fs';
 import path from 'path';
 import { localDateOnly } from './local-date.js';
 import { tryAcquireUpdateLock, releaseUpdateLock } from './update-lock.js';
+import { fetchReleases, findReleaseTarget } from './release-target.js';
 
 /** Outcomes. Returned rather than only logged, so a caller can act on them. */
 export const SKIPPED = 'skipped';
@@ -59,40 +60,29 @@ const REBASE_ABORT_TIMEOUT_MS = 15_000;
  *
  * @returns {Promise<boolean>} true when the checkout now matches the remote
  */
-async function realignAfterHistoryRewrite({ execFile, ownmindDir, logEvent, source }) {
+async function realignAfterHistoryRewrite({ execFile, ownmindDir, logEvent, source, target }) {
   const run = (args, timeout = PULL_TIMEOUT_MS) =>
     execFile('git', args, { cwd: ownmindDir, timeout });
-
-  let branch = 'main';
-  try {
-    const { stdout } = await run(['rev-parse', '--abbrev-ref', 'HEAD'], LOG_TIMEOUT_MS);
-    const name = String(stdout || '').trim();
-    if (name && name !== 'HEAD') branch = name;
-  } catch { /* the default is the branch every install is created on */ }
-
-  try {
-    await run(['fetch', '-q', 'origin', branch]);
-  } catch {
-    return false;
-  }
+  // The release being updated to (v1.30.48), already fetched with its tag.
+  const ref = `refs/tags/${target}`;
 
   // Share a commit? Then this is an ordinary failure and resetting would throw away work
   // for no reason.
   try {
-    await run(['merge-base', 'HEAD', `origin/${branch}`], LOG_TIMEOUT_MS);
+    await run(['merge-base', 'HEAD', ref], LOG_TIMEOUT_MS);
     return false;
   } catch { /* no common ancestor: the remote history was replaced */ }
 
   try {
-    await run(['reset', '--hard', `origin/${branch}`]);
+    await run(['reset', '--hard', ref]);
   } catch (e) {
     logEvent('update_realign_failed', {
-      source, branch, error: e?.code || e?.message || String(e).slice(0, 120),
+      source, target, error: e?.code || e?.message || String(e).slice(0, 120),
     });
     return false;
   }
 
-  logEvent('update_realigned_after_rewrite', { source, branch });
+  logEvent('update_realigned_after_rewrite', { source, target });
   return true;
 }
 
@@ -244,16 +234,29 @@ export async function runAutoUpdate({
   logEvent('update_check', { source });
 
   try {
+    // Updates go to the newest release tag on main, not to main's tip (v1.30.48). A commit
+    // on main that no release points at is not on its way to anybody. fetchReleases lets
+    // the remote's tags win, so a moved or deleted tag cannot wedge every later fetch.
     try {
-      await execFile('git', ['fetch', '-q'], { cwd: ownmindDir, timeout: FETCH_TIMEOUT_MS });
+      await fetchReleases({ execFile, cwd: ownmindDir, timeout: FETCH_TIMEOUT_MS });
     } catch (e) { return fail('fetch', e); }
 
-    let pending = '';
+    let target = null;
     try {
-      const { stdout } = await execFile('git', ['log', 'HEAD..origin/main', '--oneline'],
-        { cwd: ownmindDir, timeout: LOG_TIMEOUT_MS });
-      pending = String(stdout || '').trim();
-    } catch (e) { return fail('log', e); }
+      target = await findReleaseTarget({ execFile, cwd: ownmindDir, timeout: LOG_TIMEOUT_MS });
+    } catch (e) { return fail('tag', e); }
+    if (!target) logEvent('update_no_release_tag', { source });
+
+    // Commits the release has and this checkout does not. A machine already ahead of the
+    // release (it updated from main before v1.30.48) has none, and stays where it is.
+    let pending = '';
+    if (target) {
+      try {
+        const { stdout } = await execFile('git', ['log', `HEAD..refs/tags/${target}`, '--oneline'],
+          { cwd: ownmindDir, timeout: LOG_TIMEOUT_MS });
+        pending = String(stdout || '').trim();
+      } catch (e) { return fail('log', e); }
+    }
 
     // v1.26.142 — `pending` being empty is not the same as "there is nothing to do".
     //
@@ -286,20 +289,22 @@ export async function runAutoUpdate({
       // pass it: before v1.26.65 both paths did, so on older git both failed and there was
       // no fallback at all. --ff-only refuses a dirty tree rather than touching it — a
       // manual stash without a pop is how uncommitted work disappeared in v1.17.22.
+      // Pulled from the release tag, not from the branch.
+      const from = ['origin', `refs/tags/${target}`];
       try {
-        await execFile('git', ['pull', '-q', '--rebase', '--autostash'],
+        await execFile('git', ['pull', '-q', '--rebase', '--autostash', ...from],
           { cwd: ownmindDir, timeout: PULL_TIMEOUT_MS });
       } catch {
         await abortAnyRebase({ execFile, ownmindDir, fileSystem, logEvent, source });
         try {
-          await execFile('git', ['pull', '-q', '--ff-only'],
+          await execFile('git', ['pull', '-q', '--ff-only', ...from],
             { cwd: ownmindDir, timeout: PULL_TIMEOUT_MS });
         } catch (e) {
           // Both pulls failing the same way on every machine is what a rewritten remote
           // history looks like from here. Realigning is the only repair that does not
           // need somebody to sit at the machine.
           const realigned = await realignAfterHistoryRewrite({
-            execFile, ownmindDir, logEvent, source,
+            execFile, ownmindDir, logEvent, source, target,
           });
           if (!realigned) return fail('pull', e);
         }
@@ -334,7 +339,10 @@ export async function runAutoUpdate({
       npmTarget = isWindows ? `"${npmBeside}"` : npmBeside;
     }
     try {
-      await execFile(npmTarget, ['install', '-q'], {
+      // --ignore-scripts: the packages come from the committed lockfile, and none of them
+      // needs an install script; a dependency that turned malicious most often strikes
+      // through one, on every machine at once (v1.30.48).
+      await execFile(npmTarget, ['install', '-q', '--ignore-scripts'], {
         cwd: path.join(ownmindDir, 'mcp'),
         timeout: NPM_TIMEOUT_MS,
         windowsHide: true,
