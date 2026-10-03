@@ -76,6 +76,31 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.31.5 修改（發版前清點：打標籤之前，先把該看的一次列給你）
+
+新增檔：
+```
+shared/release-git.js                      — isReleaseCommand：哪些 git 指令算發版；detectBase／behindCount／lastTag／commitsSince／gitFacts
+                                             （git 用注入的）；buildReleaseReport：Blocking 一段、For you to read 一段
+hooks/lib/release-check.js                 — runReleaseCheck：git 半邊＋問伺服器（連不上就說）；releaseEnvelope：擋的信封或脈絡的信封
+src/routes/release.js                      — createReleaseRouter：GET /check（里程碑的卡、這專案沒整理的學到的、標發版的規範全文）；
+                                             POST /tag（每張審過的卡寫 released_in，有沒審過的就拒絕並點名）
+scripts/release-check.js                   — 手動跑的版本，--base／--milestone／--tag
+docs/release-check.md                      — 什麼時候跑、印什麼、不能跑的時候怎麼辦
+openspec/changes/v1.31.4-release-check/    — proposal / spec / tasks
+tests/release-check.test.js                — 21 條：指令判斷（含引號裡的字、列表旗標）、假 git 的事實與報告（含基準分支已刪、不在倉庫）、
+                                             注入網路的執行器、真 git 倉庫驅動 hook（擋／放／不理／規則查不到也擋／沒金鑰也擋）、
+                                             伺服器半邊對假資料庫（含可見性）、寫標籤遇到沒審過的卡
+```
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.js           — 發版指令在憑證檢查和規則查詢之前先跑清點：落後基準就擋（沒金鑰、伺服器掛了都照擋），
+                                             否則把報告放進脈絡；模組在分支裡才載入
+src/app.js                                 — 掛 /api/release
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+```
+
 ## v1.31.3 修改（任務卡：寫一張小卡，讓之後的 AI 對話（或排程）來領）
 
 新增檔：
