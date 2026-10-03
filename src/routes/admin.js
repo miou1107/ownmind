@@ -7,6 +7,7 @@ import logger from '../utils/logger.js';
 import { generateRandomPassword } from '../../shared/random-password.js';
 import { requireFields } from '../utils/require-fields.js';
 import { writeAuditLog } from '../utils/audit-log.js';
+import { revokeUserSessions } from '../utils/web-session.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
@@ -47,7 +48,7 @@ router.post('/setup', async (req, res) => {
     }
 
     const result = await query(
-      `SELECT id, email, name, role, api_key FROM users
+      `SELECT id, email, name, role FROM users
        WHERE email = $1 AND role = 'super_admin' AND password_hash IS NULL`,
       [email]
     );
@@ -66,7 +67,11 @@ router.post('/setup', async (req, res) => {
 
     await writeAuditLog(user.id, 'setup_password', 'user', user.id, { email: user.email });
 
-    res.json({ id: user.id, api_key: user.api_key, name: user.name, email: user.email, role: user.role });
+    // v1.31.1: no api_key. The console never used it — it sends the operator back to log
+    // in — and this route is unauthenticated (it is gated by SETUP_TOKEN), so handing out
+    // the account's permanent credential here was exposure with no purpose.
+    await revokeUserSessions({ query, userId: user.id });
+    res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
   } catch (err) {
     logger.error('setup password failed', { error: err.message });
     res.status(500).json({ error: '設定密碼失敗' });
@@ -316,7 +321,9 @@ router.post('/users/:id/password', async (req, res) => {
       if (target.password_hash) {
         const valid = await bcrypt.compare(oldPassword, target.password_hash);
         if (!valid) {
-          return res.status(401).json({ error: '舊密碼錯誤' });
+          // 400, not 401 (v1.31.1, as me.js already does): the console reads 401 as "your
+          // login ended" and throws the session away, for what is only a typing mistake.
+          return res.status(400).json({ error: '舊密碼錯誤' });
         }
       }
     }
@@ -326,6 +333,9 @@ router.post('/users/:id/password', async (req, res) => {
       `UPDATE users SET password_hash = $1, updated_by = $2, updated_at = NOW() WHERE id = $3`,
       [hash, actorId, targetId]
     );
+    // v1.31.1: a new password ends the account's console logins, except the browser of
+    // someone changing their own.
+    await revokeUserSessions({ query, userId: targetId, exceptSessionId: isSelf ? (req.sessionId ?? null) : null });
 
     await writeAuditLog(actorId, 'change_password', 'user', targetId, {
       target_email: target.email, by_self: isSelf

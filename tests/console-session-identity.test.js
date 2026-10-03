@@ -95,7 +95,7 @@ describe('Stage 0 — identity comes from the server, not from a literal', () =>
     const at = src.indexOf('const logout =');
     assert.ok(at !== -1, 'the session must own logout');
     const body = src.slice(at, src.indexOf('\n  return', at));
-    assert.match(body, /clearApiKey\(\)/,
+    assert.match(body, /clearSessionToken\(\)/,
       'logout must clear the stored credential. Asserting that App.jsx no longer contains '
       + '"console.log" passed trivially once the prop was removed, and stayed green when '
       + 'the body was replaced with a no-op');
@@ -221,7 +221,7 @@ describe('Stage 0 — the session refreshes without a caller remembering to ask'
     assert.match(
       src,
       /dispatchEvent/,
-      'setApiKey / clearApiKey must announce the change so the session refetches. '
+      'setSessionToken / clearSessionToken must announce the change so the session refetches. '
       + 'Requiring LoginPage to call refresh() by hand is the kind of reminder that '
       + 'gets dropped — the project rule is to enforce with logic, not memory',
     );
@@ -247,13 +247,13 @@ describe('Stage 0 — the session refreshes without a caller remembering to ask'
       const auth = await import('../client/src/api/auth.js');
       const { LEGACY_STORAGE_KEYS } = await import('../client/src/api/legacy-keys.js');
 
-      auth.setApiKey('a-real-key');
+      auth.setSessionToken('a-real-key');
       auth.setMustChangePassword(true);
       // Stand in for having followed a signpost, which writes exactly these four.
       for (const key of Object.values(LEGACY_STORAGE_KEYS)) store.set(key, 'x');
       assert.equal(store.size, 6, 'precondition: both consoles hold state');
 
-      auth.clearApiKey();
+      auth.clearSessionToken();
 
       // The defect this covers: the signpost writes a usable om_api_key, and logout used
       // to clear only the console's own key. The next person to open /admin/ in that
@@ -265,7 +265,7 @@ describe('Stage 0 — the session refreshes without a caller remembering to ask'
           `logout left ${name} (${key}) behind, so the old console can still restore that session`,
         );
       }
-      assert.equal(auth.getApiKey(), null);
+      assert.equal(auth.getSessionToken(), null);
       assert.equal(auth.getMustChangePassword(), false);
       assert.equal(store.size, 0, 'nothing at all should survive logout');
     } finally {
@@ -430,7 +430,7 @@ describe('Stage 0 — the event contract is shared, not copied', () => {
 
   it('both writes to the credential announce the change', () => {
     const src = stripComments(read(AUTH));
-    for (const fn of ['setApiKey', 'clearApiKey']) {
+    for (const fn of ['setSessionToken', 'clearSessionToken']) {
       const at = src.indexOf(`export function ${fn}`);
       assert.ok(at !== -1, `${fn} is missing`);
       const body = src.slice(at, src.indexOf('\nexport function', at + 10));

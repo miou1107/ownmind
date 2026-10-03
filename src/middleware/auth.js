@@ -1,5 +1,6 @@
 import { query as defaultQuery } from '../utils/db.js';
 import defaultLogger from '../utils/logger.js';
+import { findSessionUser, isSessionToken } from '../utils/web-session.js';
 
 /**
  * Mask an api_key into an identifiable string that doesn't leak the full value.
@@ -73,6 +74,21 @@ export default async function auth(req, res, next, deps = {}) {
     }
 
     const apiKey = authHeader.slice(7);
+
+    // v1.31.1: a console login. Told apart by prefix, so an api_key lookup is never spent
+    // on one and a session lookup never on a key. See src/utils/web-session.js.
+    if (isSessionToken(apiKey)) {
+      const found = await findSessionUser({ query, token: apiKey });
+      if (!found) {
+        logAuthFailure('<session>');
+        return res.status(401).json({ error: '登入已過期，請重新登入' });
+      }
+      req.user = found.user;
+      req.sessionId = found.sessionId;
+      // Routes that answer with an api_key want a recent login — see requireRecentLogin.
+      req.sessionCreatedAt = found.sessionCreatedAt;
+      return next();
+    }
 
     const result = await query(
       'SELECT id, email, name, role, settings, created_at FROM users WHERE api_key = $1',

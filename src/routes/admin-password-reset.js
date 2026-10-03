@@ -23,6 +23,7 @@ import { query as defaultQuery } from '../utils/db.js';
 import defaultAdminAuth, { isAtLeast as defaultIsAtLeast } from '../middleware/adminAuth.js';
 import defaultLogger from '../utils/logger.js';
 import { generateRandomPassword } from '../../shared/random-password.js';
+import { revokeUserSessions } from '../utils/web-session.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -81,6 +82,12 @@ export function createAdminPasswordResetRouter(deps = {}) {
 
       const tempPassword = generateRandomPassword();
       const hash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+
+      // v1.31.1: a reset ends every console login the account had — whoever held the old
+      // password should not keep the session it bought them. BEFORE the password changes:
+      // if this fails the request answers 500 with nothing changed, whereas failing after
+      // would leave the account on a temporary password the admin was never shown.
+      await revokeUserSessions({ query, userId: targetId });
 
       await query(
         `UPDATE users

@@ -3,7 +3,6 @@ import { AlertTriangle, UserPlus, Copy, MoreHorizontal } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { useSession } from '../../session/SessionContext';
 import { apiGet, apiPost } from '../../api';
-import { setApiKey } from '../../api/auth.js';
 import { mergeUsersWithUsage } from './user-merge.js';
 import { buildInstallPrompt, currentApiUrl } from '../../utils/install-prompt.js';
 import RowMenu from './RowMenu.jsx';
@@ -116,8 +115,8 @@ export default function TeamPage() {
         showToast(r.error || t('team.toast.rotate_failed'));
         return;
       }
-      // Replacing your own key also replaces the one this browser is signed in with.
-      if (row.id === session.id) setApiKey(r.data.api_key);
+      // v1.31.1: the console is signed in with a session, not the key, so replacing your
+      // own key leaves this browser signed in — nothing to swap here.
       try {
         const prompt = buildInstallPrompt({ ...row, api_key: r.data.api_key }, currentApiUrl(window.location));
         await navigator.clipboard.writeText(prompt);

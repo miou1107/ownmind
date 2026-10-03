@@ -135,6 +135,18 @@ async function main() {
       [target.id]
     );
 
+    // v1.31.1: clearing the password ends the account's console logins too. Whoever is
+    // being locked out by this recovery should not keep a session through it. A database
+    // from before the sessions table existed has nothing to end.
+    try {
+      await query(
+        `UPDATE web_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
+        [target.id]
+      );
+    } catch (err) {
+      if (err.code !== '42P01') throw err; // undefined_table
+    }
+
     try {
       await query(
         `INSERT INTO audit_logs (actor_id, action, target_type, target_id, details)

@@ -2,7 +2,7 @@
  * /api/me — user-accessible usage report endpoint (v1.17.24).
  *
  * Open to any role (user / admin / super_admin); offers:
- *   - GET /profile — authenticate by api_key, returns minimal data.
+ *   - GET /profile — authenticate (api_key or console session), returns minimal data.
  *   - GET /report — personal + team + project aggregated data.
  *
  * Design decisions:
@@ -20,6 +20,7 @@ import { RULE_FULL_LAYER_SYNC } from '../../shared/lint-event-types.js';
 import { noPasswordLoginResponse, LOGIN_REJECTED } from '../utils/setup-recovery.js';
 import { loginResponseFor, firstPasswordRefusal } from '../utils/first-password.js';
 import { writeAuditLog } from '../utils/audit-log.js';
+import { createSession, revokeSession, revokeUserSessions } from '../utils/web-session.js';
 import { scopePitfallRows } from '../utils/pitfalls-scope.js';
 
 // v1.26.32: personal rule codes are no longer hardcoded. The compliance loop
@@ -46,7 +47,7 @@ const DUMMY_HASH = bcrypt.hashSync('ownmind-timing-placeholder', BCRYPT_ROUNDS);
 
 /**
  * POST /api/me/login — email + password login (from v1.17.25, accepts any role).
- * On success returns api_key + must_change_password flag.
+ * On success returns a console session token + identity (v1.31.1; the api_key before).
  */
 router.post('/login', async (req, res) => {
   try {
@@ -55,7 +56,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: '請輸入 Email 和密碼' });
     }
     const result = await query(
-      `SELECT id, email, name, role, api_key, password_hash, must_change_password
+      `SELECT id, email, name, role, password_hash, must_change_password
        FROM users WHERE LOWER(email) = LOWER($1)`,
       [email]
     );
@@ -81,17 +82,23 @@ router.post('/login', async (req, res) => {
     // zero of them in sixty days, because everyone was already logging in here instead.
     // Awaited, but it cannot fail the login: writeAuditLog swallows its own errors, on
     // the grounds that a record of something that already happened must not undo it.
-    // v1.26.63: an account still on the temporary password gets no api_key here. See
+    // v1.26.63: an account still on the temporary password gets no credential here. See
     // src/utils/first-password.js for why the requirement moved from the browser to this
     // response.
-    const { status, body } = loginResponseFor(user);
-    // `issued_key` because the action stays 'login' either way — the password was
-    // verified — but from this release a verified password does not always mean the
-    // caller walked away with a credential, and an audit row that cannot tell the two
-    // apart is a record of something that did not happen.
+    // v1.31.1: a session, not the api_key — see src/utils/web-session.js. Only for an
+    // account that may log in; one still on its temporary password gets nothing here.
+    const sessionToken = user.must_change_password
+      ? undefined
+      : await createSession({ query, userId: user.id, userAgent: req.get('user-agent') || '' });
+    const { status, body } = loginResponseFor(user, { sessionToken });
+    // `issued_session` because the action stays 'login' either way — the password was
+    // verified — but a verified password does not always mean the caller walked away with
+    // a credential, and an audit row that cannot tell the two apart is a record of
+    // something that did not happen. (Named `issued_key` until v1.31.1, when the
+    // credential stopped being the key.)
     await writeAuditLog(user.id, 'login', 'user', user.id, {
       email: user.email,
-      issued_key: !!body.api_key,
+      issued_session: !!body.session_token,
     });
     res.status(status).json(body);
   } catch (err) {
@@ -101,7 +108,7 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * POST /api/me/first-password — replace the temporary password and receive the api_key.
+ * POST /api/me/first-password — replace the temporary password and receive a console session.
  * Body: { email, current_password, new_password }
  *
  * Unauthenticated by necessity: the caller has no key yet, because POST /login refused to
@@ -115,7 +122,7 @@ router.post('/first-password', async (req, res) => {
   try {
     const { email, current_password, new_password } = req.body || {};
     const result = await query(
-      `SELECT id, email, name, role, api_key, password_hash, must_change_password
+      `SELECT id, email, name, role, password_hash, must_change_password
        FROM users WHERE LOWER(email) = LOWER($1)`,
       [String(email ?? '')]
     );
@@ -142,7 +149,8 @@ router.post('/first-password', async (req, res) => {
     );
     await writeAuditLog(user.id, 'first_password', 'user', user.id, { email: user.email });
 
-    const { status, body } = loginResponseFor({ ...user, must_change_password: false });
+    const sessionToken = await createSession({ query, userId: user.id, userAgent: req.get('user-agent') || '' });
+    const { status, body } = loginResponseFor({ ...user, must_change_password: false }, { sessionToken });
     res.status(status).json(body);
   } catch (err) {
     logger.error('me/first-password failed', { error: err.message });
@@ -150,8 +158,23 @@ router.post('/first-password', async (req, res) => {
   }
 });
 
-// All endpoints below require Bearer api_key auth (any role).
+// All endpoints below require Bearer auth (any role): an api_key, or a console session.
 router.use(auth);
+
+/**
+ * POST /api/me/logout — end this console login (v1.31.1).
+ * A no-op for an api_key caller: logging out must never be a way to revoke the key.
+ */
+router.post('/logout', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').slice(7);
+    const revoked = await revokeSession({ query, token });
+    res.json({ ok: true, revoked });
+  } catch (err) {
+    logger.error('me/logout failed', { error: err.message });
+    res.status(500).json({ error: '登出失敗' });
+  }
+});
 
 /**
  * POST /api/me/change-password — change one's own password.
@@ -186,6 +209,10 @@ router.post('/change-password', async (req, res) => {
       `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2`,
       [hash, req.user.id]
     );
+    // v1.31.1: a password change ends every other console login of this account — the
+    // usual reason to change one is suspecting someone else has it. The browser doing the
+    // change stays logged in.
+    await revokeUserSessions({ query, userId: req.user.id, exceptSessionId: req.sessionId ?? null });
     res.json({ ok: true });
   } catch (err) {
     logger.error('me/change-password failed', { error: err.message });
@@ -194,7 +221,7 @@ router.post('/change-password', async (req, res) => {
 });
 
 /**
- * GET /profile — verify api_key and return an identity summary.
+ * GET /profile — verify the caller (api_key or console session) and return an identity summary.
  * The front-end uses this to confirm the key is valid and to show the
  * user's name.
  */

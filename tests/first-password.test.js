@@ -45,11 +45,15 @@ describe('loginResponseFor', () => {
     assert.equal('role' in body, false);
   });
 
-  it('gives the ordinary account everything it got before', () => {
+  it('gives the ordinary account a session — and never the api_key (v1.31.1)', () => {
     const u = user();
-    const { status, body } = loginResponseFor(u);
+    const { status, body } = loginResponseFor(u, { sessionToken: 'oms_session' });
     assert.equal(status, 200);
-    assert.equal(body.api_key, 'om_live_key');
+    assert.equal(body.session_token, 'oms_session');
+    // The permanent credential the MCP holds; the console kept whatever it was handed in
+    // localStorage. Security review 2026-10-03, item 12.
+    assert.equal('api_key' in body, false);
+    assert.ok(!JSON.stringify(body).includes('om_live_key'), 'the key leaked into the body');
     assert.equal(body.id, 4);
     assert.equal(body.name, 'Joanna');
     assert.equal(body.email, 'joanna@fontrip.com');
@@ -58,9 +62,10 @@ describe('loginResponseFor', () => {
   });
 
   it('treats any truthy flag as set, since the column is nullable', () => {
-    assert.equal('api_key' in loginResponseFor(user({ must_change_password: true })).body, false);
+    const opts = { sessionToken: 'oms_session' };
+    assert.equal('session_token' in loginResponseFor(user({ must_change_password: true }), opts).body, false);
     // A NULL column must read as "not required", the same as FALSE.
-    assert.equal(loginResponseFor(user({ must_change_password: null })).body.api_key, 'om_live_key');
+    assert.equal(loginResponseFor(user({ must_change_password: null }), opts).body.session_token, 'oms_session');
   });
 });
 

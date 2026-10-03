@@ -8,13 +8,13 @@
 // The role is deliberately NOT persisted. The old console kept it in the `om_role`
 // localStorage key and restored it on load, which meant a member could edit that key in
 // devtools and reveal admin-only cards. Holding it in memory removes that: the only
-// source is the server, which resolves the user from the api_key.
+// source is the server, which resolves the user from the session token.
 //
 // Client-side gating is a UX measure either way. The server still enforces on every
 // endpoint; this stops the console from *offering* what the server would refuse.
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { apiGet, getApiKey, clearApiKey } from '../api';
+import { apiGet, apiPost, getSessionToken, clearSessionToken } from '../api';
 import { AUTH_EXPIRED, SESSION_CHANGED } from '../api/events';
 
 // `id` is carried because the legacy console restores its session from `om_user_id`
@@ -40,7 +40,7 @@ export function SessionProvider({ children }) {
 
   const load = useCallback(async () => {
     const id = ++requestId.current;
-    if (!getApiKey()) {
+    if (!getSessionToken()) {
       setState({ ...EMPTY, ready: true, error: false });
       return;
     }
@@ -68,7 +68,7 @@ export function SessionProvider({ children }) {
   // Seed the identity straight from a login response.
   //
   // Without this the console had a deterministic defect, not a race: LoginPage calls
-  // setApiKey and then navigate() in the same synchronous block, so the profile request
+  // setSessionToken and then navigate() in the same synchronous block, so the profile request
   // cannot possibly have resolved by the time the destination renders. An admin who
   // deep-linked to an admin page, got bounced to /login, and signed in correctly was then
   // sent to /portal/usage every time, because the guard saw a resolved-but-role-less
@@ -95,10 +95,16 @@ export function SessionProvider({ children }) {
   }, [load]);
 
   const logout = useCallback(() => {
-    // clearApiKey announces the change, which resets this provider. The redirect is left
+    // v1.31.1: tell the server to end the session, so a copy of the token taken from this
+    // browser stops working too — and forget it here at once, without waiting for the answer.
+    // A logout that depends on the network is not one. Safe to clear straight after the call:
+    // apiPost reads the token into the Authorization header before its first await.
+    //
+    // clearSessionToken announces the change, which resets this provider. The redirect is left
     // to the existing auth-expired listener in App so there is one way in and one way out
     // of /login.
-    clearApiKey();
+    apiPost('/api/me/logout');
+    clearSessionToken();
     window.dispatchEvent(new Event(AUTH_EXPIRED));
   }, []);
 

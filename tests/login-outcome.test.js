@@ -51,8 +51,8 @@ describe('decideLoginOutcome — the existing outcomes are unchanged', () => {
     assert.deepEqual(decideLoginOutcome({ ok: true, data: { requiresSetup: 'yes' } }), { kind: 'error' });
   });
 
-  it('still routes a key to authenticated', () => {
-    const data = { api_key: 'k', id: 1, role: 'user' };
+  it('still routes a session to authenticated', () => {
+    const data = { session_token: 'oms_k', id: 1, role: 'user' };
     assert.deepEqual(decideLoginOutcome({ ok: true, data }), { kind: 'authenticated', data });
   });
 

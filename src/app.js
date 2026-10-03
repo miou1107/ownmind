@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import logger from './utils/logger.js';
+import { CONTENT_SECURITY_POLICY } from './utils/content-security-policy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,7 +21,8 @@ const app = express();
 app.set('trust proxy', 1);
 
 // security and basic middleware
-app.use(helmet({ contentSecurityPolicy: false }));
+// v1.31.1: on. See src/utils/content-security-policy.js.
+app.use(helmet({ contentSecurityPolicy: CONTENT_SECURITY_POLICY }));
 // CORS: only allow the origin specified by the CORS_ORIGIN env var; if unset, block cross-origin
 app.use(cors({ origin: process.env.CORS_ORIGIN || false }));
 // JSON body limit 10MB to fit a scanner 500-event batch (a single event can be ~2KB)
@@ -108,6 +110,12 @@ app.use('/dashboard', createSpaShellHandler(
 // serves setup.html directly under the / path, no separate folder needed
 app.get('/setup', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'setup.html'));
+});
+// v1.31.1: the wizard's script, out of the page so the content security policy allows it.
+// Both addresses: the wizard is also served at /setup/, where a relative src resolves here.
+app.get(['/setup.js', '/setup/setup.js'], (req, res) => {
+  res.type('application/javascript; charset=utf-8');
+  res.sendFile(join(__dirname, 'public', 'setup.js'));
 });
 
 // v1.26.48: /me is retired. Everything under it 301s to the console usage page.

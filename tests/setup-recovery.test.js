@@ -81,7 +81,7 @@ describe('decideLoginOutcome — what the console does with the answer', () => {
   const ok = (data) => ({ ok: true, data });
 
   it('a normal login authenticates', () => {
-    const d = decideLoginOutcome(ok({ api_key: 'k', role: 'user' }));
+    const d = decideLoginOutcome(ok({ session_token: 'oms_k', role: 'user' }));
     assert.equal(d.kind, 'authenticated');
   });
 
@@ -100,11 +100,11 @@ describe('decideLoginOutcome — what the console does with the answer', () => {
     // The dangerous confusion: `ok:true` is the success shape, so a branch ordered the
     // other way would call setApiKey(undefined) and prime a session with no identity —
     // a logged-in-looking console belonging to nobody.
-    const d = decideLoginOutcome(ok({ requiresSetup: true, api_key: 'leaked' }));
+    const d = decideLoginOutcome(ok({ requiresSetup: true, session_token: 'oms_leaked' }));
     assert.equal(d.kind, 'setup');
   });
 
-  it('a success with no api_key is an error, not a half-login', () => {
+  it('a success with no session_token is an error, not a half-login', () => {
     assert.equal(decideLoginOutcome(ok({ role: 'user' })).kind, 'error');
     assert.equal(decideLoginOutcome(ok(null)).kind, 'error');
     assert.equal(decideLoginOutcome({ ok: true }).kind, 'error');
@@ -114,7 +114,7 @@ describe('decideLoginOutcome — what the console does with the answer', () => {
     // A truthy-but-not-true value means the server said something this client does not
     // understand; guessing "setup" would show a password-setting form on a hunch.
     for (const v of ['true', 1, {}]) {
-      assert.notEqual(decideLoginOutcome(ok({ requiresSetup: v, api_key: 'k' })).kind, 'setup');
+      assert.notEqual(decideLoginOutcome(ok({ requiresSetup: v, session_token: 'oms_k' })).kind, 'setup');
     }
   });
 });

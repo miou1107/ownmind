@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { useSession } from '../session/SessionContext';
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useT } from '../i18n/LocaleContext';
-import { apiPost, setApiKey, setMustChangePassword, getApiKey } from '../api';
+import { apiPost, setSessionToken, setMustChangePassword, getSessionToken } from '../api';
 import { decideLoginOutcome } from './login-outcome';
 
 // 登入頁 — 不包 Layout、不需 sidebar / topbar
-// 流程：email + password → POST /api/me/login → 拿到 api_key 存 localStorage
+// 流程：email + password → POST /api/me/login → 拿到登入憑證（session_token）存 localStorage
 //      → must_change_password=true 導 /preference/security、否則導原本想去的頁面（或 /portal/usage）
 //
 // v1.26.59 多一條路：伺服器回 requiresSetup 代表這個帳號沒有密碼，而且現在正在救援
@@ -30,7 +30,7 @@ export default function LoginPage() {
 
   // 已登入訪問 /login → 直接導去原本想去的地方、避免重複登入
   // 防 self-loop：若 from path 本身就是 /login（理論上不會、防禦性編程），導 /portal/usage
-  if (getApiKey()) {
+  if (getSessionToken()) {
     const from = location.state?.from?.pathname;
     const to = from && from !== '/login' ? from : '/portal/usage';
     return <Navigate to={to} replace />;
@@ -67,7 +67,7 @@ export default function LoginPage() {
       return;
     }
 
-    setApiKey(r.data.api_key);
+    setSessionToken(r.data.session_token);
     // 直接把登入回應裡的身分餵進 session。下面的 navigate 跟這裡是同一個同步區塊，
     // 所以 /api/me/profile 不可能已經回來；不餵的話目的頁會拿到一個「已解析但沒有
     // 角色」的 session，管理員從深連結登入會每次都被導去 /portal/usage。
@@ -117,7 +117,7 @@ export default function LoginPage() {
   }
 
   // v1.26.63 — the first-login step. Sends the temporary password back with the new one;
-  // the server verifies it again and only then issues the api_key, so nothing in this
+  // the server verifies it again and only then issues a session, so nothing in this
   // browser holds a credential until the password has actually been replaced.
   async function handleFirstPassword(e) {
     e.preventDefault();
@@ -136,11 +136,11 @@ export default function LoginPage() {
       email, current_password: password, new_password: newPassword,
     });
     setBusy(false);
-    if (!r.ok || !r.data?.api_key) {
+    if (!r.ok || !r.data?.session_token) {
       setError(r.error || t('login.error_generic'));
       return;
     }
-    setApiKey(r.data.api_key);
+    setSessionToken(r.data.session_token);
     prime(r.data);
     // No flag to write and no detour to /preference/security: the password was just set.
     setMustChangePassword(false);

@@ -21,20 +21,26 @@ const MIN_PASSWORD_LENGTH = 8;
 /**
  * What POST /api/me/login answers once the password has been verified.
  *
+ * v1.31.1 (security review 2026-10-03, item 12): the console gets a session token, not the
+ * account's api_key. The key is the permanent credential the MCP holds, and the console kept
+ * whatever it was given in localStorage. See src/utils/web-session.js.
+ *
  * @param {object} user  The users row.
+ * @param {{ sessionToken?: string }} [opts]  Created by the caller only once the password
+ *   checks have passed, so a refusal never leaves a session row behind.
  * @returns {{ status: number, body: object }}
  */
-export function loginResponseFor(user) {
+export function loginResponseFor(user, { sessionToken } = {}) {
   if (user.must_change_password) {
-    // No id, no role, no api_key, and the key absent rather than null: a client reading
-    // an `api_key` field would otherwise store "null" and believe it holds a session.
+    // No id, no role, no token, and the token absent rather than null: a client reading
+    // a `session_token` field would otherwise store "null" and believe it holds a session.
     return { status: 200, body: { mustSetPassword: true } };
   }
   return {
     status: 200,
     body: {
       id: user.id,
-      api_key: user.api_key,
+      session_token: sessionToken,
       name: user.name,
       email: user.email,
       role: user.role,

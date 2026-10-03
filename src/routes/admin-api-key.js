@@ -20,6 +20,7 @@ import { query as defaultQuery } from '../utils/db.js';
 import defaultAdminAuth from '../middleware/adminAuth.js';
 import defaultLogger from '../utils/logger.js';
 import { mayRevealKeyOf } from '../utils/roles.js';
+import { requireRecentLogin } from '../utils/web-session.js';
 
 /**
  * @param {object} [deps]
@@ -39,6 +40,8 @@ export function createAdminApiKeyRouter(deps = {}) {
   // of the main admin router, and router.use would run the check for every request there.
   router.get('/:id/api-key', adminAuth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    // v1.31.1: a console session must be a recent login to come away with a key.
+    if (!requireRecentLogin(req, res)) return;
     try {
       const targetId = /^\d{1,10}$/.test(req.params.id) ? parseInt(req.params.id, 10) : NaN;
       // Beyond a PostgreSQL integer the query would fail and answer 500.

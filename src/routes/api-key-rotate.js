@@ -23,6 +23,7 @@ import defaultAuth from '../middleware/auth.js';
 import defaultAdminAuth from '../middleware/adminAuth.js';
 import defaultLogger from '../utils/logger.js';
 import { mayRevealKeyOf } from '../utils/roles.js';
+import { requireRecentLogin } from '../utils/web-session.js';
 
 /**
  * @param {object} [deps]
@@ -66,6 +67,8 @@ export function createApiKeyRotateRouter(deps = {}) {
 
   router.post('/me/rotate-key', auth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    // v1.31.1: the answer is a new api_key, so a console session must be a recent login.
+    if (!requireRecentLogin(req, res)) return;
     try {
       await rotate(req.user, req.user.id, req.user.role, res);
     } catch (err) {
@@ -76,6 +79,8 @@ export function createApiKeyRotateRouter(deps = {}) {
 
   router.post('/admin/users/:id/rotate-key', adminAuth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    // v1.31.1: the answer is a new api_key, so a console session must be a recent login.
+    if (!requireRecentLogin(req, res)) return;
     try {
       const targetId = /^\d{1,10}$/.test(req.params.id) ? parseInt(req.params.id, 10) : NaN;
       if (!Number.isSafeInteger(targetId) || targetId > 2147483647) {

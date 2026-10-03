@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { getApiKey } from '../../api';
+import { getSessionToken } from '../../api';
 
-// 路由守門員 — 沒 api_key 就導 /login、登入後再回原本路徑
+// 路由守門員 — 沒登入憑證就導 /login、登入後再回原本路徑
 // 用法：<Route path="/portal/usage" element={<RequireAuth><UsagePage /></RequireAuth>} />
 //
 // 設計：用 state.from 帶原 location 過去、LoginPage 成功後讀 state.from 導回
@@ -10,7 +10,7 @@ import { getApiKey } from '../../api';
 
 export default function RequireAuth({ children }) {
   const location = useLocation();
-  if (!getApiKey()) {
+  if (!getSessionToken()) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
   return children;

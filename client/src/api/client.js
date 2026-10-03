@@ -1,9 +1,9 @@
 // 統一 fetch 封裝 — 所有頁面對後端的呼叫都走這層
 //
 // 設計目標：
-//   1. 自動帶 Bearer header（從 localStorage 拿 api_key）
+//   1. 自動帶 Bearer header（從 localStorage 拿登入憑證）
 //   2. 統一回傳格式 { ok, data, error, status } — caller 不用自己 try/catch
-//   3. 401 自動清掉 api_key，但不直接 redirect（交給 RequireAuth 處理）
+//   3. 401 自動清掉登入憑證，但不直接 redirect（交給 RequireAuth 處理）
 //   4. 白名單路徑（login）不帶 Bearer
 //
 // 用法：
@@ -12,7 +12,7 @@
 //
 // 為什麼不用 axios：依賴最少化、fetch 已夠用、Bundle 小
 
-import { getApiKey, clearApiKey } from './auth.js';
+import { getSessionToken, clearSessionToken } from './auth.js';
 import { AUTH_EXPIRED } from './events.js';
 
 // 不需 Bearer header 的端點（公開）
@@ -61,7 +61,7 @@ async function request(method, path, body, opts = {}) {
     headers['Content-Type'] = 'application/json';
   }
   if (needsAuth(path)) {
-    const key = getApiKey();
+    const key = getSessionToken();
     if (key) headers.Authorization = `Bearer ${key}`;
   }
 
@@ -82,7 +82,7 @@ async function request(method, path, body, opts = {}) {
   // App.jsx 監聽 AUTH_EXPIRED 跑 navigate('/login')、保留 SPA 體驗
   // 不在 client.js 直接 window.location 硬跳：保留純函數性、方便單元測試
   if (resp.status === 401) {
-    clearApiKey();
+    clearSessionToken();
     if (typeof window !== 'undefined' && !authExpiredDispatched) {
       authExpiredDispatched = true;
       window.dispatchEvent(new CustomEvent(AUTH_EXPIRED));
