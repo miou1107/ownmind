@@ -599,6 +599,15 @@ if [ -f "$MIGRATE_URL" ]; then
   node "$MIGRATE_URL" 2>>"${HOME}/.ownmind/logs/update-err.log" || true
 fi
 
+# --- 6d. Config files holding the API key: owner-only (v1.30.44) ---
+# Every save above goes through a fresh temporary file, which takes the umask (normally
+# readable by every account on the machine). This takes group and other access away from
+# each file that holds the key; permissions only, never content. Does nothing on Windows.
+SECURE_KEYS="$OWNMIND_DIR/scripts/install-helpers/secure-key-files.cjs"
+if [ -f "$SECURE_KEYS" ]; then
+  node "$SECURE_KEYS" >>"${HOME}/.ownmind/logs/update-err.log" 2>&1 || true
+fi
+
 # --- 7. Have the machine report its own health (v1.26.81, moved to the tail in v1.26.105) ---
 # The self-check has only ever run during install and manual upgrade. Adam's last full
 # report is dated 2026-05-29; his machine auto-updated daily for two months afterwards and

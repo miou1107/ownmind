@@ -249,6 +249,12 @@ describe('Git LFS without hooks of its own', () => {
     writeHook(bin, 'git-lfs', `#!/bin/sh\nprintf '%s\\n' "$*" > '${posix(marker)}'\ncat >> '${posix(marker)}'\n`);
     fs.writeFileSync(path.join(s.repo, '.gitattributes'), '*.psd filter=lfs diff=lfs merge=lfs -text\n');
     const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+    // Git for Windows ships its own git-lfs and finds it ahead of PATH, so the stand-in
+    // never runs there. The real one doing the job is not something this test can observe.
+    if (/git-lfs\//.test(git(s.repo, ['lfs', 'version'], { env }).stdout || '')) {
+      return t.skip('a git-lfs bundled with git shadows the stand-in');
+    }
+    fs.rmSync(marker, { force: true });
     const r = git(s.repo, ['-c', `core.hooksPath=${posix(s.hooks)}`, 'push', '-q', 'origin', 'HEAD:refs/heads/main'], { env });
     assert.equal(r.status, 0, r.stderr);
     const got = fs.readFileSync(marker, 'utf8');

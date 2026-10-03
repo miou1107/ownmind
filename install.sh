@@ -1186,6 +1186,13 @@ SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
 # and has none of the parts. See install-artifacts.cjs and bug report #15. This runs
 # before the self-check so a truncated install says so in its own words, and the
 # self-check then reports the same condition to the server.
+# v1.30.44: every config file written above that holds the API key becomes owner-only.
+# A file saved through a fresh temporary copy takes the umask, normally readable by every
+# account on the machine. Permissions only, never content; does nothing on Windows.
+# Before the artifact check, whose failure path exits early: the key is in those files
+# whether or not the install completed.
+node "$OWNMIND_DIR/scripts/install-helpers/secure-key-files.cjs" || true
+
 ARTIFACT_CHECK="$OWNMIND_DIR/scripts/install-helpers/install-artifacts.cjs"
 if [ -f "$ARTIFACT_CHECK" ]; then
   # --home is passed explicitly. Every path this script writes derives from the shell's

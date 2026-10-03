@@ -52,11 +52,18 @@ function readJson(file) {
   }
 }
 
-/** Write via a temp file and rename, so an interrupted install cannot truncate the file. */
+/**
+ * Write via a temp file and rename, so an interrupted install cannot truncate the file.
+ *
+ * The file holds the API key, so the temporary copy is created owner-only (0600) and the
+ * rename keeps it that way: a fresh file would otherwise take the umask, which on Mac and
+ * Linux leaves it readable by every account on the machine.
+ */
 function writeJsonAtomic(file, obj) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.ownmind.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), { mode: 0o600 });
+  fs.chmodSync(tmp, 0o600); // `mode` is ignored when a stale temp file already exists
   fs.renameSync(tmp, file);
 }
 

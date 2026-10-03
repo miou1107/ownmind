@@ -158,8 +158,10 @@ function ensureKeyFile(opts = {}) {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     // Temp file then rename: an interrupted run must never leave half a settings file,
     // because half a settings file is worse than the problem being fixed.
+    // Owner-only: this write is what puts the key in the file.
     const tmp = `${settingsPath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2), { mode: 0o600 });
+    fs.chmodSync(tmp, 0o600);
     fs.renameSync(tmp, settingsPath);
   } catch (e) {
     return done('error', `cannot write ${shown} (${sanitize(e.message, home)})`);
