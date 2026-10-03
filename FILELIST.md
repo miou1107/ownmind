@@ -36,6 +36,28 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.42 修改（成員不能再看到別人的私人鐵律）
+
+新增檔：
+```
+src/utils/pitfalls-scope.js           — scopePitfallRows：管理員看全體，一般成員只看自己的紀錄；
+                                       hideOthersRuleTitles：團隊報告裡成員看不到別人的鐵律標題
+tests/pitfalls-privacy.test.js        — 成員只看到自己的、管理員看全體、查詢都限定可讀範圍、備援查詢限紀錄主人、
+                                       比對規則的反斜線有送到資料庫且最多 9 位數、團隊報告不給成員別人的鐵律標題
+```
+
+修改檔：
+```
+src/routes/activity.js                — memoryLookup 與 autoEmitObservedTrigger 的記憶查詢改用 buildReadableWhere，
+                                       只看回報者讀得到的記憶
+src/routes/me.js                      — /pitfalls 三個區塊回傳前經 scopePitfallRows；五個備援查詢加 AND user_id = 紀錄主人，
+                                       比對規則改成模板字串裡正確的寫法，並限制最多 9 位數
+src/routes/me-narrative.js            — / 與 /insights 回傳和交給 AI 前先經 hideOthersRuleTitles
+client/src/i18n/zh.json, en.json, ja.json — 踩坑紀錄頁副標題照實改
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.42
+```
+
 ## v1.30.41 修改（跟 AI 說「知道了」就會真的關掉提醒）
 
 新增檔：

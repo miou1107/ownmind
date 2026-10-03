@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.30.41** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.30.42** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -40,6 +40,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **Any member could read anyone's private iron-rule titles** — enriching a reported `memory_disable` looked up the named memory with no owner check, so reporting it for id after id stored every user's iron-rule codes and titles in the reporter's log; and the pitfalls page showed every member the whole team's rows, other people's rule titles, names and session summaries included. Lookups now use the same readability rule as the rest of OwnMind (`buildReadableWhere`); the page shows admins the team and members their own rows; its fallback lookups only read the row owner's memory, and their digit pattern now actually reaches SQL (a template literal had been eating its backslash, so it never matched), capped at nine digits so a forged huge id cannot break the page. The team narrative's compliance section no longer shows members other people's rule titles either. Needs a server deploy. `v1.30.42`
 - **Saying "noted" to a notice never turned it off** — every notice told the AI to offer "acknowledged", but no tool it held could act on it, so the same notice opened every new conversation; a dismiss done by hand was stored per tool and came back in the next one. Notices now show their number as `(notice #N)`, and the new `ownmind_dismiss_notice` tool turns one off (or snoozes it, where allowed) for that person in every tool and on every machine. Needs a server deploy and a client update. `v1.30.41`
 - **The server chose the command every AI ran on upgrade** — `mcp/index.js` copied `upgrade_action.command` from the init response into the AI's notice verbatim, and the AI runs the update at once without asking (by design, unchanged). Whoever could alter that response (a compromised server, a man in the middle on plain http) chose what ran on every machine. The command is now fixed in the client, and the server's command and message are dropped before anything reaches the AI; the version shown must be a plain x.y.z. Automatic updates at session start work as before. This closes the word-for-word relay; a fully compromised server still controls other text the AI reads. Client and server both changed. `v1.30.40`
 - **A leaked API key could never be revoked** — nothing on the server wrote `api_key` after an account was created, and a password change left it alone. Keys can now be replaced: `POST /api/me/rotate-key` (your own) and `POST /api/admin/users/:id/rotate-key` (a lower rank), also as "Replace API key" on the team page, audited without either key. On a machine, `node ~/.ownmind/scripts/install-helpers/swap-api-key.cjs --rotate` (or `--set`, key on stdin, for your other machines) rewrites the key in every tool's config, reads each back, and asks the server whose the new key is before calling it done. Needs a server deploy. Nothing changes until someone chooses to replace a key. `v1.30.39`
