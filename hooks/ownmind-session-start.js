@@ -81,7 +81,7 @@ function httpGet(url, headers) {
  * The bash hook has always POSTed each event to /api/activity/batch; this file's port
  * dropped that line, so a Windows machine whose hook worked was indistinguishable,
  * server-side, from one whose hook was dead. Found while verifying the v1.26.82 rollout:
- * Adam restarted, his MCP showed up, and the hook-sourced init this whole repair is judged
+ * member-5 restarted, his MCP showed up, and the hook-sourced init this whole repair is judged
  * by could never have appeared. Worse, the memory_load self-check reads exactly that
  * event, so every healthy Windows machine would be reported broken forever.
  *

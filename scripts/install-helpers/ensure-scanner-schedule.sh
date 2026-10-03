@@ -10,12 +10,12 @@
 # again. When it dies the scanner simply stops, the dashboard shows the user's usage
 # columns as blank, and that reads exactly like "this person did not work today".
 #
-# Measured on production 2026-08-06: Adam's collector last reported on 2026-07-15. His MCP
+# Measured on production 2026-08-06: member-5's collector last reported on 2026-07-15. His MCP
 # was alive the whole time, auto-updating and heartbeating daily. Only the scheduled task
 # was gone. Three weeks, nobody noticed, because nothing was watching.
 #
 # The Windows side already had a repair (`interactive-upgrade.ps1` re-registers the task,
-# and its comment names Adam). It never reached him: only `bootstrap.ps1` calls it, and
+# and its comment names member-5). It never reached him: only `bootstrap.ps1` calls it, and
 # nobody runs bootstrap by hand. Repair has to live on the road the failure travels, which
 # is the daily auto-update.
 #
@@ -58,7 +58,7 @@ case "$OWNMIND_OS" in
     PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 
     # `launchctl list <label>` exits 0 only when the agent is actually loaded. Asking
-    # launchd beats checking whether the plist file exists: Adam's failure mode is a
+    # launchd beats checking whether the plist file exists: member-5's failure mode is a
     # schedule that is registered on disk and not running.
     if launchctl list "$LABEL" >/dev/null 2>&1; then
       echo "OK:schedule:already_registered"

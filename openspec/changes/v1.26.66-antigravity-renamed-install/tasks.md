@@ -15,7 +15,7 @@ migration, no console change, no Windows script change.
       and not an assumption
 - [x] Confirmed from `session_count` on production that user 1's antigravity rows end
       2026-05-18, matching the frozen directory
-- [x] Established that Joanna is **not** affected: her rows run to 2026-08-03 on win32,
+- [x] Established that member-2 is **not** affected: her rows run to 2026-08-03 on win32,
       so this change is not the fix for the case that surfaced it
 - [x] Left the unexplained 2026-07-23 row unexplained instead of inventing a cause
 

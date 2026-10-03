@@ -1,6 +1,6 @@
 // v1.26.83 — the Node SessionStart hook loads memories and tells nobody.
 //
-// Found live, during the verification of v1.26.82. Adam restarted Claude Code; the server
+// Found live, during the verification of v1.26.82. member-5 restarted Claude Code; the server
 // showed MCP activity from his new session and no hook-sourced `init` — the exact number
 // the whole Windows repair was to be judged by. The reason is not that his hook failed:
 // the Node hook's logEvent() only appends to the local JSONL. The bash hook it replaced
@@ -66,7 +66,7 @@ describe('node SessionStart hook — a successful load reaches the server', () =
 
   it('POSTs a hook-sourced init to /api/activity/batch', async () => {
     // A scratch HOME so the run cannot touch this machine's real logs or read its real
-    // credentials. The key and url are supplied the way Adam's machine supplies them:
+    // credentials. The key and url are supplied the way member-5's machine supplies them:
     // through the environment, which the hook reads via the shared resolver.
     const home = tempDir('ownmind-hook-');
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });

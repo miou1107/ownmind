@@ -17,7 +17,7 @@ import { tempDir } from './helpers/temp-dir.js';
  *     "git pull --ff-only failed (network or non-ff merge)"
  *
  * That is the same sentence whether the remote was unreachable, the branch had diverged, or
- * a file was locked. On 2026-08-07 DESKTOP-8DD75VJ failed a pull, restored its backup and
+ * a file was locked. On 2026-08-07 DESKTOP-MEMBER7 failed a pull, restored its backup and
  * came back healthy seven seconds later — and there was no way to say why it had failed,
  * because the guess was the only record of it.
  *

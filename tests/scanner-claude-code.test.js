@@ -111,7 +111,7 @@ describe('defaultReadIncremental', () => {
     assert.equal(nextOffset, Buffer.byteLength(line + '\n', 'utf8'));
   });
 
-  // v1.26.162 — Amiee's machine, 2026-08-13. One read of `stat.size - start` bytes
+  // v1.26.162 — member-1's machine, 2026-08-13. One read of `stat.size - start` bytes
   // reached node's fs binding, which CHECKs that the length is an int32; a session
   // file past 2 GiB aborted the whole process with "Assertion failed:
   // args[3]->IsInt32()". A native abort is not catchable, so the per-file try/catch

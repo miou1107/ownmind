@@ -58,7 +58,7 @@ identical to routine success.
 
 ## Not in scope
 
-**Joanna's case, which prompted this.** Her `session_count` runs to 2026-08-03 on
+**member-2's case, which prompted this.** Her `session_count` runs to 2026-08-03 on
 win32, so her installation writes to the directory the adapter already reads. Her
 silence since then is leave, 08-03 to 08-09. Nothing on her machine is broken.
 

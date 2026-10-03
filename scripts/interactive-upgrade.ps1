@@ -77,7 +77,7 @@ $script:FileLockPattern = 'EBUSY|EACCES|EPERM|Permission denied|in use by anothe
 #
 # Every Report-Error call below passed a hand-written guess ("git pull --ff-only failed
 # (network or non-ff merge)"), and that guess is the same sentence whether the remote was
-# unreachable, the branch had diverged, or a file was locked. On 2026-08-07 DESKTOP-8DD75VJ
+# unreachable, the branch had diverged, or a file was locked. On 2026-08-07 DESKTOP-MEMBER7
 # failed a pull and nobody could say why, because the guess was the only record of it.
 #
 # The log file is already passed as ContextFile, but that report arrived with an empty
@@ -385,7 +385,7 @@ if (Test-Path $taskScript) {
   if ($LASTEXITCODE -eq 0) { OK "reschedule" "Task Scheduler re-registered" }
   else {
     # v1.26.65 — 這裡以前印一句「upgrade itself complete」就繼續，最後回報升級成功。
-    # 使用者看到綠燈，但用量收集已經停掉，而且沒有任何地方會講。Adam 因此斷了二十天。
+    # 使用者看到綠燈，但用量收集已經停掉，而且沒有任何地方會講。member-5 因此斷了二十天。
     #
     # 不做 Rollback：檔案本身升級是好的，壞的只有排程。Fail 會 throw 並且送一筆
     # Report-Error 到 server，讓這件事在正式機留下紀錄，而不是只留在使用者螢幕上。

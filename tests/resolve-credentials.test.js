@@ -1,6 +1,6 @@
 // v1.26.82 — where the API key lives, decided in one place.
 //
-// Adam's machine, 2026-08-06. His MCP has been running and uploading all along. His usage
+// member-5's machine, 2026-08-06. His MCP has been running and uploading all along. His usage
 // scanner died on 7/15, his memory hook has never once fired, his upgrade beacons stopped
 // on 7/8, and the installer's self-check reports three failures with "OWNMIND_API_KEY is
 // empty". All of it is the same cause: **every component except the MCP looks for the key
@@ -65,7 +65,7 @@ describe('resolveCredentials — every component asks the same question', () => 
     assert.equal(r.background_safe, true);
   });
 
-  it("reproduces Adam's machine: url in a file, key only in the environment", () => {
+  it("reproduces member-5's machine: url in a file, key only in the environment", () => {
     const home = homeWith({ '.claude.json': settingsShape({ OWNMIND_API_URL: URL_ }) });
     const r = resolveCredentials({ home, env: { OWNMIND_API_KEY: KEY } });
     assert.equal(r.apiKey, KEY, 'the key is right there in the environment');
@@ -157,7 +157,7 @@ describe('the components that stop dead all use it', () => {
     return /resolve-credentials/.test(helpers);
   };
 
-  // These four return early or throw when the lookup is empty. On Adam's machine all four
+  // These four return early or throw when the lookup is empty. On member-5's machine all four
   // did exactly that, every day, while his MCP kept working and said nothing.
   for (const rel of [
     'scripts/install-helpers/self-check.cjs',

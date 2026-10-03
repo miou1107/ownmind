@@ -21,8 +21,8 @@ const ROWS = [
   {
     id: 412,
     type: 'team_standard',
-    title: 'ci ownership belongs to Eric',
-    content: 'The /ci directory is maintained by Eric. No other engineer may modify it.',
+    title: 'ci ownership belongs to member-6',
+    content: 'The /ci directory is maintained by member-6. No other engineer may modify it.',
     tags: ['trigger:ci'],
     metadata: {
       enforcement: {
@@ -30,7 +30,7 @@ const ROWS = [
         guard: {
           repo_match: 'fontrip-agentic-process-automation',
           paths: ['ci/**', '.gitlab-ci.yml'],
-          owner: 'Eric',
+          owner: 'member-6',
         },
       },
     },
@@ -89,7 +89,7 @@ test('guards carry only the rules with a usable path list', () => {
   const { guards } = buildBundle(ROWS);
   assert.deepEqual(guards.map((g) => g.id), [412]);
   assert.deepEqual(guards[0].paths, ['ci/**', '.gitlab-ci.yml']);
-  assert.equal(guards[0].owner, 'Eric');
+  assert.equal(guards[0].owner, 'member-6');
   assert.equal(guards[0].metadata, undefined, 'the guard consumer reads flat fields');
 });
 
@@ -231,14 +231,14 @@ test('injectables carry text, and only for annotated rules', () => {
   // these - bounded by how many rules carry an enforcement block, not by how many exist.
   const { injectables } = buildBundle(ROWS);
   assert.deepEqual(injectables.map((i) => i.id).sort((a, b) => a - b), [125, 412]);
-  assert.match(injectables.find((i) => i.id === 412).content, /maintained by Eric/);
+  assert.match(injectables.find((i) => i.id === 412).content, /maintained by member-6/);
 });
 
 test('an injectable exposes its paths and owner flat, for the precedence header', () => {
   const { injectables } = buildBundle(ROWS);
   const i412 = injectables.find((i) => i.id === 412);
   assert.deepEqual(i412.paths, ['ci/**', '.gitlab-ci.yml']);
-  assert.equal(i412.owner, 'Eric');
+  assert.equal(i412.owner, 'member-6');
 });
 
 test('an empty row set yields three empty lists rather than throwing', () => {

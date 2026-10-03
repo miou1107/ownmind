@@ -466,7 +466,7 @@ describe('a failure heartbeat must not switch off the alert that finds it', () =
   const NOW = new Date('2026-08-11T09:00:00Z');
   const ago = (days) => new Date(NOW.getTime() - days * 86_400_000);
   const row = (tool, days, reason) => ({
-    user_id: 1, user_name: 'Amiee', machine: 'LAPTOP-1',
+    user_id: 1, user_name: 'member-1', machine: 'LAPTOP-1',
     tool, last_reported_at: ago(days), reason
   });
 
@@ -566,7 +566,7 @@ describe('the job asks the database for the column the detector needs', () => {
     const asked = [];
     const now = new Date('2026-08-11T09:00:00Z');
     const beat = (tool, reason) => ({
-      user_id: 1, user_name: 'Amiee', machine: 'LAPTOP-1', tool,
+      user_id: 1, user_name: 'member-1', machine: 'LAPTOP-1', tool,
       last_reported_at: now, reason
     });
     const query = async (sql) => {

@@ -404,7 +404,7 @@ if [ -f "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" ]; then
 fi
 
 # --- 2c. Repair the scanner's schedule if it has died (v1.26.79) ---
-# Syncing the scanner file says nothing about whether anything still runs it. Adam's
+# Syncing the scanner file says nothing about whether anything still runs it. member-5's
 # machine had a current scanner on disk and no live schedule for three weeks.
 #
 # The exit code is deliberately not propagated. The update itself succeeded — files are
@@ -629,7 +629,7 @@ if [ -f "$SECURE_KEYS" ]; then
 fi
 
 # --- 7. Have the machine report its own health (v1.26.81, moved to the tail in v1.26.105) ---
-# The self-check has only ever run during install and manual upgrade. Adam's last full
+# The self-check has only ever run during install and manual upgrade. member-5's last full
 # report is dated 2026-05-29; his machine auto-updated daily for two months afterwards and
 # told us nothing, while his scanner sat dead. The report he did send in May already
 # contained the answer to the question that took a week to work out

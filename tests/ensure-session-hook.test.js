@@ -2,7 +2,7 @@
 //
 // Four rounds of Windows fixes were declared complete on the assumption that install.ps1's
 // repair block executed. It did not, and the evidence was sitting in production the whole
-// time: 采瑤 upgraded to v1.26.84 at 16:38 and her SessionStart entry still had a single
+// time: member-4 upgraded to v1.26.84 at 16:38 and her SessionStart entry still had a single
 // `null` matcher afterwards. The repair had shipped in v1.26.82. It never ran on her
 // machine, and nothing said so, because a PowerShell `ConvertTo-Json` round trip that
 // fails simply returns a value that is not "true".
@@ -60,11 +60,11 @@ describe('ensure-session-hook.cjs — executed as a process, against real files'
       'a daily updater that rewrites an already-correct file churns it forever');
   });
 
-  it("repairs 采瑤's real entry: one null matcher becomes four", () => {
+  it("repairs member-4's real entry: one null matcher becomes four", () => {
     // Her settings verbatim, as reported by her own machine at 16:38 on v1.26.84.
     const s = sandbox({
       hooks: {
-        SessionStart: [entryWith('node C:/Users/Celia/.ownmind/hooks/ownmind-session-start.js')],
+        SessionStart: [entryWith('node C:/Users/member-4/.ownmind/hooks/ownmind-session-start.js')],
       },
     });
     assert.equal(run(s), 'OK:hook:repaired');
@@ -72,11 +72,11 @@ describe('ensure-session-hook.cjs — executed as a process, against real files'
     assert.deepEqual(after.map((e) => e.matcher), ['startup', 'resume', 'clear', 'compact']);
   });
 
-  it("repairs Adam's real entry: four matchers pointing at the copy that cannot run", () => {
+  it("repairs member-5's real entry: four matchers pointing at the copy that cannot run", () => {
     const s = sandbox({
       hooks: {
         SessionStart: ['startup', 'resume', 'clear', 'compact'].map((m) =>
-          entryWith('node "C:/Users/Adam/.claude/hooks/ownmind-session-start.js"', m)),
+          entryWith('node "C:/Users/member-5/.claude/hooks/ownmind-session-start.js"', m)),
       },
     });
     assert.equal(run(s), 'OK:hook:repaired');
@@ -220,6 +220,6 @@ describe('the installers call it instead of marshalling JSON through PowerShell'
   it('install.ps1 no longer round-trips settings through ConvertTo-Json', () => {
     const src = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
     assert.doesNotMatch(src, /needsRewrite\(JSON\.parse\(process\.argv/,
-      "this is the block that silently did nothing on 采瑤's machine");
+      "this is the block that silently did nothing on member-4's machine");
   });
 });

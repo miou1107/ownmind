@@ -855,7 +855,7 @@ else
       # v1.26.79 — 問 launchd 一次，不要只信 load 的 exit code。
       # register-scanner-task.ps1 從 v1.17.12 就會驗證自己的成果，macOS 這邊一直沒有。
       # 上面是 unload-then-load：中間失敗就會停在「舊的已刪、新的沒建」，而原本的寫法
-      # 只印一行 WARN 到安裝畫面上，之後永遠不會有人發現。Adam 的掃描器就是這樣死了
+      # 只印一行 WARN 到安裝畫面上，之後永遠不會有人發現。member-5 的掃描器就是這樣死了
       # 三個星期（那台是 Windows，同一個形狀）。
       if launchctl list "com.ownmind.usage-scanner" >/dev/null 2>&1; then
         echo "   ✅ launchd agent loaded (30 min interval)"
@@ -901,7 +901,7 @@ else
       # OwnMind" both go through.
       #
       # The comment three branches up already described this exact death — "one WARN line
-      # and nobody ever finds out; that is how Adam's scanner died" — while Windows was
+      # and nobody ever finds out; that is how member-5's scanner died" — while Windows was
       # falling into it. Registration is the same PowerShell script install.ps1 calls, so
       # both entry points now converge on one implementation.
       REGISTER_SCRIPT="$OWNMIND_DIR/scripts/windows/register-scanner-task.ps1"

@@ -3,14 +3,14 @@
 // Measured on production 2026-08-06, `activity_logs` where `event='init'`, 90 days:
 //
 //   Vincent.local                     darwin   11275 hook loads
-//   cengmingxuandeMacBook-Pro.local   darwin     675
-//   phoebelin.local                   darwin     271
-//   after            (Adam)           win32        0
-//   LAPTOP-G95HIQ3V  (Eric)           win32        0
-//   LAPTOP-MBGGLV2J  (采瑤)            win32        0
-//   LAPTOP-RGE2HCSQ  (Amiee)          win32        0
-//   Fontrip-Joanna                    win32        0
-//   TANK / DESKTOP-8DD75VJ            win32        0
+//   MEMBER8-MAC.local   darwin     675
+//   MEMBER3-MAC.local                   darwin     271
+//   after            (member-5)           win32        0
+//   LAPTOP-MEMBER6  (member-6)           win32        0
+//   LAPTOP-MEMBER5  (member-4)            win32        0
+//   LAPTOP-MEMBER1  (member-1)          win32        0
+//   Fontrip-member-2                    win32        0
+//   TANK / DESKTOP-MEMBER7            win32        0
 //
 // Three Macs, twelve thousand loads. Six Windows machines, zero, over three months.
 // The hook is what auto-loads a person's memories and iron rules, so on Windows that
@@ -51,20 +51,20 @@ describe('session-hook-command.cjs — one place decides how the hook is invoked
   const { sessionStartCommand, sessionStartEntries } = require_(path.join(repoRoot, HELPER));
 
   it('points at the copy under ~/.ownmind, the only one whose imports resolve', () => {
-    // Found on Adam's machine, 2026-08-06, after everything else was correct: four
+    // Found on member-5's machine, 2026-08-06, after everything else was correct: four
     // matchers, Node, the file present — and still zero loads. The hook imports
     // `../shared/helpers.js`. From ~/.claude/hooks/ that resolves to ~/.claude/shared/,
     // which does not exist, and the process dies with ERR_MODULE_NOT_FOUND before it can
-    // report anything. 采瑤's machine worked only because her AI had happened to write a
+    // report anything. member-4's machine worked only because her AI had happened to write a
     // path under ~/.ownmind/hooks/, where the imports do resolve.
-    const cmd = sessionStartCommand({ platform: 'win32', ownmindDir: 'C:/Users/Adam/.ownmind' });
+    const cmd = sessionStartCommand({ platform: 'win32', ownmindDir: 'C:/Users/member-5/.ownmind' });
     assert.match(cmd, /\.ownmind\/hooks\/ownmind-session-start\.js/);
     assert.doesNotMatch(cmd, /\.claude[\\/]hooks/,
       'the copy under ~/.claude/hooks cannot resolve its own imports');
   });
 
   it('Windows runs Node directly, never bash', () => {
-    const cmd = sessionStartCommand({ platform: 'win32', hookDir: 'C:\\Users\\adam\\.claude\\hooks' });
+    const cmd = sessionStartCommand({ platform: 'win32', hookDir: 'C:\\Users\\member-5\\.claude\\hooks' });
     assert.match(cmd, /^node /, 'Windows must invoke node, not a shell');
     assert.doesNotMatch(cmd, /\bbash\b/, 'bash on Windows resolves to the WSL launcher');
     assert.doesNotMatch(cmd, /~/, '~ is not expanded the same way, and under WSL points elsewhere');
@@ -77,7 +77,7 @@ describe('session-hook-command.cjs — one place decides how the hook is invoked
   });
 
   it('Windows uses forward slashes, so the JSON string needs no escaping', () => {
-    const cmd = sessionStartCommand({ platform: 'win32', hookDir: 'C:\\Users\\adam\\.claude\\hooks' });
+    const cmd = sessionStartCommand({ platform: 'win32', hookDir: 'C:\\Users\\member-5\\.claude\\hooks' });
     assert.doesNotMatch(cmd, /\\/, 'backslashes in settings.json invite double-escaping bugs');
   });
 
@@ -101,7 +101,7 @@ describe('session-hook-command.cjs — one place decides how the hook is invoked
   });
 
   it('builds all four matcher entries with the platform-correct command', () => {
-    const entries = sessionStartEntries({ platform: 'win32', hookDir: 'C:/Users/adam/.claude/hooks' });
+    const entries = sessionStartEntries({ platform: 'win32', hookDir: 'C:/Users/member-5/.claude/hooks' });
     assert.equal(entries.length, 4);
     assert.deepEqual(entries.map((e) => e.matcher), MATCHERS);
     for (const e of entries) {
@@ -117,7 +117,7 @@ describe('session-hook-command.cjs — one place decides how the hook is invoked
     // The precise sequence that broke every Windows machine. install.ps1 writes one
     // matcher-less entry running Node; update.ps1 finds it, decides the matchers are
     // incomplete, and rebuilds. Before this change the rebuild hardcoded bash.
-    const hookDir = 'C:/Users/adam/.claude/hooks';
+    const hookDir = 'C:/Users/member-5/.claude/hooks';
     const installed = [{ hooks: [{ type: 'command', command: sessionStartCommand({ platform: 'win32', hookDir }), timeout: 10 }] }];
     const hasAll = MATCHERS.every((m) => installed.some((h) => h.matcher === m));
     assert.equal(hasAll, false, 'the migration branch must be the one that fires here');
@@ -132,7 +132,7 @@ describe('session-hook-command.cjs — one place decides how the hook is invoked
 
 describe('needsRewrite — the check that decides whether any Windows machine gets repaired', () => {
   const { sessionStartCommand, sessionStartEntries, needsRewrite } = require_(path.join(repoRoot, HELPER));
-  const winOpts = { platform: 'win32', hookDir: 'C:/Users/adam/.claude/hooks' };
+  const winOpts = { platform: 'win32', hookDir: 'C:/Users/member-5/.claude/hooks' };
   const bashEntries = MATCHERS.map((matcher) => ({
     matcher,
     hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-session-start.sh', timeout: 10 }],
@@ -165,29 +165,29 @@ describe('needsRewrite — the check that decides whether any Windows machine ge
     assert.equal(needsRewrite([], winOpts), false);
   });
 
-  it("repairs 采瑤's real machine: one unquoted entry becomes four", () => {
+  it("repairs member-4's real machine: one unquoted entry becomes four", () => {
     // Her exact settings on 2026-08-06. Her AI hand-wrote a working Node command without
     // quotes; v1.26.82 read that as a customisation and left her on a single matcher, so
     // memories loaded on a new conversation and not on resume, clear or compact.
-    const opts = { platform: 'win32', hookDir: 'C:/Users/Celia/.claude/hooks' };
-    const hers = [{ matcher: null, hooks: [{ type: 'command', command: 'node C:/Users/Celia/.ownmind/hooks/ownmind-session-start.js' }] }];
+    const opts = { platform: 'win32', hookDir: 'C:/Users/member-4/.claude/hooks' };
+    const hers = [{ matcher: null, hooks: [{ type: 'command', command: 'node C:/Users/member-4/.ownmind/hooks/ownmind-session-start.js' }] }];
     assert.equal(needsRewrite(hers, opts), true);
   });
 
-  it("repairs Adam's machine, whose command pointed at a copy that cannot run", () => {
+  it("repairs member-5's machine, whose command pointed at a copy that cannot run", () => {
     // Everything looked right here: four matchers, Node, the file present. The path was
     // ~/.claude/hooks, where the hook's own `../shared/helpers.js` import cannot resolve,
     // so it died on startup and reported nothing. v1.26.84 called this healthy.
-    const opts = { platform: 'win32', ownmindDir: 'C:/Users/Adam/.ownmind' };
+    const opts = { platform: 'win32', ownmindDir: 'C:/Users/member-5/.ownmind' };
     const his = MATCHERS.map((matcher) => ({
       matcher,
-      hooks: [{ type: 'command', command: 'node "C:/Users/Adam/.claude/hooks/ownmind-session-start.js"', timeout: 10 }],
+      hooks: [{ type: 'command', command: 'node "C:/Users/member-5/.claude/hooks/ownmind-session-start.js"', timeout: 10 }],
     }));
     assert.equal(needsRewrite(his, opts), true);
   });
 
   it('leaves a machine already on the working path alone', () => {
-    const opts = { platform: 'win32', ownmindDir: 'C:/Users/Celia/.ownmind' };
+    const opts = { platform: 'win32', ownmindDir: 'C:/Users/member-4/.ownmind' };
     const hers = sessionStartEntries(opts);
     assert.equal(needsRewrite(hers, opts), false, 'a daily rewrite would churn settings.json');
   });
@@ -225,7 +225,7 @@ describe('isOwnmindSessionEntry / isGeneratedCommand — what counts as ours', (
     }
   });
 
-  // Measured on 采瑤's machine, 2026-08-06. Her AI hand-wrote a working Node command
+  // Measured on member-4's machine, 2026-08-06. Her AI hand-wrote a working Node command
   // without quotes. `isGeneratedCommand` said no, `needsRewrite` said no, and the upgrade
   // left her with one matcher instead of four — memories load on a new conversation and
   // not on resume, clear or compact. Quoting is spelling, not intent: a command whose
@@ -233,8 +233,8 @@ describe('isOwnmindSessionEntry / isGeneratedCommand — what counts as ours', (
   // Extra flags or a different program are what make it somebody's deliberate edit.
   it('claims a command that runs our hook file even when it is written differently', () => {
     for (const c of [
-      'node C:/Users/Celia/.ownmind/hooks/ownmind-session-start.js',
-      'node "C:/Users/Celia/.claude/hooks/ownmind-session-start.js"',
+      'node C:/Users/member-4/.ownmind/hooks/ownmind-session-start.js',
+      'node "C:/Users/member-4/.claude/hooks/ownmind-session-start.js"',
       "node 'C:/x/ownmind-session-start.js'",
       'bash ~/.claude/hooks/ownmind-session-start.sh',
       // A Windows home directory routinely contains a space. An unquoted command with a
@@ -295,7 +295,7 @@ describe('the scripts that write settings.json all go through the helper', () =>
     assert.match(read('install.sh'), /ensure-session-hook\.cjs/);
   });
 
-  // The installers must REPAIR, not only ADD. Found while working out how 采瑤 could
+  // The installers must REPAIR, not only ADD. Found while working out how member-4 could
   // verify this release on her own machine, and it would have made the release
   // unverifiable by exactly the people it is for:
   //
@@ -304,11 +304,11 @@ describe('the scripts that write settings.json all go through the helper', () =>
   //
   // Every affected user already has a SessionStart entry — a broken one. An installer that
   // skips when anything exists cannot fix any of them, and the only path that can is the
-  // auto-update, which on 采瑤's machine has run twice in a month. The repair would have
+  // auto-update, which on member-4's machine has run twice in a month. The repair would have
   // sat on a road she does not travel. Same defect this whole day has been about.
   // v1.26.86 — "repair, not only add" now lives in ensure-session-hook.cjs for every
   // caller. The PowerShell version of this logic was never once executed on a real machine:
-  // 采瑤 upgraded to v1.26.84 and her single null matcher survived it untouched.
+  // member-4 upgraded to v1.26.84 and her single null matcher survived it untouched.
   for (const rel of ['install.ps1', 'install.sh']) {
     it(`${rel} delegates the repair to the shared script`, () => {
       assert.match(read(rel), /ensure-session-hook\.cjs/);

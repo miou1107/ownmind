@@ -4,19 +4,19 @@ import assert from 'node:assert/strict';
 
 import { evaluateFailures, stateKey } from '../src/lib/install-check-alerts.js';
 
-// Real payload from production, machine LAPTOP-MBGGLV2J, client 1.26.84.
-const ADAM_MEMORY_LOAD_FAIL = {
+// Real payload from production, machine LAPTOP-MEMBER5, client 1.26.84.
+const MEMBER5_MEMORY_LOAD_FAIL = {
   name: 'memory_load',
   status: 'fail',
   detail: 'memories have never loaded automatically on this account (`bash` on this machine is the WSL launcher, whose home directory is not this one)',
   fix: 'Re-run the installer, then fully restart your AI tool and open a new conversation',
 };
 
-function adamReport(checks) {
+function member5Report(checks) {
   return {
     user_id: 3,
-    user_name: 'Adam',
-    machine: 'LAPTOP-MBGGLV2J',
+    user_name: 'member-5',
+    machine: 'LAPTOP-MEMBER5',
     client_version: '1.26.84',
     checks,
   };
@@ -25,9 +25,9 @@ function adamReport(checks) {
 function announced(overrides = {}) {
   return {
     user_id: 3,
-    machine: 'LAPTOP-MBGGLV2J',
+    machine: 'LAPTOP-MEMBER5',
     check_name: 'memory_load',
-    detail: ADAM_MEMORY_LOAD_FAIL.detail,
+    detail: MEMBER5_MEMORY_LOAD_FAIL.detail,
     announced_at: new Date('2026-08-06T00:00:00Z'),
     resolved_at: null,
     ...overrides,
@@ -37,24 +37,24 @@ function announced(overrides = {}) {
 describe('evaluateFailures — first sighting', () => {
   it('a failure nobody has announced is new', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([{ name: 'scheduler', status: 'pass', detail: 'ok' }, ADAM_MEMORY_LOAD_FAIL])],
+      reports: [member5Report([{ name: 'scheduler', status: 'pass', detail: 'ok' }, MEMBER5_MEMORY_LOAD_FAIL])],
       knownState: [],
     });
     assert.equal(newFailures.length, 1);
     assert.deepEqual(newFailures[0], {
       user_id: 3,
-      user_name: 'Adam',
-      machine: 'LAPTOP-MBGGLV2J',
+      user_name: 'member-5',
+      machine: 'LAPTOP-MEMBER5',
       check_name: 'memory_load',
-      detail: ADAM_MEMORY_LOAD_FAIL.detail,
-      fix: ADAM_MEMORY_LOAD_FAIL.fix,
+      detail: MEMBER5_MEMORY_LOAD_FAIL.detail,
+      fix: MEMBER5_MEMORY_LOAD_FAIL.fix,
       client_version: '1.26.84',
     });
   });
 
   it('an all-green report produces nothing', () => {
     const { newFailures, resolved } = evaluateFailures({
-      reports: [adamReport([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
+      reports: [member5Report([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
       knownState: [],
     });
     assert.equal(newFailures.length, 0);
@@ -63,7 +63,7 @@ describe('evaluateFailures — first sighting', () => {
 
   it('warn is not a failure', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([{ name: 'api_key_source', status: 'warn', detail: 'key only in env' }])],
+      reports: [member5Report([{ name: 'api_key_source', status: 'warn', detail: 'key only in env' }])],
       knownState: [],
     });
     assert.equal(newFailures.length, 0);
@@ -73,14 +73,14 @@ describe('evaluateFailures — first sighting', () => {
 describe('evaluateFailures — announce once', () => {
   it('the same failure already announced is not new again', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([ADAM_MEMORY_LOAD_FAIL])],
+      reports: [member5Report([MEMBER5_MEMORY_LOAD_FAIL])],
       knownState: [announced()],
     });
     assert.equal(newFailures.length, 0);
   });
 
   it('running twice over the same input announces nothing the second time', () => {
-    const reports = [adamReport([ADAM_MEMORY_LOAD_FAIL])];
+    const reports = [member5Report([MEMBER5_MEMORY_LOAD_FAIL])];
     const first = evaluateFailures({ reports, knownState: [] });
     assert.equal(first.newFailures.length, 1);
 
@@ -99,14 +99,14 @@ describe('evaluateFailures — announce once', () => {
   });
 
   it('a reworded detail updates the record but does not re-announce', () => {
-    const reworded = { ...ADAM_MEMORY_LOAD_FAIL, detail: 'memories never load: bash here is the WSL launcher' };
+    const reworded = { ...MEMBER5_MEMORY_LOAD_FAIL, detail: 'memories never load: bash here is the WSL launcher' };
     const { newFailures, detailChanges } = evaluateFailures({
-      reports: [adamReport([reworded])],
+      reports: [member5Report([reworded])],
       knownState: [announced()],
     });
     assert.equal(newFailures.length, 0);
     assert.deepEqual(detailChanges, [{
-      user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load', detail: reworded.detail,
+      user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load', detail: reworded.detail,
     }]);
   });
 });
@@ -114,16 +114,16 @@ describe('evaluateFailures — announce once', () => {
 describe('evaluateFailures — resolution re-arms', () => {
   it('a previously announced check that now passes is resolved', () => {
     const { resolved, newFailures } = evaluateFailures({
-      reports: [adamReport([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }])],
+      reports: [member5Report([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }])],
       knownState: [announced()],
     });
-    assert.deepEqual(resolved, [{ user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load' }]);
+    assert.deepEqual(resolved, [{ user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load' }]);
     assert.equal(newFailures.length, 0);
   });
 
   it('failing again after being resolved is announced again', () => {
     const { newFailures } = evaluateFailures({
-      reports: [adamReport([ADAM_MEMORY_LOAD_FAIL])],
+      reports: [member5Report([MEMBER5_MEMORY_LOAD_FAIL])],
       knownState: [announced({ resolved_at: new Date('2026-08-06T09:00:00Z') })],
     });
     assert.equal(newFailures.length, 1);
@@ -133,7 +133,7 @@ describe('evaluateFailures — resolution re-arms', () => {
 describe('evaluateFailures — a report without checks decides nothing', () => {
   it('a beacon row does not resolve a live failure', () => {
     const { resolved, newFailures } = evaluateFailures({
-      reports: [adamReport([])],
+      reports: [member5Report([])],
       knownState: [announced()],
     });
     assert.equal(resolved.length, 0, 'an empty report must not read as "fixed"');
@@ -142,7 +142,7 @@ describe('evaluateFailures — a report without checks decides nothing', () => {
 
   it('a check absent from the report is left alone, not resolved', () => {
     const { resolved } = evaluateFailures({
-      reports: [adamReport([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
+      reports: [member5Report([{ name: 'scheduler', status: 'pass', detail: 'ok' }])],
       knownState: [announced()],
     });
     assert.equal(resolved.length, 0);
@@ -152,9 +152,9 @@ describe('evaluateFailures — a report without checks decides nothing', () => {
 describe('evaluateFailures — deduplicate within a single call', () => {
   it('three copies of the same failing report produce one newFailures entry', () => {
     const reports = [
-      adamReport([ADAM_MEMORY_LOAD_FAIL]),
-      adamReport([ADAM_MEMORY_LOAD_FAIL]),
-      adamReport([ADAM_MEMORY_LOAD_FAIL]),
+      member5Report([MEMBER5_MEMORY_LOAD_FAIL]),
+      member5Report([MEMBER5_MEMORY_LOAD_FAIL]),
+      member5Report([MEMBER5_MEMORY_LOAD_FAIL]),
     ];
     const { newFailures } = evaluateFailures({ reports, knownState: [] });
     assert.equal(newFailures.length, 1);
@@ -163,27 +163,27 @@ describe('evaluateFailures — deduplicate within a single call', () => {
 
   it('the same resolved check in multiple reports produces one resolved entry', () => {
     const reports = [
-      adamReport([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),
-      adamReport([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),
-      adamReport([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),
+      member5Report([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),
+      member5Report([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),
+      member5Report([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),
     ];
     const { resolved } = evaluateFailures({
       reports,
       knownState: [announced()],
     });
     assert.equal(resolved.length, 1);
-    assert.deepEqual(resolved[0], { user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load' });
+    assert.deepEqual(resolved[0], { user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load' });
   });
 
   it('two different machines failing the same check produce two newFailures entries', () => {
     const reports = [
-      adamReport([ADAM_MEMORY_LOAD_FAIL]),
+      member5Report([MEMBER5_MEMORY_LOAD_FAIL]),
       {
         user_id: 3,
-        user_name: 'Adam',
+        user_name: 'member-5',
         machine: 'ANOTHER-MACHINE',
         client_version: '1.26.84',
-        checks: [ADAM_MEMORY_LOAD_FAIL],
+        checks: [MEMBER5_MEMORY_LOAD_FAIL],
       },
     ];
     const { newFailures } = evaluateFailures({ reports, knownState: [] });
@@ -193,8 +193,8 @@ describe('evaluateFailures — deduplicate within a single call', () => {
 
   it('same (user, machine), first report fail then later report pass → only first report matters, result is one newFailure', () => {
     const reports = [
-      adamReport([ADAM_MEMORY_LOAD_FAIL]),  // First report: check is failing
-      adamReport([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),  // Later report: same check passing
+      member5Report([MEMBER5_MEMORY_LOAD_FAIL]),  // First report: check is failing
+      member5Report([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),  // Later report: same check passing
     ];
     const { newFailures, resolved } = evaluateFailures({ reports, knownState: [] });
     assert.equal(newFailures.length, 1, 'should have one newFailure from the first report');
@@ -203,8 +203,8 @@ describe('evaluateFailures — deduplicate within a single call', () => {
 
   it('same (user, machine), first report pass then later report fail → only first report matters, result is one resolved', () => {
     const reports = [
-      adamReport([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),  // First report: check is passing
-      adamReport([ADAM_MEMORY_LOAD_FAIL]),  // Later report: same check failing
+      member5Report([{ name: 'memory_load', status: 'pass', detail: 'loaded 3 memories' }]),  // First report: check is passing
+      member5Report([MEMBER5_MEMORY_LOAD_FAIL]),  // Later report: same check failing
     ];
     const { newFailures, resolved } = evaluateFailures({
       reports,
@@ -216,8 +216,8 @@ describe('evaluateFailures — deduplicate within a single call', () => {
 
   it('newest report covers memory_load, older report carries different check scheduler → older report ignored entirely, stale checks not added', () => {
     const reports = [
-      adamReport([ADAM_MEMORY_LOAD_FAIL]),  // Newest: memory_load failing
-      adamReport([{ name: 'scheduler', status: 'fail', detail: 'cron job failed', fix: 'check cron' }]),  // Older: scheduler failing (different check)
+      member5Report([MEMBER5_MEMORY_LOAD_FAIL]),  // Newest: memory_load failing
+      member5Report([{ name: 'scheduler', status: 'fail', detail: 'cron job failed', fix: 'check cron' }]),  // Older: scheduler failing (different check)
     ];
     const { newFailures } = evaluateFailures({ reports, knownState: [] });
     // Oldest report should be skipped entirely (report-level dedupe), not just its checks ignored.

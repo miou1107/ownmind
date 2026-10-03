@@ -77,7 +77,7 @@ describe('expandHomeMarker', () => {
   it('a task belonging to somebody else is still not ours after expansion', () => {
     // Reverse control. Expanding must not turn the check into "anything under any home
     // passes" — that false pass is what v1.26.124 was written to remove.
-    const adams = String.raw`wscript.exe "C:\Users\Adam\.ownmind\scripts\windows\run-hidden.vbs"`;
+    const adams = String.raw`wscript.exe "C:\Users\member-5\.ownmind\scripts\windows\run-hidden.vbs"`;
     assert.equal(taskBelongsToInstall(expandHomeMarker(adams, HOME), OWNMIND_DIR), false);
   });
 

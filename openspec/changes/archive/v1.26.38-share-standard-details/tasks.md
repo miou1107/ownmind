@@ -72,7 +72,7 @@ Legend: `[ ]` pending · `[x]` done
       account's fragment 404s with the row left untouched
 - [x] Browser check on the admin console: page renders; surfaced an unrelated
       pre-existing defect (memory-count card stuck at 0) now fixed in v1.26.39
-- [x] Reported back to Vin. Vin decided not to notify Eric, so no note drafted
+- [x] Reported back to Vin. Vin decided not to notify member-6, so no note drafted
 
 ## Phase 5b — Review fixes (all verified, RED first)
 

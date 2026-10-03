@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 
 import { runInstallCheckAlerts } from '../src/jobs/install-check-alerts.js';
 
-const ADAM_ROW = {
+const MEMBER5_ROW = {
   user_id: 3,
-  user_name: 'Adam',
-  machine: 'LAPTOP-MBGGLV2J',
+  user_name: 'member-5',
+  machine: 'LAPTOP-MEMBER5',
   client_version: '1.26.84',
   checks: [
     { name: 'scheduler', status: 'pass', detail: 'Task Scheduler state=Ready' },
@@ -23,7 +23,7 @@ const ADAM_ROW = {
  * made through it, so a test can tell which statements the job ran inside the
  * transaction and which it ran on its own.
  */
-function makeQuery({ reports = [ADAM_ROW], state = [], admins = [{ id: 1 }] } = {}) {
+function makeQuery({ reports = [MEMBER5_ROW], state = [], admins = [{ id: 1 }] } = {}) {
   const calls = [];
   let txDepth = 0;
   const query = async (sql, params = []) => {
@@ -66,7 +66,7 @@ function makeQuery({ reports = [ADAM_ROW], state = [], admins = [{ id: 1 }] } = 
  * writes, so a test that commits something from elsewhere *while* a transaction
  * is failing would get an answer this fake is not entitled to give.
  */
-function makeStatefulDb({ reports = [ADAM_ROW], admins = [{ id: 1 }] } = {}) {
+function makeStatefulDb({ reports = [MEMBER5_ROW], admins = [{ id: 1 }] } = {}) {
   const rows = new Map();
   const calls = [];
   const key = (userId, machine, checkName) => JSON.stringify([userId, machine, checkName]);
@@ -178,7 +178,7 @@ describe('runInstallCheckAlerts', () => {
   it('says nothing when every failure is already announced', async () => {
     const { query, withTransaction, calls } = makeQuery({
       state: [{
-        user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load',
+        user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load',
         detail: 'bash here is the WSL launcher',
         announced_at: new Date('2026-08-06T00:00:00Z'), resolved_at: null,
       }],
@@ -190,11 +190,11 @@ describe('runInstallCheckAlerts', () => {
   });
 
   it('marks a fixed check resolved without announcing anything', async () => {
-    const green = { ...ADAM_ROW, checks: [{ name: 'memory_load', status: 'pass', detail: 'loaded' }] };
+    const green = { ...MEMBER5_ROW, checks: [{ name: 'memory_load', status: 'pass', detail: 'loaded' }] };
     const { query, withTransaction, calls } = makeQuery({
       reports: [green],
       state: [{
-        user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load', detail: 'x',
+        user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load', detail: 'x',
         announced_at: new Date('2026-08-06T00:00:00Z'), resolved_at: null,
       }],
     });
@@ -209,11 +209,11 @@ describe('runInstallCheckAlerts', () => {
     // These two updates are independent of the claim-and-announce pair, and the
     // path they matter most on is the common one where no transaction is opened
     // at all: nothing new is failing, but a check just went green.
-    const green = { ...ADAM_ROW, checks: [{ name: 'memory_load', status: 'pass', detail: 'loaded' }] };
+    const green = { ...MEMBER5_ROW, checks: [{ name: 'memory_load', status: 'pass', detail: 'loaded' }] };
     const { query, withTransaction, calls } = makeQuery({
       reports: [green],
       state: [{
-        user_id: 3, machine: 'LAPTOP-MBGGLV2J', check_name: 'memory_load', detail: 'x',
+        user_id: 3, machine: 'LAPTOP-MEMBER5', check_name: 'memory_load', detail: 'x',
         announced_at: new Date('2026-08-06T00:00:00Z'), resolved_at: null,
       }],
     });
@@ -298,7 +298,7 @@ describe('runInstallCheckAlerts — a claim and its broadcast land together or n
     // decides "this failure has been announced" is in the same transaction as
     // the announcement itself, so no failure between them can separate the two.
     const twoChecks = {
-      ...ADAM_ROW,
+      ...MEMBER5_ROW,
       checks: [
         { name: 'memory_load', status: 'fail', detail: 'WSL launcher' },
         { name: 'scheduler', status: 'fail', detail: 'not registered' },
@@ -335,7 +335,7 @@ describe('runInstallCheckAlerts — a claim and its broadcast land together or n
 
     const forwards = makeStatefulDb({
       reports: [{
-        ...ADAM_ROW,
+        ...MEMBER5_ROW,
         checks: [
           { name: 'scheduler', status: 'fail', detail: 'not registered' },
           { name: 'memory_load', status: 'fail', detail: 'WSL launcher' },
@@ -344,7 +344,7 @@ describe('runInstallCheckAlerts — a claim and its broadcast land together or n
     });
     const backwards = makeStatefulDb({
       reports: [{
-        ...ADAM_ROW,
+        ...MEMBER5_ROW,
         checks: [
           { name: 'memory_load', status: 'fail', detail: 'WSL launcher' },
           { name: 'scheduler', status: 'fail', detail: 'not registered' },
@@ -391,7 +391,7 @@ describe('runInstallCheckAlerts — a claim and its broadcast land together or n
     // a failing claim is the same defect one query earlier: nothing was
     // announced, yet that key reads as announced from then on.
     const twoChecks = {
-      ...ADAM_ROW,
+      ...MEMBER5_ROW,
       checks: [
         { name: 'memory_load', status: 'fail', detail: 'WSL launcher' },
         { name: 'scheduler', status: 'fail', detail: 'not registered' },
@@ -418,7 +418,7 @@ describe('runInstallCheckAlerts — a claim and its broadcast land together or n
     // A key announced by an earlier, committed run is not this run's to undo.
     // Clearing it would announce the same problem twice.
     const report = {
-      ...ADAM_ROW,
+      ...MEMBER5_ROW,
       checks: [{ name: 'memory_load', status: 'fail', detail: 'WSL launcher' }],
     };
     const db = makeStatefulDb({ reports: [report] });
@@ -497,7 +497,7 @@ describe('runInstallCheckAlerts — two overlapping sweeps announce once between
     // One failure is already announced and unresolved; a concurrent sweep that
     // still sees it as new must not put it in its broadcast.
     const twoChecks = {
-      ...ADAM_ROW,
+      ...MEMBER5_ROW,
       checks: [
         { name: 'memory_load', status: 'fail', detail: 'WSL launcher' },
         { name: 'scheduler', status: 'fail', detail: 'not registered' },

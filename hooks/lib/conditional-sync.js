@@ -46,7 +46,7 @@ const INIT_TIMEOUT_MS = 8000;
  *
  * This file holds the whole init payload: profile, principles, iron rules. Before this
  * version it recorded nothing about whose it was, so changing credentials left the previous
- * account's memories on disk to be read, with nothing anywhere showing it. Adam installed
+ * account's memories on disk to be read, with nothing anywhere showing it. member-5 installed
  * somebody else's key once; that is what prompted the check.
  *
  * The scanner fixed the same hazard in v1.26.69 for its cursor file. This is the other half.
@@ -222,7 +222,7 @@ export async function runConditionalSync({
   now = Date.now(),
 }) {
   // v1.26.82 — the account is passed in, so a cache written under a different key is
-  // refused rather than served. Adam installed somebody else's key once; without this the
+  // refused rather than served. member-5 installed somebody else's key once; without this the
   // profile and iron rules downloaded then would still be on disk and still be read.
   //
   // No key at all → no account to compare against, and nothing new can be downloaded

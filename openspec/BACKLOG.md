@@ -63,8 +63,8 @@ whose tool rows disagree with each other is now announced to its owner and to th
 This half is the one the same release deliberately declined. When **every** row on a
 machine is stale there is nothing in `collector_heartbeat` that distinguishes a dead
 collector from a computer that is switched off, a person on leave, or a laptop that was
-replaced. Measured on 2026-08-07: Joanna's whole machine had been silent 4.2 days and
-Michelle's older Mac 1.2 days, and neither was a fault; Michelle's old Mac will cross any
+replaced. Measured on 2026-08-07: member-2's whole machine had been silent 4.2 days and
+member-8's older Mac 1.2 days, and neither was a fault; member-8's old Mac will cross any
 threshold eventually and stay across it forever, because nothing in the product says a
 machine was retired.
 
@@ -113,7 +113,7 @@ front of every member's AI session. Outward-facing, so it is Vin's call rather t
 something to run as a test.
 
 Still true 2026-08-05, and revoke is now the harder half: the only rows on the page are
-live broadcasts, including the upgrade notice sent to Eric today, so pressing 撤銷 to
+live broadcasts, including the upgrade notice sent to member-6 today, so pressing 撤銷 to
 prove the button works would cancel a real message. That half is this session's
 observation, not the original entry's.
 
@@ -202,7 +202,7 @@ Origin: v1.26.65 review.
 
 ### 17. One member's `codex` collector has never once checked in
 
-Amiee Kuo (user 9) has **no `codex` row in `collector_heartbeat` at all**, on a server
+member-1 (user 9) has **no `codex` row in `collector_heartbeat` at all**, on a server
 where the other eight members do, including members who almost certainly never run
 Codex. Her four sibling adapters on the same machine have rows. Her usage stops at
 2026-05-05.
@@ -585,8 +585,8 @@ Origin: v1.26.78, 2026-08-06. Vin: 「這先列為代辦，我現在沒 win 電�
 
 ### 25. Four of nine users have never once produced a real session log
 
-The team usage page shows `尚無資料` under **最常做的專案** and **鐵律遵守率** for Michelle,
-Phoebe, 采瑤 and Vin-windows-test. Those two columns read `details.project` and
+The team usage page shows `尚無資料` under **最常做的專案** and **鐵律遵守率** for member-8,
+member-3, member-4 and Vin-windows-test. Those two columns read `details.project` and
 `details.rules_triggered` / `rules_complied`, which only `ownmind_log_session` writes.
 Nobody's collector is at fault: their usage numbers are fine.
 
@@ -595,14 +595,14 @@ Measured on production, `session_logs.details` keys over the last 7 days:
 | user | real log_session rows | `_recovery` placeholder rows |
 |---|---|---|
 | Vincent Kao | 19 | 46 |
-| Eric | 15 | 0 |
-| Adam | 4 | 0 |
-| Michelle | **0** | 14 |
-| Phoebe | **0** | 33 |
-| 采瑤 | **0** | 128 |
+| member-6 | 15 | 0 |
+| member-5 | 4 | 0 |
+| member-8 | **0** | 14 |
+| member-3 | **0** | 33 |
+| member-4 | **0** | 128 |
 | Vin-windows-test | **0** | 2 |
 
-采瑤 is the sharpest case: 128 sessions in a week, not one of them logged. Every row she
+member-4 is the sharpest case: 128 sessions in a week, not one of them logged. Every row she
 has is a placeholder written by the fallback in `mcp/index.js:1801` / `:1846`
 (`_recovery: 'process_exit'`) or `src/routes/memory.js:1771`
 (`_recovery: 'from_activity_logs'`), and a placeholder carries no project and no rule
@@ -617,7 +617,7 @@ Unknown and to be measured before designing anything:
 - Is `ownmind_log_session` never called, or called and rejected? `activity_logs` has a
   `session_log` event; compare its count per user against the real-row count above.
 - Does the skill text actually instruct the AI to call it at end of session, and do these
-  four have the current skill on disk? Michelle is on 1.26.59, 采瑤 on 1.26.37.
+  four have the current skill on disk? member-8 is on 1.26.59, member-4 on 1.26.37.
 - Vincent has both shapes, so on this machine it fires sometimes. What distinguishes the
   19 that logged from the 46 that fell back?
 - If the answer is "the AI has to remember to call it", that is the root cause, and the
@@ -683,7 +683,7 @@ Evidence the analyze link is the broken one, twice in one week:
 - Every Windows machine's report has said `bash_resolution: WSL_RELAY` since May. The
   answer to "why do six machines never load memories" sat in the database for two months
   while the question took a week of hand-digging.
-- Adam's May report showed his credentials lookup failing. Nobody saw that either.
+- member-5's May report showed his credentials lookup failing. Nobody saw that either.
 
 What "analyze" needed, concretely, and where each stands now:
 
@@ -692,7 +692,7 @@ What "analyze" needed, concretely, and where each stands now:
    `(user_id, machine, check_name)`, state tracked in `install_check_alert_state`),
    roll identical failures across machines into one entry, and broadcast to the oldest
    `super_admin`. Runs after every stored report and once at server startup. Verified
-   against a real production report set: 12 machines, found the known Adam / TANK
+   against a real production report set: 12 machines, found the known member-5 / TANK
    `memory_load` WSL failure, rolled up to one entry.
 2. **Fingerprint rollup** — **shipped as part of the above**, same commit.
 3. **An admin page reading `install_check_logs`** — **not built. Deliberately deferred.**
@@ -921,7 +921,7 @@ Origin: bug report #18 (2026-08-07), and the analysis of #18's proposed fix.
 
 ### 37. The upgrade error report's `context` arrives empty, and we cannot say where it is lost
 
-On 2026-08-07 DESKTOP-8DD75VJ failed a `git pull --ff-only` during an upgrade, restored its
+On 2026-08-07 DESKTOP-MEMBER7 failed a `git pull --ff-only` during an upgrade, restored its
 backup, and self-checked clean seven seconds later. Working out **why** the pull failed was
 impossible: the only record was the hand-written guess in `detail`, `"git pull --ff-only
 failed (network or non-ff merge)"`, and the `context` field — which is supposed to carry the
@@ -945,7 +945,7 @@ explicable even if `context` is still broken. Closing this item means either rep
 empty context on a Windows machine and fixing it, or establishing that the context field is
 redundant now and removing it.
 
-Origin: DESKTOP-8DD75VJ upgrade failure, 2026-08-07 19:26 (Asia/Taipei).
+Origin: DESKTOP-MEMBER7 upgrade failure, 2026-08-07 19:26 (Asia/Taipei).
 
 ### 38. Rule violations are collected but never shown anywhere
 

@@ -11,7 +11,7 @@
 // the result to `node -e` as an argument, read a string back. Four rounds of Windows fixes
 // were declared complete on the assumption that block ran.
 //
-// It did not. Measured 2026-08-06: 采瑤 upgraded to v1.26.84 at 16:38 and her entry still
+// It did not. Measured 2026-08-06: member-4 upgraded to v1.26.84 at 16:38 and her entry still
 // had a single `null` matcher afterwards — the repair had been in install.ps1 since
 // v1.26.82 and left her untouched. She kept working only because the path her AI had
 // hand-written happened to be the one that resolves. Nothing reported a failure, because a

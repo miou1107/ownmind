@@ -1265,7 +1265,7 @@ async function handleTool(name, args) {
     case "ownmind_log_session": {
       // v1.26.61: `tool` defaults to this client and `model` may be absent, so a call
       // that arrives carrying only `summary` still records the session. See
-      // mcp/lib/session-log-body.js and Eric's bug #9.
+      // mcp/lib/session-log-body.js and member-6's bug #9.
       const body = {
         ...buildSessionLogBody(args, { clientTool: CLIENT_TOOL }),
         sync_token: currentSyncToken,
@@ -1786,7 +1786,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // --- Auto-update check (background, non-blocking) ---
-// v1.17.22 fix: root cause of Alice (Windows LAPTOP-G95HIQ3V) / Bob being stuck on old versions:
+// v1.17.22 fix: root cause of Alice (Windows) / Bob being stuck on old versions:
 //   1. process.env.HOME is undefined on Windows; OWNMIND_DIR became a relative path, so the
 //      whole block silently skipped. → switched to os.homedir() (cross-platform — reads
 //      USERPROFILE on Windows automatically).

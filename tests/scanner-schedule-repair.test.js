@@ -1,13 +1,13 @@
 // v1.26.79 — the auto-update path must notice a dead scanner schedule and put it back.
 //
-// Traced from production on 2026-08-06. Adam's collector heartbeat shows the shape
+// Traced from production on 2026-08-06. member-5's collector heartbeat shows the shape
 // plainly: his claude-code row moved today at 11:36 carrying 1.26.67, while the four
 // rows the scanner writes have not moved since 2026-07-15 and still carry 1.26.29. His
 // MCP is alive, auto-updating, and reaching the server. The scheduled task that reads his
 // token data is gone, and has been for three weeks.
 //
 // `interactive-upgrade.ps1` already re-registers the task, and its own comment records why
-// (「Adam 因此斷了二十天」). But only `bootstrap.ps1` reaches that script, and nobody runs
+// (「member-5 因此斷了二十天」). But only `bootstrap.ps1` reaches that script, and nobody runs
 // bootstrap by hand. The auto-update path is `mcp/index.js` → `update.ps1` / `update.sh`,
 // and neither of those has ever looked at the schedule. So the one repair we built for
 // this exact failure sits on a road the failure never travels.
@@ -353,7 +353,7 @@ describe('ensure-scanner-schedule.sh — repairs a dead schedule, leaves a live 
   });
 
   it('reports the failure to the server rather than only to a terminal nobody watches', () => {
-    // Adam's schedule died in silence for twenty days. A repair that fails on his machine
+    // member-5's schedule died in silence for twenty days. A repair that fails on his machine
     // must leave a trace somewhere Vin can see, which is the report-error channel.
     //
     // The assertion looks *inside* the failure path, not anywhere in the file. This file
@@ -371,7 +371,7 @@ describe('ensure-scanner-schedule.sh — repairs a dead schedule, leaves a live 
 describe('the auto-update path actually calls the repair', () => {
   it('update.sh runs the ensure helper', () => {
     // This is the whole point. interactive-upgrade.ps1 has had the repair since v1.26.65
-    // and it never reached Adam, because auto-update does not go through it.
+    // and it never reached member-5, because auto-update does not go through it.
     const src = codeOnly(read('scripts/update.sh'));
     assert.match(src, /ensure-scanner-schedule\.sh/,
       'update.sh never checks whether the scanner schedule is alive');

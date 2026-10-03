@@ -159,7 +159,7 @@ export function holdsInitPayload(cache) {
 
 #### 伺服器查詢：必須用 `buildReadableWhere`，且必須組 fragment
 
-🔴 **真資料庫實測**（pgvector:pg16 容器 ＋ 本 repo 全部 migration ＋ 事故形狀 fixture：規範 412 由 **Eric（user 2）** 上傳，禁止清單在子 fragment 413，Vin 是 user 1）：
+🔴 **真資料庫實測**（pgvector:pg16 容器 ＋ 本 repo 全部 migration ＋ 事故形狀 fixture：規範 412 由 **member-6（user 2）** 上傳，禁止清單在子 fragment 413，Vin 是 user 1）：
 
 | 查詢 | 結果 |
 |---|---|
@@ -262,7 +262,7 @@ RETURN VALUE  {"verdicts":[{"ruleId":412,"violated":true,...}]}
     "guard": {                                     // 有這塊才進「一」的硬擋
       "repo_match": "fontrip-agentic-process-automation",
       "paths": ["ci/**", ".gitlab-ci.yml"],
-      "owner": "Eric"
+      "owner": "member-6"
     }
   }
 }
@@ -276,7 +276,7 @@ RETURN VALUE  {"verdicts":[{"ruleId":412,"violated":true,...}]}
 
 1. Vin：「ownmind 要搬到 company host」→ 注入命中 → 412／422 全文（優先權宣告在最前面）進上下文。
 2. AI 仍寫出「我來改 ci/projects.yml、你是 admin 有權限」→ 該輪結束 → 語意查核拿 412 全文比對這段輸出 → 判定違反 → `exit 2` 回饋 → **下一輪 AI 更正**。Vin 仍會看到那句錯話一次。
-3. AI 若真的動手編輯 `ci/projects.yml` → 硬擋，訊息指名 Eric 與開單做法。
+3. AI 若真的動手編輯 `ci/projects.yml` → 硬擋，訊息指名 member-6 與開單做法。
 
 分工：注入降低發生機率、語意查核限制它活多久、硬擋保證它到不了檔案。**沒有一道能保證錯話不出現在 Vin 眼前** —— Claude Code 沒有「講出口之前」的攔截時機。
 
@@ -325,7 +325,7 @@ README 與對外說明不得宣稱「OwnMind 會強制 AI 遵守規範」。
 
 ### 8.2 路徑歸屬這類規範，正確位置其實在被保護的 repo 上
 
-412 防的是所有工程師與所有工具，不只 AI。一體適用的做法是在 company host 的 GitLab 設 push rule／CODEOWNERS。兩者互補：伺服器端擋「推得上去」，用戶端擋「浪費一整輪才發現推不上去」。**要不要一併請 Eric 加，待 Vin 決定。**
+412 防的是所有工程師與所有工具，不只 AI。一體適用的做法是在 company host 的 GitLab 設 push rule／CODEOWNERS。兩者互補：伺服器端擋「推得上去」，用戶端擋「浪費一整輪才發現推不上去」。**要不要一併請 member-6 加，待 Vin 決定。**
 
 ### 8.3 其餘不做
 

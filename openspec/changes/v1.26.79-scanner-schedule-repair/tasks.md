@@ -4,7 +4,7 @@ Legend: `[ ]` pending · `[x]` done
 
 ## Phase 0 — Measure before designing
 
-- [x] Established from production data, not from reading code: Adam's scanner heartbeats
+- [x] Established from production data, not from reading code: member-5's scanner heartbeats
       frozen at 1.26.29 / 07-15 while his MCP heartbeat moved that morning carrying
       1.26.67. Last `token_events` row 2026-07-15.
 - [x] Ruled out "he stopped working": `activity_logs` shows `update_applied` at 09:03 the
@@ -12,12 +12,12 @@ Legend: `[ ]` pending · `[x]` done
 - [x] Identified which writer produces which row before drawing any conclusion from them.
       `os` is sent only by `mcp/index.js:358`, never by the scanner, which is what proves
       the fresh claude-code row is the MCP's and the four stale ones are the scanner's.
-- [x] Found the repair already exists (`interactive-upgrade.ps1:195`, comment naming Adam)
+- [x] Found the repair already exists (`interactive-upgrade.ps1:195`, comment naming member-5)
       and traced why it never fires: only `bootstrap.ps1` reaches it.
 - [x] Confirmed the ordering that makes a one-cycle fix possible: `mcp/index.js` pulls at
       :1685 and runs the update script at :1718, so the freshly pulled script is the one
       that executes.
-- [x] Second user with the identical shape: Amiee Kuo, scanner frozen 07-27, last token
+- [x] Second user with the identical shape: member-1, scanner frozen 07-27, last token
       event 2026-05-05.
 
 ## Phase 1 — RED

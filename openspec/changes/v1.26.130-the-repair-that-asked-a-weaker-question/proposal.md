@@ -6,7 +6,7 @@ Production, 2026-08-10. Two users, both on 1.26.125, both reported daily by the 
 
 ```
 scheduler failed | Task Scheduler entry points at another installation,
-                   not C:\Users\Adam\.ownmind
+                   not C:\Users\member-5\.ownmind
 ```
 
 `self-check.cjs` finds this because v1.26.124 taught it to compare the task's actions against
@@ -49,8 +49,8 @@ Three ways a registered task is not a working schedule, all measured on real mac
   disagreement, which is the shape of this whole defect
 
 The re-registration itself needs no change: `register-scanner-task.ps1` calls
-`Register-ScheduledTask -Force`, which replaces the same-named task in one step. Adam's and
-Eric's machines are fixed by being allowed through the gate.
+`Register-ScheduledTask -Force`, which replaces the same-named task in one step. member-5's and
+member-6's machines are fixed by being allowed through the gate.
 
 ## Why the rule is PowerShell and not a call into node
 

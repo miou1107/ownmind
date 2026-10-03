@@ -1,7 +1,7 @@
 /**
  * Build the request body for ownmind_handoff_create (v1.30.4).
  *
- * The same defect as Eric's bug #9, one table over, and therefore the same decision — see
+ * The same defect as member-6's bug #9, one table over, and therefore the same decision — see
  * mcp/lib/session-log-body.js, which this file deliberately mirrors rather than paraphrases.
  *
  * What was wrong: the tool declared `project` and `content` required and the three `from_*`

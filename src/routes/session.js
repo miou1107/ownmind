@@ -43,7 +43,7 @@ router.post('/', async (req, res) => {
     // the tool hosting it, and `model` is genuinely optional — nothing in the client
     // knows it, and requiring it discarded the entire session record to protect one
     // string. Both columns have always been nullable (db/001_init.sql:65-66); this makes
-    // the endpoint agree with its own schema. See Eric's bug #9.
+    // the endpoint agree with its own schema. See member-6's bug #9.
     const validation = requireFields(req.body, ['summary']);
     if (validation) return res.status(400).json(validation);
 

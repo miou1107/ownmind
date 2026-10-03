@@ -1,6 +1,6 @@
 // v1.26.82 — the memory cache does not record whose account it belongs to.
 //
-// Adam once installed somebody else's API key. Vin asked whether anything was left behind.
+// member-5 once installed somebody else's API key. Vin asked whether anything was left behind.
 // On the server, nothing: his machine has only ever reported under his own account since
 // telemetry began. On his disk, two things — and one of them is read by his AI on every
 // session whether or not OwnMind is working:
@@ -51,7 +51,7 @@ describe('the memory cache records which account it belongs to', () => {
   });
 
   it('refuses a cache written for a different account', () => {
-    // Adam's case. Someone else's profile and iron rules, still on disk, still being read.
+    // member-5's case. Someone else's profile and iron rules, still on disk, still being read.
     const p = tmpCache();
     writeCache({ sync_token: 't1', data: { profile: { title: 'somebody else' } } }, p, fs, ACC_A);
     assert.equal(readCache(p, fs, ACC_B), null, 'another account\'s memories were handed over');

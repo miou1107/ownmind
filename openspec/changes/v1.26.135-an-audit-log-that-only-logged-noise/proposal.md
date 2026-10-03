@@ -72,7 +72,7 @@ model rather than one per message, and that row is exactly the notification want
 
 The event still has to be *ingested* before it can be audited, so a model that appears only
 on a machine whose collector is dead still produces nothing. That is a separate problem,
-tracked against Amiee's and Joanna's machines.
+tracked against member-1's and member-2's machines.
 
 `model_pricing` remains in the schema and remains stale. Nothing reads it now except this
 allowlist. Removing it is a larger cleanup and is not in this change.

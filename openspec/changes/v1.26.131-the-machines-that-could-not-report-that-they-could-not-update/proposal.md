@@ -7,8 +7,8 @@ Production, 2026-08-10, queried directly against `activity_logs` — no join, no
 | | client version | activity events, all time |
 |---|---|---|
 | seven users | 1.26.125 – 1.26.128 | 16,733 rows, of which 8,087 `update_skipped` |
-| Amiee | 1.26.57, frozen since 08-04 | **0** |
-| Joanna | 1.26.27, frozen since 06-18 | **0** |
+| member-1 | 1.26.57, frozen since 08-04 | **0** |
+| member-2 | 1.26.27, frozen since 06-18 | **0** |
 
 Zero is not "zero in the last twenty days". Neither user has ever produced a single row, from
 any source. Both machines send an authenticated MCP heartbeat every day, so the API URL and
@@ -47,7 +47,7 @@ event, both copies, in silence.
 This exact expression has already cost this project once. The comment above the auto-update
 block in `mcp/index.js` records v1.17.22:
 
-> root cause of Alice (Windows LAPTOP-G95HIQ3V) / Bob being stuck on old versions:
+> root cause of Alice (Windows) / Bob being stuck on old versions:
 > `process.env.HOME` is undefined on Windows
 
 `index.js` was moved to `os.homedir()` then. Its logger, one import away, was not — so the

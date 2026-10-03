@@ -393,7 +393,7 @@ if (Test-Path $ScannerJs) { Write-Host "[ OK ] Usage scanner ready" }
 
 # --- 2c. Repair the scanner's scheduled task if it has died (v1.26.79) ---
 # Having a current scanner on disk says nothing about whether anything still runs it.
-# Adam's machine had both the files and the auto-update working, and no scheduled task,
+# member-5's machine had both the files and the auto-update working, and no scheduled task,
 # for three weeks.
 #
 # The exit code is deliberately not propagated. The sync itself succeeded, and failing the
@@ -599,7 +599,7 @@ if (Test-Path $CursorDir) {
 }
 
 # --- 7. Have the machine report its own health (v1.26.81, moved to the tail in v1.26.105) ---
-# The full self-check used to run only during install and manual upgrade. Adam's last
+# The full self-check used to run only during install and manual upgrade. member-5's last
 # complete report is dated 2026-05-29; his machine auto-updated daily for two months
 # afterwards and said nothing, while his scanner was already dead — and the May report he
 # did send already held the answer (bash_resolution.selected = WSL_RELAY).

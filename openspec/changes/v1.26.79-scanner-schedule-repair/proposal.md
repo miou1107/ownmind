@@ -8,7 +8,7 @@ databases. It is registered once, at install time. Nothing ever looks at it agai
 When it dies, nothing says so. The dashboard renders the person's usage columns as
 `尚無資料`, which is indistinguishable from "this person did no work".
 
-Measured on production 2026-08-06. Adam's `collector_heartbeat` rows:
+Measured on production 2026-08-06. member-5's `collector_heartbeat` rows:
 
 ```
 tool          machine  os     version   last_reported
@@ -24,7 +24,7 @@ morning at 09:03, and `update_skipped` 156 times over the month. Files were bein
 daily. Only the schedule was gone, and it had been gone for three weeks. His last
 `token_events` row is 2026-07-15.
 
-Amiee Kuo has the same shape: scanner rows frozen at 1.26.26 since 07-27, last token event
+member-1 has the same shape: scanner rows frozen at 1.26.26 since 07-27, last token event
 2026-05-05.
 
 ## The part that makes this worth its own release
@@ -32,7 +32,7 @@ Amiee Kuo has the same shape: scanner rows frozen at 1.26.26 since 07-27, last t
 **The repair already exists and cannot reach the people who need it.**
 
 `scripts/interactive-upgrade.ps1:195` re-registers the scheduled task, and the comment
-written above it in v1.26.65 names this exact user: 「Adam 因此斷了二十天」.
+written above it in v1.26.65 names this exact user: 「member-5 因此斷了二十天」.
 
 But only `bootstrap.ps1` calls `interactive-upgrade.ps1`, and `bootstrap.ps1` is something
 a person types by hand. Nobody types it. The path that actually runs on these machines,
@@ -57,7 +57,7 @@ A fix built for a failure, sitting on a road that failure never travels, is not 
 
 ## Explicitly not in scope
 
-- **Backfill.** The three weeks of Adam's usage are gone. Nothing reconstructs them.
+- **Backfill.** The three weeks of member-5's usage are gone. Nothing reconstructs them.
 - **Restructuring `install.sh`'s registration.** Its `launchctl unload` → `load` pair is
   the delete-then-create shape v1.26.65 removed from Windows, and it is a real hazard.
   But install-time registration must overwrite an existing agent, and rewriting that is a

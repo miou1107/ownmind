@@ -43,25 +43,25 @@ function healthy(user_id, name, machine, days) {
 /**
  * The production snapshot. Ages in days, as measured.
  *
- * Amiee's machine is the broken one: her `claude-code` row is written by the MCP
+ * member-1's machine is the broken one: her `claude-code` row is written by the MCP
  * on every IDE start and is hours old, while the three the scanner writes have
  * been frozen since 07-27. Her last actual usage event was 94 days ago.
  */
 const PRODUCTION = [
-  ...healthy(1, 'Adam', 'after', 0.3),
-  beat(2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'claude-code', 0.2),
-  beat(2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'cursor', 11.2),
-  beat(2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'antigravity', 11.2),
-  beat(2, 'Amiee Kuo', 'LAPTOP-RGE2HCSQ', 'opencode', 11.2),
-  ...healthy(3, 'Eric', 'LAPTOP-G95HIQ3V', 0.1),
-  ...healthy(4, 'Joanna', 'Fontrip-Joanna', 4.2),
-  ...healthy(5, 'Michelle', 'cengmingxuandeMacBook-Pro.local', 1.2),
-  ...healthy(5, 'Michelle', 'cengminuandeMBP', 0.4),
-  ...healthy(6, 'Phoebe', 'phoebelin.local', 0.2),
+  ...healthy(1, 'member-5', 'after', 0.3),
+  beat(2, 'member-1', 'LAPTOP-MEMBER1', 'claude-code', 0.2),
+  beat(2, 'member-1', 'LAPTOP-MEMBER1', 'cursor', 11.2),
+  beat(2, 'member-1', 'LAPTOP-MEMBER1', 'antigravity', 11.2),
+  beat(2, 'member-1', 'LAPTOP-MEMBER1', 'opencode', 11.2),
+  ...healthy(3, 'member-6', 'LAPTOP-MEMBER6', 0.1),
+  ...healthy(4, 'member-2', 'Fontrip-member-2', 4.2),
+  ...healthy(5, 'member-8', 'MEMBER8-MAC.local', 1.2),
+  ...healthy(5, 'member-8', 'MEMBER8-MBP', 0.4),
+  ...healthy(6, 'member-3', 'MEMBER3-MAC.local', 0.2),
   ...healthy(7, 'Vincent Kao', 'Vincent.local', 0.0),
-  ...healthy(8, 'Vin-windows-test', 'DESKTOP-8DD75VJ', 0.0),
+  ...healthy(8, 'Vin-windows-test', 'DESKTOP-MEMBER7', 0.0),
   ...healthy(8, 'Vin-windows-test', 'TANK', 0.5),
-  ...healthy(9, '采瑤', 'LAPTOP-MBGGLV2J', 0.4),
+  ...healthy(9, 'member-4', 'LAPTOP-MEMBER5', 0.4),
 ];
 
 describe('v1.26.102 — against the production snapshot', () => {
@@ -69,8 +69,8 @@ describe('v1.26.102 — against the production snapshot', () => {
 
   it('finds the one machine whose scanner is dead', () => {
     assert.equal(silences.length, 1);
-    assert.equal(silences[0].machine, 'LAPTOP-RGE2HCSQ');
-    assert.equal(silences[0].user_name, 'Amiee Kuo');
+    assert.equal(silences[0].machine, 'LAPTOP-MEMBER1');
+    assert.equal(silences[0].user_name, 'member-1');
   });
 
   it('names the tools that stopped, not the one still beating', () => {
@@ -86,10 +86,10 @@ describe('v1.26.102 — against the production snapshot', () => {
   });
 
   it('stays quiet about the other ten machines', () => {
-    // Without this the feature is a machine that shouts at everybody. Joanna's
-    // whole computer had been off for 4.2 days and Michelle's older Mac for 1.2;
+    // Without this the feature is a machine that shouts at everybody. member-2's
+    // whole computer had been off for 4.2 days and member-8's older Mac for 1.2;
     // neither is a fault, and neither has anything the person could act on.
-    assert.deepEqual(silences.filter((s) => s.machine !== 'LAPTOP-RGE2HCSQ'), []);
+    assert.deepEqual(silences.filter((s) => s.machine !== 'LAPTOP-MEMBER1'), []);
   });
 });
 

@@ -996,7 +996,7 @@ scripts/migrate-to-company host.sh           — 一次性資料搬遷。在本�
                                        而且沒有一步會報錯），寫完比對指紋。
                                        工作目錄刻意放在 repo 外面，dump 內含
                                        每位使用者的明文 api_key
-docs/deploy-to-company host.html             — 給 Vin 與 Eric 看的部署說明書。發版流程圖、
+docs/deploy-to-company host.html             — 給 Vin 與 member-6 看的部署說明書。發版流程圖、
                                        切換當天的停機與退回分界、跟其他專案的互相影響、
                                        伺服器規格（容器、埠、env 全文、nginx 那段、
                                        CI 四個值）
@@ -4055,7 +4055,7 @@ scripts/install-helpers/schedule-health.ps1      — 新增、Windows 排程健�
                                                     「無法判斷」，閘門就變回修之前那樣而測試
                                                     全綠
 tests/scanner-schedule-ownership.test.js         — 27 tests：同一張案例表跑 JS 與 PowerShell
-                                                    兩份實作（含 Adam 那台的真實 actions 字串）、
+                                                    兩份實作（含 member-5 那台的真實 actions 字串）、
                                                     停用/讀不到狀態仍算壞掉、多個 action 不能
                                                     只讀第一個、修復前的閘門與修復後的驗證都要
                                                     問歸屬且要真的中斷、三邊算出同一個安裝目錄
@@ -5780,7 +5780,7 @@ scripts/install-helpers/resolve-credentials.cjs — v1.26.82 金鑰跟網址到�
                                               依序找 settings.json、settings.local.json、
                                               ~/.claude.json、環境變數。多回一個
                                               background_safe：金鑰只在環境變數時，排程叫起來的
-                                              掃描器讀不到，那是 Adam 掃描器死掉的真正原因
+                                              掃描器讀不到，那是 member-5 掃描器死掉的真正原因
 shared/helpers.js                           — v1.26.82 readCredentials 改問上面那支（不帶參數時）。
                                               帶 settingsPath 維持只讀單一檔案的舊行為
 hooks/ownmind-session-start.js              — v1.26.83 載入成功/失敗補上傳伺服器（bash 版一直有、
@@ -5791,7 +5791,7 @@ hooks/ownmind-session-start.sh              — v1.26.82 內嵌的找金鑰改�
 hooks/ownmind-usage-scanner.js              — v1.26.82 找不到金鑰的錯誤訊息列出全部三個位置
                                               （原本只寫 settings.json，把人指去最不可能的地方）；
                                               金鑰只在環境變數時明白警告
-tests/resolve-credentials.test.js           — 新增。含一個直接重現 Adam 狀況的案例
+tests/resolve-credentials.test.js           — 新增。含一個直接重現 member-5 狀況的案例
 hooks/lib/conditional-sync.js               — v1.26.82 記憶快取蓋帳號指紋（伺服器+金鑰雜湊，
                                               不存金鑰）。對不上整份拒收重新下載；沒指紋的
                                               舊快取一律當別人的。掃描器 v1.26.69 修過同一個
@@ -5853,11 +5853,11 @@ tests/session-hook-command.test.js          — v1.26.80 把 update.sh 裡那段
                                               ensure-session-hook.cjs 的新呼叫方式
 scripts/install-helpers/ensure-session-hook.cjs — v1.26.86 SessionStart 設定修復的唯一實作。
                                               原本 install.ps1 用 PowerShell 字串傳遞鏈做這件事，
-                                              從 v1.26.82 起一次都沒真的執行過（采瑤升到 84 之後
+                                              從 v1.26.82 起一次都沒真的執行過（member-4升到 84 之後
                                               設定仍是舊的單一 null matcher，就是鐵證）。
                                               自己讀寫設定檔、原子寫入、讀不懂或不是設定物件
                                               就拒改並回報錯誤；.no-session-hook 開關由它遵守
-tests/ensure-session-hook.test.js           — v1.26.86 把修復程式當獨立程序真的跑，餵采瑤跟 Adam
+tests/ensure-session-hook.test.js           — v1.26.86 把修復程式當獨立程序真的跑，餵member-4跟 member-5
                                               兩台機器逐字真實的壞設定；「安裝腳本忘記呼叫它」
                                               用破壞法驗過會紅
 tests/post-commit-version-reminder.test.js  — v1.26.86 在臨時 git repo 實跑 post-commit 掛勾：
@@ -6132,13 +6132,13 @@ openspec/changes/archive/single-console-consolidation/tasks.md
 >   這個張力；第 9 條的撤銷那半句原文沒有，改成標明是本次觀察、不是原條目的宣稱。
 > - 2 條 Minor 是確認不是缺陷（legacy 註解修改正當、第 3/4/5 段有遵守）。
 
-## v1.26.61 修改（Eric 回報 #9：少一個 model 不該讓整份工作紀錄消失）
+## v1.26.61 修改（member-6 回報 #9：少一個 model 不該讓整份工作紀錄消失）
 
 新增檔：
 ```
 mcp/lib/session-log-body.js       — 決定一份工作紀錄可以缺什麼。tool 自己填、model 不編、summary 不給預設
 src/utils/session-buckets.js      — 空的 tool／model 歸到「未回報」，不要變成一個叫 null 的圖表分類
-tests/session-log-args.test.js    — 15 項，含重現 Eric 那次「只有 summary」的呼叫
+tests/session-log-args.test.js    — 15 項，含重現 member-6 那次「只有 summary」的呼叫
 openspec/changes/archive/v1.26.61-log-session-required-args/proposal.md
 ```
 
@@ -7015,7 +7015,7 @@ openspec/changes/v1.26.28-secret-scan-separator-lines/tasks.md     — v1.26.28 
 
 ## v1.26.25 修改（去識別化補漏 — Gemini 雙審查）
 
-修改檔：`tests/upgrade-complete-beacon.test.js`（fixture adam-laptop→bob-laptop）、`.github/CODEOWNERS`（中文註解英文化、維護者帳號保留）。
+修改檔：`tests/upgrade-complete-beacon.test.js`（fixture member-5-laptop→bob-laptop）、`.github/CODEOWNERS`（中文註解英文化、維護者帳號保留）。
 
 ## v1.26.24 修改（新增 .mcp.local.json 範本）
 

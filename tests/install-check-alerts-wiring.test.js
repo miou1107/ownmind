@@ -29,7 +29,7 @@ const VALID_BODY = {
   trigger: 'post_upgrade',
   client_version: '1.26.86',
   platform: 'win32',
-  machine: 'LAPTOP-MBGGLV2J',
+  machine: 'LAPTOP-MEMBER5',
   checks: [{ name: 'memory_load', status: 'fail', detail: 'WSL launcher', fix: 'Re-run the installer' }],
   summary: { pass: 9, warn: 0, fail: 1 },
 };

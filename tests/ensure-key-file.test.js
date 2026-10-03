@@ -99,7 +99,7 @@ describe('ensure-key-file.cjs — executed as a process, against real files', ()
   });
 
   it('does not copy a URL that another file already configures', () => {
-    // Adam's shape: URL in ~/.claude.json, key in the environment. Copying the URL into
+    // member-5's shape: URL in ~/.claude.json, key in the environment. Copying the URL into
     // settings.json as well makes a second copy that goes stale the day he edits the
     // first one, and settings.json wins the lookup. Only the missing thing gets written.
     const s = sandbox({ hooks: {} });

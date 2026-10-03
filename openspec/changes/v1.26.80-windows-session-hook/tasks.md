@@ -4,20 +4,20 @@ Legend: `[ ]` pending · `[x]` done
 
 ## Phase 0 — Measure
 
-- [x] Vin said "adam 和 采瑤是 windows". Joined `collector_heartbeat` / `install_check_logs`
+- [x] Vin said "member-5 和 member-4是 windows". Joined `collector_heartbeat` / `install_check_logs`
       against `activity_logs` init source and the split was total: every Mac loads the hook,
       no Windows machine ever has.
 
       ```
       Vincent.local                    darwin   11275 hook loads
-      cengmingxuandeMacBook-Pro.local  darwin     675
-      phoebelin.local                  darwin     271
-      after            (Adam)          win32        0
-      LAPTOP-G95HIQ3V  (Eric)          win32        0
-      LAPTOP-MBGGLV2J  (采瑤)           win32        0
-      LAPTOP-RGE2HCSQ  (Amiee)         win32        0
-      Fontrip-Joanna                   win32        0
-      TANK / DESKTOP-8DD75VJ           win32        0
+      MEMBER8-MAC.local  darwin     675
+      MEMBER3-MAC.local                  darwin     271
+      after            (member-5)          win32        0
+      LAPTOP-MEMBER6  (member-6)          win32        0
+      LAPTOP-MEMBER5  (member-4)           win32        0
+      LAPTOP-MEMBER1  (member-1)         win32        0
+      Fontrip-member-2                   win32        0
+      TANK / DESKTOP-MEMBER7           win32        0
       ```
 
       90 days, six machines, zero. The OS came from `install_check_logs`, which has carried
@@ -25,7 +25,7 @@ Legend: `[ ]` pending · `[x]` done
 - [x] Falsified the first theory before building on it. "compact mode drops
       `INSTRUCTIONS_SOP`, so the AI is never told to log sessions" fit the session-log data
       — until the compliance instruction, which *is* sent in compact, turned out to produce
-      0 for Phoebe and 采瑤 as well. Delivery was not the variable.
+      0 for member-3 and member-4 as well. Delivery was not the variable.
 - [x] Root cause read straight from the source, no Windows machine needed: `install.ps1`
       chooses Node when no bash is found, and `update.ps1` recognises that entry, sees it
       lacks the four matchers `install.ps1` never adds, deletes it, and writes bash back.
@@ -98,16 +98,16 @@ one recorded as follow-up work.
 
 ## Phase 4b — The repair was on a road the affected users do not travel
 
-Found while working out how 采瑤 could verify this release herself. It would have made the
+Found while working out how member-4 could verify this release herself. It would have made the
 release unverifiable by exactly the people it exists for.
 
 - [x] `bootstrap.ps1` → `interactive-upgrade.ps1` → `install.ps1`, and **never**
       `update.ps1`. The repair only lived in `update.ps1`, which runs from the MCP
-      auto-update. 采瑤's MCP has started twice in a month.
+      auto-update. member-4's MCP has started twice in a month.
 - [x] `install.ps1` gated on `if (-not $sessionExists)`. Every broken machine *has* an
       entry; it is the contents that are wrong. That gate can never repair anything.
 - [x] Both installers now ask `needsRewrite` and replace a wrong entry instead of skipping.
-- [x] Verified by executing the real `install.sh` node block against 采瑤's exact settings
+- [x] Verified by executing the real `install.sh` node block against member-4's exact settings
       shape with `process.platform` forced to `win32`: four bash entries removed, four Node
       entries written. Run again as darwin: no output, no change.
 - [x] Third time today the same shape appeared: v1.26.79 (the scheduler repair only on the
@@ -123,6 +123,6 @@ release unverifiable by exactly the people it exists for.
 
 - [ ] Unverifiable on Windows until item 24 has a machine. The proof is one number moving:
       hook-sourced `init` events from a Windows machine going from 0 to non-zero.
-- [ ] 采瑤's OwnMind has effectively never run (12 activity events, ever, against 2,854
+- [ ] member-4's OwnMind has effectively never run (12 activity events, ever, against 2,854
       work events in two weeks). This release removes one reason. Whether it was the only
       one is not yet known.

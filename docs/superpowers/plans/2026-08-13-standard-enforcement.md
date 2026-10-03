@@ -226,7 +226,7 @@ import { buildBundle } from '../src/routes/enforcement-bundle.js';
 
 const rows = [
   { id: 412, type: 'team_standard', title: 'ci ownership', tags: ['trigger:ci'],
-    metadata: { enforcement: { keywords: ['company host'], guard: { repo_match: 'company host-repo', paths: ['ci/**'], owner: 'Eric' } } } },
+    metadata: { enforcement: { keywords: ['company host'], guard: { repo_match: 'company host-repo', paths: ['ci/**'], owner: 'member-6' } } } },
   { id: 125, type: 'iron_rule', title: 'conclusion first', tags: ['trigger:always'],
     metadata: { enforcement: { always_check: true } } },
   { id: 7, type: 'iron_rule', title: 'no enforcement block', tags: ['trigger:edit'], metadata: {} },
@@ -251,7 +251,7 @@ test('guards carry only the rules with a guard block', () => {
   const { guards } = buildBundle(rows);
   assert.deepEqual(guards.map((g) => g.id), [412]);
   assert.deepEqual(guards[0].paths, ['ci/**']);
-  assert.equal(guards[0].owner, 'Eric');
+  assert.equal(guards[0].owner, 'member-6');
 });
 
 test('tags survive, because selection uses them for un-annotated rules', () => {
@@ -599,7 +599,7 @@ const keywordRule = {
 };
 const repoRule = {
   id: 3, type: 'team_standard', title: 'ci ownership',
-  content: 'ci/ belongs to Eric', tags: [],
+  content: 'ci/ belongs to member-6', tags: [],
   metadata: { enforcement: { guard: { repo_match: 'fontrip-agentic-process-automation' } } },
 };
 const unrelated = {
@@ -813,7 +813,7 @@ import assert from 'node:assert/strict';
 import { buildJudgeMessages, normaliseVerdicts } from '../src/lib/enforcement/judge-prompt.js';
 
 const rules = [
-  { id: 412, title: 'ci ownership', judgeText: 'Only Eric may edit ci/. No engineer may.' },
+  { id: 412, title: 'ci ownership', judgeText: 'Only member-6 may edit ci/. No engineer may.' },
 ];
 
 test('the prompt carries the rule id, title and full text', () => {
@@ -821,7 +821,7 @@ test('the prompt carries the rule id, title and full text', () => {
   const all = msgs.map((m) => m.content).join('\n');
   assert.match(all, /412/);
   assert.match(all, /ci ownership/);
-  assert.match(all, /Only Eric may edit/);
+  assert.match(all, /Only member-6 may edit/);
   assert.match(all, /I will edit ci\/projects\.yml/);
 });
 
@@ -834,7 +834,7 @@ test('the prompt tells the judge to quote evidence and to default to not-violate
 
 test('accepts the parsed object callLLMSwitch actually returns', () => {
   const judged = {
-    verdicts: [{ ruleId: 412, violated: true, evidence: 'I will edit ci/projects.yml', fix: 'open an issue for Eric' }],
+    verdicts: [{ ruleId: 412, violated: true, evidence: 'I will edit ci/projects.yml', fix: 'open an issue for member-6' }],
   };
   const { verdicts, parseFailed } = normaliseVerdicts(judged);
   assert.equal(parseFailed, false);
@@ -1033,7 +1033,7 @@ const payload = {
 
 const rule412 = {
   id: 412, type: 'team_standard', title: 'ci ownership',
-  content: 'Only Eric may edit ci/. No engineer including the owner may.',
+  content: 'Only member-6 may edit ci/. No engineer including the owner may.',
   tags: [], metadata: { enforcement: { keywords: ['company host'] } },
 };
 
@@ -1047,7 +1047,7 @@ test('an account with enforcement off never reaches the model', async () => {
 
 test('a violation comes back with the rule title, the evidence and the fix', async () => {
   const llmFn = async () => ({
-    verdicts: [{ ruleId: 412, violated: true, evidence: 'I will edit ci/projects.yml', fix: 'open an issue for Eric' }],
+    verdicts: [{ ruleId: 412, violated: true, evidence: 'I will edit ci/projects.yml', fix: 'open an issue for member-6' }],
   });
   const app = appWith({ memories: [rule412], llmFn });
   const { json } = await post(app, payload);
@@ -1203,7 +1203,7 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
       //
       // Verified against a real Postgres with this repo's migrations on 2026-08-13: with a
       // plain owner filter, a team standard uploaded by a colleague does not come back at
-      // all. The standard from the 2026-08-13 incident is exactly that - Eric's, not the
+      // all. The standard from the 2026-08-13 incident is exactly that - member-6's, not the
       // pilot user's - so the owner-scoped query left this feature blind to the one rule it
       // was built to enforce, while every route test (which injects its own rows) stayed
       // green. src/routes/memory.js:866 documents the same thing.
@@ -1412,11 +1412,11 @@ test('the backoff expires', async () => {
 });
 
 test('the feedback text names the rule, quotes the evidence and says what to do', () => {
-  const text = formatViolationFeedback([{ ruleId: 412, ruleTitle: 'ci ownership', evidence: 'I will edit ci/projects.yml', fix: 'open an issue for Eric' }]);
+  const text = formatViolationFeedback([{ ruleId: 412, ruleTitle: 'ci ownership', evidence: 'I will edit ci/projects.yml', fix: 'open an issue for member-6' }]);
   assert.match(text, /412/);
   assert.match(text, /ci ownership/);
   assert.match(text, /I will edit ci\/projects\.yml/);
-  assert.match(text, /open an issue for Eric/);
+  assert.match(text, /open an issue for member-6/);
 });
 
 test('the not-run notice says plainly that no check happened', () => {
@@ -2039,7 +2039,7 @@ const standard = {
   id: 412, title: 'ci ownership',
   repo_match: 'fontrip-agentic-process-automation',
   paths: ['ci/**', '.gitlab-ci.yml'],
-  owner: 'Eric',
+  owner: 'member-6',
 };
 
 // Fake git: answers according to the directory it is asked about, which is the whole point.
@@ -2106,7 +2106,7 @@ test('the block message names the standard, the owner and the correct action', (
   const v = findGuardViolation('/work/company host/ci/projects.yml', [standard], { execImpl });
   const msg = formatGuardBlock(v);
   assert.match(msg, /412/);
-  assert.match(msg, /Eric/);
+  assert.match(msg, /member-6/);
   assert.match(msg, /issue/i);
 });
 
@@ -2300,7 +2300,7 @@ import { editReminder } from '../hooks/ownmind-edit-reminder.js';
 
 const standard = {
   id: 412, title: 'ci ownership',
-  repo_match: 'enforcement-guard-fixture', paths: ['ci/**'], owner: 'Eric',
+  repo_match: 'enforcement-guard-fixture', paths: ['ci/**'], owner: 'member-6',
 };
 
 /** A real git repo, because the guard shells out to real git. */
@@ -2669,18 +2669,18 @@ import { buildInjection } from '../hooks/ownmind-prompt-inject.js';
 // that fed this function a database row would pass while the real hook matched nothing.
 const standard = {
   id: 412, title: 'ci ownership',
-  content: 'Only Eric may edit ci/.',
+  content: 'Only member-6 may edit ci/.',
   keywords: ['company host'],
   always_check: false,
   repo_match: 'company host-repo',
   paths: ['ci/**'],
-  owner: 'Eric',
+  owner: 'member-6',
 };
 
 test('a keyword match injects the standard', () => {
   const { text, injectedIds } = buildInjection([standard], 'migrate ownmind to company host', null, []);
   assert.deepEqual(injectedIds, [412]);
-  assert.match(text, /Only Eric may edit/);
+  assert.match(text, /Only member-6 may edit/);
 });
 
 test('the injection leads with the precedence declaration, before the full text', () => {
@@ -2688,7 +2688,7 @@ test('the injection leads with the precedence declaration, before the full text'
   // over it. The precedence sentence is the part that addresses that, so it goes first.
   const { text } = buildInjection([standard], 'company host', null, []);
   const precedenceAt = text.search(/優先於|takes precedence/);
-  const bodyAt = text.indexOf('Only Eric may edit');
+  const bodyAt = text.indexOf('Only member-6 may edit');
   assert.ok(precedenceAt >= 0, 'precedence declaration missing');
   assert.ok(precedenceAt < bodyAt, 'precedence must come before the full text');
 });
@@ -2697,7 +2697,7 @@ test('the forbidden paths and owner are stated up front', () => {
   const { text } = buildInjection([standard], 'company host', null, []);
   const head = text.slice(0, 500);
   assert.match(head, /ci\/\*\*/);
-  assert.match(head, /Eric/);
+  assert.match(head, /member-6/);
 });
 
 test('a standard already injected this session is not injected again', () => {
@@ -3249,14 +3249,14 @@ import { selectRules } from '../src/lib/enforcement/select-rules.js';
 import { buildJudgeMessages, normaliseVerdicts } from '../src/lib/enforcement/judge-prompt.js';
 
 const std412 = {
-  id: 412, type: 'team_standard', title: 'ci ownership belongs to Eric',
-  content: 'The /ci directory and the root .gitlab-ci.yml are maintained by Eric. '
+  id: 412, type: 'team_standard', title: 'ci ownership belongs to member-6',
+  content: 'The /ci directory and the root .gitlab-ci.yml are maintained by member-6. '
     + 'No other engineer, including admins listed in ci/projects.yml, may modify them. '
-    + 'Open an issue for Eric instead.',
+    + 'Open an issue for member-6 instead.',
   tags: [],
   metadata: { enforcement: {
     keywords: ['company host', 'onboarding', 'ci/projects.yml'],
-    guard: { repo_match: 'incident-fixture-company host', paths: ['ci/**', '.gitlab-ci.yml'], owner: 'Eric' },
+    guard: { repo_match: 'incident-fixture-company host', paths: ['ci/**', '.gitlab-ci.yml'], owner: 'member-6' },
   } },
 };
 
@@ -3290,7 +3290,7 @@ test('layer 2: a judge verdict on that reply becomes a reported violation', () =
   const judged = { verdicts: [{
     ruleId: 412, violated: true,
     evidence: 'I will add an entry to ci/projects.yml',
-    fix: 'open an issue for Eric',
+    fix: 'open an issue for member-6',
   }] };
   const { verdicts, parseFailed } = normaliseVerdicts(judged);
   assert.equal(parseFailed, false);
@@ -3475,7 +3475,7 @@ Expected: `check` 一人，其餘皆 `off`。
 | 驗的東西 | 怎麼驗的 | 結果 |
 |---|---|---|
 | `callLLMSwitch` 回傳型別 | stub HTTP server ＋ 真的 `callLLMSwitch` | 回**已解析物件**，`.verdicts` 直接可取，`.content` 是 undefined；散文會 throw。原寫法必得空字串 → 已改為直接取 `result.verdicts` |
-| 共享團隊規範撈不撈得到 | 真 Postgres 容器 ＋ 本 repo 全部 migration ＋ 事故形狀 fixture（412 屬於 Eric、禁止清單在 fragment 413、查詢者是 Vin） | `WHERE user_id = $1` **只回 125，看不到 412**；換 `buildReadableWhere` 回 125 ＋ 412；fragment 413 撈得到。已改為 `buildReadableWhere` ＋ `attachStandardFragments` |
+| 共享團隊規範撈不撈得到 | 真 Postgres 容器 ＋ 本 repo 全部 migration ＋ 事故形狀 fixture（412 屬於 member-6、禁止清單在 fragment 413、查詢者是 Vin） | `WHERE user_id = $1` **只回 125，看不到 412**；換 `buildReadableWhere` 回 125 ＋ 412；fragment 413 撈得到。已改為 `buildReadableWhere` ＋ `attachStandardFragments` |
 | 用戶端到底有沒有團隊規範 | 直接讀 Vin 本機 `~/.ownmind/cache/memories.json` | **完全沒有** —— 只有 digest 字串與 5 筆 `{id,title,hint}`。已新增 Task 0.5 建立配送路徑 |
 | 硬擋走不走得通 | 真的 `ownmind-iron-rule-check.sh` ＋ 拋棄式 HOME ＋ 樁模組 | `{"decision":"block"}` 原封不動出現在 stdout，exit 0；完整 payload（含 `content`）確實灌進來；Edit／Write／MultiEdit／NotebookEdit 四種都會走到。**設計成立，原本只是寫在錯的檔案裡** |
 
