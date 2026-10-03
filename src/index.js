@@ -5,6 +5,7 @@ import { runMigrations } from './utils/run-migrations.js';
 import { startJobs } from './jobs/weeklyReport.js';
 import { startNightlyRecomputeJob } from './jobs/nightly-recompute.js';
 import { startTouchCleanupJob } from './jobs/touch-cleanup.js';
+import { startTaskClaimExpiryJob } from './jobs/task-claim-expiry.js';
 import { startNightlyUpgradeReminderJob } from './jobs/nightly-upgrade-reminder.js';
 import { seedDefaultPasswords } from './jobs/seed-default-passwords.js';
 import { runInstallCheckAlerts } from './jobs/install-check-alerts.js';
@@ -32,6 +33,7 @@ async function start() {
     startJobs();
     startNightlyRecomputeJob();
     startTouchCleanupJob();
+    startTaskClaimExpiryJob();
     startNightlyUpgradeReminderJob();
     // v1.17.25: seed a default password for users without a password_hash (idempotent)
     seedDefaultPasswords();

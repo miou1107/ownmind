@@ -536,6 +536,31 @@ router.get('/init', async (req, res) => {
     // v1.31.0: how many lessons wait for this person on the console page. Counted inside a
     // try so a database that has not run migration 027 still answers init; null then means
     // "could not count", which the renderer treats as nothing to say.
+    // v1.31.3: the current project's open and claimed cards this person may see, at most
+    // five, the ones this person holds first. Only when the client said which project it is
+    // in; inside a try so a database without migration 030 still answers.
+    let tasksForProject = null;
+    const initProject = typeof req.query.project === 'string' ? req.query.project.trim().slice(0, 255) : '';
+    if (initProject) {
+      try {
+        const tr = await query(
+          `SELECT t.id, t.title, t.status, t.claimed_by, holder.name AS holder_name
+             FROM tasks t LEFT JOIN users holder ON holder.id = t.claimed_by
+            WHERE t.project = $1 AND t.status IN ('open', 'claimed')
+              AND (t.is_private = FALSE OR t.user_id = $2 OR t.claimed_by = $2)
+            ORDER BY (t.claimed_by = $2) DESC NULLS LAST, t.status DESC, t.created_at ASC
+            LIMIT 5`,
+          [initProject, req.user.id],
+        );
+        tasksForProject = { project: initProject, cards: tr.rows.map((t) => ({
+          id: t.id, title: t.title, status: t.status,
+          holder: t.claimed_by === req.user.id ? 'you' : (t.holder_name || null),
+        })) };
+      } catch (err) {
+        logger.warn('init tasks lookup failed', { error: err.message });
+      }
+    }
+
     let lessonsWaiting = null;
     try {
       const lessonsResult = await query(
@@ -861,6 +886,7 @@ router.get('/init', async (req, res) => {
       locale: accountLocale || null,
       active_handoff: activeHandoff,
       lessons_waiting: lessonsWaiting,
+      tasks: tasksForProject,
       weekly_summary: weeklySummary,
       memory_health: memoryHealth,
       pending_review: pendingReview,

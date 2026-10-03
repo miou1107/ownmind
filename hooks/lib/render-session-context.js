@@ -181,6 +181,18 @@ export function renderSessionContext(data, broadcasts, {
     lines.push('');
   }
 
+  // v1.31.3: the current project's task cards, so "continue #12" means something in a new
+  // conversation. A reminder, declared as such: it lists, it does not claim.
+  if (d.tasks && Array.isArray(d.tasks.cards) && d.tasks.cards.length > 0) {
+    lines.push('## Task cards (' + d.tasks.project + ')');
+    for (const c of d.tasks.cards) {
+      const who = c.status === 'claimed' ? (c.holder === 'you' ? ' — claimed by you' : ' — claimed by ' + (c.holder || 'someone')) : '';
+      lines.push('- #' + c.id + who + ' — ' + (c.title || ''));
+    }
+    lines.push('Use ownmind_task_claim before working on one; ownmind_task_done when finished. Never mark one reviewed.');
+    lines.push('');
+  }
+
   // v1.31.0: lessons this person has not yet promoted or dismissed. A reminder for the
   // person, relayed through the AI; it changes nothing about what the AI must do.
   if (Number.isInteger(d.lessons_waiting) && d.lessons_waiting > 0) {

@@ -23,7 +23,8 @@ import { renderSessionContext } from './render-session-context.js';
 import { roleForProfile, fetchBugReportNotifications } from './bug-report-notifications.js';
 import { missingSkillsFor, missingSkillNotice } from './missing-skills.js';
 import { t } from './i18n.js';
-import { readCredentials } from '../../shared/helpers.js';
+import { readCredentials, resolveProjectName } from '../../shared/helpers.js';
+import { fetchProjectTasks } from './fetch-project-tasks.js';
 import { localDateOnly, localIsoTimestamp } from '../../shared/local-date.js';
 
 const LOG_DIR = path.join(os.homedir(), '.ownmind', 'logs');
@@ -62,6 +63,15 @@ async function httpGet(url, headers) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.text();
 }
+
+// v1.31.3 — the project's task cards, asked for outside the cache (the init payload is
+// served from disk whenever the memory table has not moved, and cards move without it).
+// hooks/ownmind-session-start.js does the same on Windows. Nothing to say leaves the block out.
+try {
+  const { apiKey, apiUrl } = readCredentials();
+  const tasks = await fetchProjectTasks({ apiUrl, apiKey, project: resolveProjectName() });
+  if (tasks) initData = { ...initData, tasks };
+} catch { /* a reminder; its absence must never cost the session its context */ }
 
 let notifications = null;
 try {

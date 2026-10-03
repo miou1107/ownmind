@@ -92,6 +92,11 @@ Claude Code 輸入框下方的 🟢／🔴 OwnMind 按鈕，用來看 OwnMind �
 | ownmind_disable | 停用記憶 |
 | ownmind_handoff_create | 建立交接 |
 | ownmind_handoff_accept | 接受交接 |
+| ownmind_task_create | 開一張任務卡，之後的對話（或排程）來領（v1.31.3） |
+| ownmind_task_list | 看專案的任務卡，或我手上的 |
+| ownmind_task_claim | 領一張卡 |
+| ownmind_task_done | 做完回報結果 |
+| ownmind_task_drop | 做不完交回去，附原因 |
 | ownmind_dismiss_notice | 關掉一則 OwnMind 提醒（每個工具都不再出現） |
 | ownmind_log_session | 記錄 session；帶 `lessons` 記下這次卡在哪、怎麼解、下次注意什麼（v1.31.0） |
 | ownmind_get_secret | 取得密鑰 |

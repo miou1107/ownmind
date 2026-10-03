@@ -17,7 +17,8 @@ THEN the client guard refuses before any request (required-args.js), naming the 
 
 GIVEN `ownmind_task_list({ project })`
 THEN open and claimed cards of that project visible to the caller, oldest first, at most 50,
-each with id, title, status, claimed_by name, created_at.
+each with id, title, status, claimed_by name, created_at — never the body; `?full=true` (the
+console) adds body and result.
 
 GIVEN `ownmind_task_list({ mine: true })`
 THEN cards the caller owns or has claimed, any status except `reviewed`/`dropped`.
