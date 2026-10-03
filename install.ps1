@@ -685,8 +685,40 @@ if (-not $shPath) {
     Write-Host "[WARN] source not found: $CommitMsgSrc, skipping commit-msg hook" -ForegroundColor Yellow
   }
 
+  # Every other hook name gets the pass-through (same list and reasoning as install.sh):
+  # with core.hooksPath set globally git stops looking in each repository's .git/hooks, so
+  # a hook name with no file here was skipped in silence — Git LFS's pre-push among them.
+  $PassthroughSrc = Join-Path $OwnmindDir "hooks\ownmind-git-passthrough"
+  $passthroughCount = 0
+  foreach ($ptName in @("pre-push", "post-checkout", "post-merge")) {
+    $ptDest = Join-Path $HOME ".ownmind\git-hooks\$ptName"
+    # Never overwrite a hook that is not OwnMind's: with a global hooks path, `git lfs install`
+    # writes its own pre-push here, and replacing it would break LFS for whoever set it up.
+    if ((Test-Path $ptDest) -and -not ([System.IO.File]::ReadAllText($ptDest).Contains("OWNMIND-PASSTHROUGH-HOOK"))) {
+      Write-Host "[INFO] Kept your own git $ptName hook in ~/.ownmind/git-hooks (not replaced)"
+      continue
+    }
+    if (Copy-AsLf -Src $PassthroughSrc -Dest $ptDest) { $passthroughCount++ }
+  }
+  if ($passthroughCount -gt 0) {
+    Write-Host "[ OK ] Installed $passthroughCount pass-through git hooks (repository hooks such as Git LFS pre-push keep running)"
+  }
+
   # 設定 global git hooks path（只有 sh.exe 可用時才設，不然會壞所有 commit）
   $gitHooksPath = Join-Path $HOME ".ownmind\git-hooks"
+  # Remember a global hooks path set before OwnMind, so OwnMind's hooks hand on to it. It
+  # used to be overwritten and forgotten. Recorded once.
+  $previousHooksPath = (git config --global --get core.hooksPath | Out-String).Trim()
+  if ($previousHooksPath.StartsWith("~/") -or $previousHooksPath.StartsWith("~\")) { $previousHooksPath = Join-Path $HOME $previousHooksPath.Substring(2) }
+  $previousRecord = Join-Path $gitHooksPath ".previous-hooks-path"
+  # OwnMind's own directory can come back spelled C:\… or /c/… (install.sh under Git Bash);
+  # any spelling ending in .ownmind/git-hooks is ours, not a previous path.
+  $isOwnDir = ($previousHooksPath -replace '\\', '/').TrimEnd('/') -match '(^|/)\.ownmind/git-hooks$'
+  if ($previousHooksPath -and -not $isOwnDir -and -not (Test-Path $previousRecord)) {
+    # sh reads this file: forward slashes, no BOM, LF.
+    [System.IO.File]::WriteAllText($previousRecord, ($previousHooksPath -replace '\\', '/') + "`n")
+    Write-Host "[ OK ] Kept your previous global git hooks path; OwnMind's hooks will hand on to it: $previousHooksPath"
+  }
   git config --global core.hooksPath $gitHooksPath
   Write-Host "[ OK ] Set git global hooks path: $gitHooksPath"
 }

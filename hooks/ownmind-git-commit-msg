@@ -41,6 +41,15 @@ if [ -f "$HOOK_JS" ]; then
   fi
 fi
 
+# The global hooks path from before OwnMind took it over, recorded by the installer.
+PREV_FILE="$(dirname "$0")/.previous-hooks-path"
+if [ -f "$PREV_FILE" ]; then
+  PREV_DIR="$(cat "$PREV_FILE")"
+  if [ -n "$PREV_DIR" ] && [ -x "$PREV_DIR/commit-msg" ] && [ "$(CDPATH= cd "$PREV_DIR" && pwd)" != "$(CDPATH= cd "$(dirname "$0")" && pwd)" ]; then
+    "$PREV_DIR/commit-msg" "$MSG_FILE" || exit $?
+  fi
+fi
+
 # Chain existing hooks (once core.hooksPath is set git ignores .git/hooks/, so chain
 # manually — same arrangement as the pre-commit wrapper).
 #
@@ -48,7 +57,7 @@ fi
 # carries the command's exit status, so without it a `git rev-parse` that fails — no repo,
 # or git not on the hook's PATH — kills this script at 128 with nothing printed, and git
 # reports only that the hook refused the commit.
-GIT_DIR_PATH="$(git rev-parse --git-dir 2>/dev/null || true)"
+GIT_DIR_PATH="$(git rev-parse --git-common-dir 2>/dev/null || true)"
 if [ -n "$GIT_DIR_PATH" ] && [ -x "$GIT_DIR_PATH/hooks/commit-msg" ]; then
   "$GIT_DIR_PATH/hooks/commit-msg" "$MSG_FILE"
   exit $?

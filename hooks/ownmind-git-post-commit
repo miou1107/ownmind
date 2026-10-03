@@ -5,8 +5,17 @@
 node "$HOME/.ownmind/hooks/ownmind-git-post-commit.js"
 
 # Chain existing hooks
-if [ -x "$(git rev-parse --git-dir 2>/dev/null)/hooks/post-commit" ]; then
-  "$(git rev-parse --git-dir)/hooks/post-commit"
+# The global hooks path from before OwnMind took it over, recorded by the installer.
+PREV_FILE="$(dirname "$0")/.previous-hooks-path"
+if [ -f "$PREV_FILE" ]; then
+  PREV_DIR="$(cat "$PREV_FILE")"
+  if [ -n "$PREV_DIR" ] && [ -x "$PREV_DIR/post-commit" ] && [ "$(CDPATH= cd "$PREV_DIR" && pwd)" != "$(CDPATH= cd "$(dirname "$0")" && pwd)" ]; then
+    "$PREV_DIR/post-commit"
+  fi
+fi
+
+if [ -x "$(git rev-parse --git-common-dir 2>/dev/null)/hooks/post-commit" ]; then
+  "$(git rev-parse --git-common-dir)/hooks/post-commit"
   exit $?
 fi
 if [ -x .git/hooks/post-commit.local ]; then

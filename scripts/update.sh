@@ -362,6 +362,30 @@ if [ -d "$GIT_HOOK_DIR" ]; then
     esac
   done
   [ "$repaired" -gt 0 ] && echo "[ OK ] Repaired CRLF in $repaired git hook(s)"
+
+  # Pass-through hooks (v1.30.43). With core.hooksPath pointing here, any hook name with no
+  # file in this directory was skipped in silence — Git LFS's pre-push among them. Same
+  # consent rule as pre-merge-commit above: created only where OwnMind's pre-commit is
+  # already installed, because that owner did ask for OwnMind's git hooks. Same list as
+  # install.sh.
+  PASSTHROUGH_SRC="$OWNMIND_DIR/hooks/ownmind-git-passthrough"
+  if [ -f "$GIT_HOOK_DIR/pre-commit" ] && [ -f "$PASSTHROUGH_SRC" ]; then
+    passthrough_written=0
+    for pt_name in pre-push post-checkout post-merge; do
+      pt="$GIT_HOOK_DIR/$pt_name"
+      if [ -f "$pt" ] && tr -d '\015' < "$PASSTHROUGH_SRC" | cmp -s - "$pt"; then
+        continue
+      fi
+      # Never overwrite a hook that is not OwnMind's: `git lfs install` puts its own pre-push
+      # here when a global hooks path is set.
+      if [ -f "$pt" ] && ! grep -q 'OWNMIND-PASSTHROUGH-HOOK' "$pt"; then
+        continue
+      fi
+      tr -d '\015' < "$PASSTHROUGH_SRC" > "$pt.tmp" && mv "$pt.tmp" "$pt" && chmod +x "$pt" \
+        && passthrough_written=$((passthrough_written + 1))
+    done
+    [ "$passthrough_written" -gt 0 ] && echo "[ OK ] Installed $passthrough_written pass-through git hook(s); repository hooks such as Git LFS pre-push run again"
+  fi
 fi
 
 # --- 2b. Sync usage scanner (needs shared/ module; kept under $OWNMIND_DIR for execution) ---

@@ -1,0 +1,100 @@
+#!/bin/sh
+# OwnMind git hook pass-through.
+#
+# OwnMind sets core.hooksPath globally, and from then on git stops looking in each
+# repository's own .git/hooks. OwnMind's own checks live in pre-commit, commit-msg,
+# post-commit and pre-merge-commit, which chain to the repository's hook themselves. Every
+# other hook git would look for here, find nothing, and skip without a word — Git LFS's
+# pre-push among them, so `git push` succeeded and the large files never went up.
+#
+# This one file is installed as pre-push, post-checkout and post-merge — what Git LFS needs
+# beyond post-commit, which OwnMind's own wrapper already chains — and hands the call on
+# unchanged (same arguments, same stdin, same exit status). Each hook costs a shell start
+# per git command that fires it, about 0.1 s on Windows, so the list stops there.
+#
+# In order:
+#   1. the hooks path that was configured globally before OwnMind took it over, if the
+#      installer recorded one in .previous-hooks-path next to this file;
+#   2. the repository's own hook;
+#   3. if the repository has none and uses Git LFS, Git LFS itself — what its own hook would
+#      have run. With a global hooks path, `git lfs install` writes its hooks into this
+#      directory, not .git/hooks, and refuses when a file of that name is already here, so a
+#      repository set up after OwnMind would otherwise never get them.
+# A hook that fails stops the chain with its own exit status, as git would have.
+#
+# The installers never overwrite a file here that is not this one (marker line below).
+# OWNMIND-PASSTHROUGH-HOOK
+
+unset CDPATH
+name=$(basename "$0")
+here=$(cd "$(dirname "$0")" && pwd)
+
+# Hooks that read stdin (pre-push gets the refs being pushed) need it more than once when
+# more than one runs, so keep a copy.
+stdin_copy=""
+case "$name" in
+  pre-push|post-rewrite)
+    stdin_copy=$(mktemp "${TMPDIR:-/tmp}/ownmind-hook.XXXXXX") || exit 1
+    trap 'rm -f "$stdin_copy"' EXIT
+    cat > "$stdin_copy"
+    ;;
+esac
+
+run_hook() {
+  if [ -n "$stdin_copy" ]; then
+    "$@" < "$stdin_copy"
+  else
+    "$@"
+  fi
+}
+
+# 1. The global hooks path from before OwnMind, never this directory itself.
+if [ -f "$here/.previous-hooks-path" ]; then
+  previous=$(cat "$here/.previous-hooks-path")
+  if [ -n "$previous" ] && [ -d "$previous" ]; then
+    previous_abs=$(cd "$previous" && pwd)
+    if [ "$previous_abs" != "$here" ] && [ -x "$previous_abs/$name" ]; then
+      run_hook "$previous_abs/$name" "$@" || exit $?
+    fi
+  fi
+fi
+
+# 2. The repository's own hook. git runs hooks from the top of the working tree, so in a
+#    plain checkout `.git` is right here, and asking git costs another process start — on
+#    Windows most of what this hook adds to every checkout. When git names the repository
+#    itself (GIT_DIR, e.g. --git-dir), or `.git` is a file (a linked worktree or submodule),
+#    ask git for the common directory: a worktree's hooks live in the main repository's.
+#    `|| true`: outside a repository there is nothing to chain.
+if [ -z "$GIT_DIR" ] && [ -d .git ]; then
+  git_dir=.git
+else
+  git_dir=$(git rev-parse --git-common-dir || true)
+fi
+if [ -n "$git_dir" ] && [ -x "$git_dir/hooks/$name" ]; then
+  run_hook "$git_dir/hooks/$name" "$@" || exit $?
+  exit 0
+fi
+
+# 3. No hook of its own: if the repository tracks files with Git LFS, run what LFS's hook
+#    would. Read with the shell's own `read`, so a repository without LFS pays no extra
+#    process start.
+uses_lfs=no
+if [ -f .gitattributes ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      *filter=lfs*) uses_lfs=yes; break ;;
+    esac
+  done < .gitattributes
+fi
+if [ "$uses_lfs" = yes ]; then
+  if command -v git-lfs > /dev/null; then
+    run_hook git lfs "$name" "$@" || exit $?
+  elif [ "$name" = pre-push ]; then
+    # What LFS's own hook does in this case: say so, and stop the push rather than send
+    # pointers without their files.
+    echo "This repository uses Git LFS, but git-lfs was not found on your PATH. Install it, or remove this repository's LFS attributes." >&2
+    exit 2
+  fi
+fi
+
+exit 0

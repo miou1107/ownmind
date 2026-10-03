@@ -705,8 +705,48 @@ install_git_hook "ownmind-git-commit-msg"  "commit-msg"
 # by nothing — and the person merging is not the person who wrote the leak.
 install_git_hook "ownmind-git-pre-merge-commit" "pre-merge-commit"
 
+# Every other hook name gets the pass-through: with core.hooksPath set globally, git stops
+# looking in each repository's .git/hooks, so a hook name with no file here was skipped in
+# silence — Git LFS's pre-push among them. The pass-through hands the call to the
+# repository's own hook (and to the pre-OwnMind global path, below).
+#
+# Only the three Git LFS relies on besides post-commit (which OwnMind's own wrapper already
+# chains): pre-push, post-checkout, post-merge. Each hook costs a shell start per git command
+# that fires it — about 0.1 s on Windows, measured 2026-10-03 — so commit-time hooks such as
+# prepare-commit-msg were left out on purpose (Vin's call).
+OWNMIND_PASSTHROUGH_HOOKS="pre-push post-checkout post-merge"
+for passthrough_name in $OWNMIND_PASSTHROUGH_HOOKS; do
+  # Never overwrite a hook that is not OwnMind's: with a global hooks path, `git lfs install`
+  # writes its own pre-push here, and replacing it would break LFS for whoever set it up.
+  passthrough_dst="$HOME/.ownmind/git-hooks/$passthrough_name"
+  if [ -f "$passthrough_dst" ] && ! grep -q 'OWNMIND-PASSTHROUGH-HOOK' "$passthrough_dst"; then
+    echo "[INFO] Kept your own git $passthrough_name hook in ~/.ownmind/git-hooks (not replaced)"
+    continue
+  fi
+  install_git_hook "ownmind-git-passthrough" "$passthrough_name"
+done
+
 # 設定 global git hooks path（需要 git 可用）
 if command -v git &>/dev/null; then
+  # Remember a global hooks path set before OwnMind, so the hooks above can hand on to it.
+  # It used to be overwritten and forgotten. Recorded once: a later reinstall must not
+  # replace it with OwnMind's own directory.
+  previous_hooks_path="$(git config --global --get core.hooksPath || true)"
+  # git expands a leading ~ in core.hooksPath itself; the hooks reading this file do not.
+  case "$previous_hooks_path" in
+    "~/"*) previous_hooks_path="$HOME/${previous_hooks_path#\~/}" ;;
+  esac
+  # OwnMind's own directory can come back spelled /c/… or C:\… on Windows; any spelling
+  # ending in .ownmind/git-hooks is ours, not a previous path.
+  previous_is_ours=no
+  case "$(printf '%s' "$previous_hooks_path" | tr '\\' '/' | sed 's#/*$##')" in
+    */.ownmind/git-hooks|.ownmind/git-hooks) previous_is_ours=yes ;;
+  esac
+  if [ -n "$previous_hooks_path" ] && [ "$previous_is_ours" = no ] \
+     && [ ! -f "$HOME/.ownmind/git-hooks/.previous-hooks-path" ]; then
+    printf '%s\n' "$previous_hooks_path" > "$HOME/.ownmind/git-hooks/.previous-hooks-path"
+    echo "[ OK ] Kept your previous global git hooks path; OwnMind's hooks will hand on to it: $previous_hooks_path"
+  fi
   git config --global core.hooksPath "$HOME/.ownmind/git-hooks"
   echo "[ OK ] Set git global hooks path: $HOME/.ownmind/git-hooks"
 else

@@ -363,6 +363,28 @@ if (Test-Path $GitHookDir) {
     }
   }
   if ($refreshed -gt 0) { Write-Host "[ OK ] Refreshed $refreshed git hook wrapper(s)" }
+
+  # Pass-through hooks (v1.30.43). With core.hooksPath pointing here, any hook name with no
+  # file in this directory was skipped in silence — Git LFS's pre-push among them. Created
+  # only where OwnMind's pre-commit is already installed (same consent rule as
+  # pre-merge-commit above). Same list as install.ps1.
+  $passthroughSrc = Join-Path $OwnMindDir "hooks\ownmind-git-passthrough"
+  if ((Test-Path (Join-Path $GitHookDir "pre-commit")) -and (Test-Path $passthroughSrc)) {
+    $ptText = [System.IO.File]::ReadAllText($passthroughSrc).Replace("`r`n", "`n")
+    $ptWritten = 0
+    foreach ($ptName in @("pre-push", "post-checkout", "post-merge")) {
+      $ptDest = Join-Path $GitHookDir $ptName
+      $ptCurrent = if (Test-Path $ptDest) { [System.IO.File]::ReadAllText($ptDest) } else { $null }
+      # Never overwrite a hook that is not OwnMind's: `git lfs install` puts its own pre-push
+      # here when a global hooks path is set.
+      if ($null -ne $ptCurrent -and -not $ptCurrent.Contains("OWNMIND-PASSTHROUGH-HOOK")) { continue }
+      if ($ptCurrent -ne $ptText) {
+        [System.IO.File]::WriteAllText($ptDest, $ptText)
+        $ptWritten++
+      }
+    }
+    if ($ptWritten -gt 0) { Write-Host "[ OK ] Installed $ptWritten pass-through git hook(s); repository hooks such as Git LFS pre-push run again" }
+  }
 }
 
 # --- 2b. usage scanner ---
