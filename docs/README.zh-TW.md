@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.35** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.36** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **伺服器搬家後，只有 Claude Code 跟著換網址，Codex、Windsurf、OpenCode、Cursor 都還連舊的** — 自動更新只拿 Claude Code 連的網址去問伺服器「我該連哪裡」，答案一樣就收工。Claude Code 已經換好的電腦，其他工具根本沒被看到。2026-10-02 舊主機的連線紀錄裡還看得到它們，能用只是因為舊主機會轉送到新主機。現在自動更新會找出這台電腦上所有工具的網址（Claude Code、Cursor、Windsurf、OpenCode、Gemini CLI，還有 Codex 的設定檔，只改網址那一段），每個網址各問它自己的伺服器，伺服器說搬了才改，改完讀回來確認。問的時候只用跟那個網址存在一起的金鑰（Codex 設定裡兩組伺服器各用各的，被註解掉的不算），沒有才用環境變數 `OWNMIND_API_KEY`；沒有金鑰的網址、讀不懂的設定檔都會寫進錯誤紀錄，不會靜靜跳過。設定檔是捷徑的話改的是它連過去的檔，權限維持原樣，失敗也不會留下暫存檔。 `v1.30.36`
 - **有新的問題回報，AI 不會說，附的網址也打不開** — 開新對話時 OwnMind 會把問題回報的消息交給 AI，但沒要求 AI 講出來。2026-10-02 Vin 開的對話裡，「你回報的問題有 9 個已經修好」和一張新回報都沒被提到。現在 AI 第一句就會講，管理員會看到回報的編號和標題，網址會打開你自己伺服器上的 `/dashboard/admin/bugs`（一般成員是 `/dashboard/portal/reports`）。 `v1.30.35`
 - **Claude Code 登入過期，被當成一般拒絕，回話有六週沒被檢查** — 從 2026-08-19 起，Vin 電腦上的檢查有 3,470 次回「OAuth session expired」。以前只有「Not logged in」算沒登入，所以提醒只叫人去終端機跑 `claude`，沒說要重新登入。現在登入過期也會請你重新登入。另外，`~/.ownmind/judge.json` 可以讓一台電腦自己選誰來檢查：`"cli": "agy"` 改用 Gemini（預設 `gemini-3.8-flash-low`，以唯讀、沙盒方式執行）；`"silent": true` 照樣檢查和記錄，但不再顯示任何提醒。沒有這個檔的電腦一切照舊。 `v1.30.34`
 - **只是打開安裝腳本來看，也被當成在安裝** — 「安裝／金鑰」這類提醒，以前只要指令裡出現安裝腳本的檔名就會跳，所以 `cat install.sh`、`wc -l install.sh`、`sed -n 1,40p scripts/update.sh` 這種只是印出內容的指令，也會把 IR-001、IR-002 搬出來（v1.30.29、30 已經排除了「搜尋」，但沒排除「讀檔」）。現在要真的「執行」那支腳本才算：它是這段指令的第一個字，或是 `bash`、`sh`、`source`、`.`、`sudo`、`powershell -File`、`&`、`cmd /c` 後面接的那個檔。從網路下載直接丟給 shell 跑的（`curl …/install.sh | bash`、`iwr … | iex`）一樣算。 `v1.30.33`

@@ -36,6 +36,24 @@ tests/real-db-start-failure-detail.test.js
                                        是最後吐出來的訊息，試幾個埠歸新的那一支測試管
 ```
 
+## v1.30.36 修改（伺服器搬家時，其他工具的設定也跟著換，#152）
+
+修改檔：
+```
+scripts/install-helpers/migrate-api-url.cjs — 不再只看 Claude Code：掃 Claude Code、Cursor、Windsurf、
+                                       OpenCode（兩個位置）、Gemini CLI 的 JSON 設定，和 Codex 的
+                                       config.toml（只改網址那一段文字）。每個不同的網址各問一次它
+                                       自己的伺服器，只用存在它旁邊的金鑰；沒有金鑰就回報、不去問。
+                                       寫入改成先寫暫存檔再換名，寫完讀回來確認舊網址已經不見
+tests/api-url-migration.test.js       — 新增 12 條：Claude Code 已換好、其他四個工具還是舊網址（#152 的
+                                       情況）；Codex 兩種寫法；OpenCode 安裝程式用的位置；每個網址只問
+                                       一次；伺服器沒說搬就不動；不准拿別的工具的金鑰去問；改完有讀回確認；
+                                       Codex 兩組伺服器各用各的金鑰、註解掉的不算；伺服器回的網址有引號不跟；
+                                       讀不懂的設定檔要回報；捷徑檔改完還是捷徑、不留暫存檔
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.36
+```
+
 ## v1.30.35 修改（新的問題回報由 AI 第一句告訴你，網址改對）
 
 修改檔：
