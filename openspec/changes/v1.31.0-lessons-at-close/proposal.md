@@ -56,4 +56,4 @@ job is memory. So the close itself should ask.
   promoted memory follows the memory table's own visibility rules.
 - Automatic promotion by any rule. Deliberately.
 - The three later changes that grew from the same conversation: collision warning
-  (v1.31.2), tasks the AI picks up (v1.31.3), release check (v1.31.4). Each has its own folder.
+  (v1.31.2), tasks the AI picks up (v1.31.3), release check (v1.31.5). Each has its own folder.

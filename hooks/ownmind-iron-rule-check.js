@@ -276,6 +276,32 @@ async function main() {
     process.exit(0);
   }
 
+  // v1.31.5: the release check in front of a tag, ahead of the credential exit and of the
+  // rule fetch below, on purpose: the one check that blocks (the branch is behind its base)
+  // is answered by git alone, and a machine with no key or a server that does not answer
+  // must still get it. The server half fails open inside runReleaseCheck. Both modules are
+  // loaded here rather than at the top so a hooks folder missing them still runs everything
+  // else; a failure to load or run them is said out loud, because a release check that
+  // silently did not run looks exactly like one that passed.
+  const releaseLines = [];
+  try {
+    const { isReleaseCommand } = await import('../shared/release-git.js');
+    if (isReleaseCommand(command)) {
+      const { runReleaseCheck, releaseEnvelope } = await import('./lib/release-check.js');
+      const result = await runReleaseCheck({ apiKey, apiUrl, cwd: process.env.CLAUDE_PROJECT_DIR || process.cwd() });
+      if (result.blocking.length > 0) {
+        console.log(releaseEnvelope(VERSION, result));
+        process.exit(0);
+      }
+      releaseLines.push(`[OwnMind v${VERSION}] Release check`, ...result.lines,
+        'Show the "For you to read" part to the user, in their language, before the tag goes out.', '');
+    }
+  } catch (err) {
+    releaseLines.push(`[OwnMind v${VERSION}] Release check could not run (${err?.message || 'error'}); this tag was not checked.`);
+  }
+  // Without a key, only the deny above speaks: a machine with no OwnMind account keeps the
+  // everyday silence of this hook, and the git-only report is not worth breaking it for.
+
   // Where a machine with no key stops. Most of what follows needs the API; the parts that do
   // not (the push version gate, the verification engine) have always stopped here too, and
   // moving them is a separate change from this one.
@@ -305,6 +331,11 @@ async function main() {
       totals = ctx.legacy ? undefined : ctx.totals;
       allNames = ctx.legacy ? undefined : ctx.names;
     } catch {
+      // v1.31.5: a release report already in hand is printed before the silent exit the
+      // ordinary command path takes when the rule lookup fails.
+      if (releaseLines.length > 0) {
+        console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: releaseLines.join('\n') } }));
+      }
       process.exit(0);
     }
   }
@@ -313,6 +344,9 @@ async function main() {
   // fire — do not early-return here.
 
   const lines = [];
+
+  // v1.31.5: what the release check found; pushed into `lines` once they exist.
+  lines.push(...releaseLines);
 
   // For git push: check that git tag matches package.json version.
   //

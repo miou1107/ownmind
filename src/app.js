@@ -146,6 +146,7 @@ import sessionRoutes from './routes/session.js';
 import { createSessionLessonsRouter } from './routes/session-lessons.js';
 import { createActivityTouchRouter } from './routes/activity-touch.js';
 import { createTasksRouter } from './routes/tasks.js';
+import { createReleaseRouter } from './routes/release.js';
 import handoffRoutes from './routes/handoff.js';
 import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';
@@ -204,6 +205,7 @@ app.use('/api/export', exportRoutes);
 app.use('/api/activity/touch', createActivityTouchRouter({ query, auth, adminAuth, logger }));
 app.use('/api/activity', activityRoutes);
 app.use('/api/tasks', createTasksRouter({ query, auth, logger })); // v1.31.3
+app.use('/api/release', createReleaseRouter({ query, auth, logger })); // v1.31.5
 app.use('/api/usage', usageRoutes);
 app.use('/api/broadcast', broadcastRoutes);
 // sub-paths must be mounted before /api/me, otherwise meRoutes receives the request first and 404s
