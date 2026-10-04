@@ -36,13 +36,13 @@ hooks），但 `ownmind_*` 工具在任何 session 裡都不存在 —— 看起
 
 ## OwnMind 運作狀況按鈕（v1.30.45 起）
 
-Claude Code 輸入框下方的 🟢／🔴 OwnMind 按鈕，用來看 OwnMind 在這次對話裡有沒有在運作。
+Claude Code 輸入框下方的 🟢／🔴 OM 按鈕（OM 是 OwnMind 的縮寫），用來看 OwnMind 在這次對話裡有沒有在運作。
 按下去會打開「OwnMind 運作狀況」面板，也可以輸入 `/ownmind` 打開，`/ownmind-week` 看最近 7 天的摘要。
 
 | 按鈕 | 代表什麼 |
 |---|---|
-| 🟢 OwnMind | 這次對話已經載入記憶，最近一次連 OwnMind 主機也正常 |
-| 🔴 OwnMind | 這次對話沒有載入記憶，或是最近一次連 OwnMind 主機失敗 |
+| 🟢 OM | 這次對話已經載入記憶，最近一次連 OwnMind 主機也正常 |
+| 🔴 OM | 這次對話沒有載入記憶，或是最近一次連 OwnMind 主機失敗 |
 
 這個按鈕是放在 OwnMind 裡的 Claude Code 外掛（`~/.ownmind/mods/ownmind-monitor`），安裝和每次自動更新都會在
 `~/.claude/settings.json` 的 `env` 寫入兩個設定，一般使用者不需要手動做：
