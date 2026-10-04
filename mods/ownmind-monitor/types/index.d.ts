@@ -5,6 +5,9 @@ export type Health = {
   judgeFailed: number
   server: 'ok' | 'down' | 'idle'
   behind: number
+  // True when one of today's update attempts failed at the fetch step, so the machine
+  // could not reach the update server and `behind` says nothing.
+  unreachable: boolean
 }
 
 export type Week = {

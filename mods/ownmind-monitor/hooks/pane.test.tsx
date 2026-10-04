@@ -113,3 +113,42 @@ for (const [behind, tags, toasts] of [['current', '', 0], ['behind', 'v1.31.8\nv
     if (toasts) expect(shown[0]).toMatch(/落後 2 版/)
   })
 }
+
+// 2026-10-04 review of v1.31.10: /ownmind-week still said the rules might be stale when the
+// install was current, and an offline machine was shown as 已是最新版. The card, the chart
+// title and /ownmind-week now share one sentence, chosen from the version gap and from
+// whether today's update failed at the fetch step (the updater logs step "fetch" when it
+// cannot reach the server).
+for (const [name, step, expected] of [
+  ['current, today failed after the fetch', 'pull', /已是最新版/],
+  ['unreachable, today failed at the fetch', 'fetch', /連不上更新伺服器/],
+] as const) {
+  test(`week summary and pane agree when the install is ${name}`, async ($, on) => {
+    const o = on as any
+    const v = (x: any) => () => ({ value: x })
+    o('session.start', () => ({ cwd: '/tmp' }))
+    o('command.register', v({ command: 'x' }))
+    o('ui.status', v(undefined))
+    o('ui.toast', v(undefined))
+    o('ui.open', v({ isPlaced: true }))
+    o('clock.every', v({}))
+    o('clock.now', v(Date.parse('2026-10-04T12:00:00+08:00')))
+    o('env.get', v('/home/test'))
+    o('fs.read', (_: any, e: any) => {
+      const p = String(e.path ?? '')
+      if (p.endsWith('2026-10-04.jsonl')) return { value: `{"event":"update_failed","details":{"step":"${step}"}}\n`.repeat(4) }
+      return { deny: 'missing' }
+    })
+    o('process.run', v({ exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }))
+    o('session.messages', v([]))
+    await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+    const res: any = await ($ as any).command.run({ command: 'ownmind-week', args: '' })
+    console.log(name, 'week:', res?.text)
+    expect(res?.text).toMatch(expected)
+    expect(res?.text).not.toMatch(/可能不是最新版/)
+    await ($ as any).command.run({ command: 'ownmind' })
+    const ui: any = await ($ as any).ui.mount({ plugin: 'ownmind-monitor', surface: 'terminal', component: 'Pane', requestId: 'ownmind-monitor', props: { bodyColumns: 80 } })
+    expect(await ui.find({ type: 'Text', text: expected })).toBeDefined()
+    await ui.unmount()
+  })
+}
