@@ -391,12 +391,15 @@ mods/ownmind-monitor/hooks/register.tsx
                                        /ownmind 與 /ownmind-week；家目錄在 Windows 改讀
                                        USERPROFILE（HOME 不存在或是 Git Bash 的 /c/ 寫法時）；
                                        警告訊息顯示 5 秒後自動收起；自動更新失敗的提醒只在這台電腦
-                                       真的落後版本時才跳，同一個提醒一個視窗只跳一次（v1.31.10）
+                                       真的落後版本時才跳，同一個提醒一個視窗只跳一次（v1.31.10）；
+                                       卡片、圖表標題、/ownmind-week 對落後幾版講同一句，連不上
+                                       更新伺服器就說查不到，不說已是最新版（v1.31.11）
 mods/ownmind-monitor/hooks/pane.test.tsx
-                                     — 5 條：面板與按鈕在桌面版、終端機都畫得出來；Windows
+                                     — 7 條：面板與按鈕在桌面版、終端機都畫得出來；Windows
                                        沒有 HOME、HOME 是 /c/Users/x 時都從 USERPROFILE 讀日誌；
                                        自動更新失敗四次但已是最新版不跳提醒，落後兩版才跳
-                                       而且只跳一次（v1.31.10）
+                                       而且只跳一次（v1.31.10）；最新版且今天抓過遠端寫已是最新版，
+                                       今天在連線那一步失敗就寫連不上更新伺服器，週報跟面板同一句（v1.31.11）
 mods/ownmind-monitor/types/index.d.ts
                                      — 面板資料的型別
 mods/ownmind-monitor/tsconfig.json   — 編輯器用的型別設定

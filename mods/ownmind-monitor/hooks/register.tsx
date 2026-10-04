@@ -17,7 +17,7 @@ const EMPTY: View = {
   saves: 0,
   blocks: [],
   triggers: { total: 0, byKind: {} },
-  health: { updateFailed: 0, judgeFailed: 0, server: 'idle', behind: 0 },
+  health: { updateFailed: 0, judgeFailed: 0, server: 'idle', behind: 0, unreachable: false },
   week: EMPTY_WEEK,
   warned: '',
 }
@@ -97,7 +97,7 @@ const readLogs = async ($: any) => {
     days: days.map(shortDay),
     sessions: [], lookups: [], violate: [], comply: [], updateFailed: [],
   }
-  const health: Health = { updateFailed: 0, judgeFailed: 0, server: 'idle', behind: 0 }
+  const health: Health = { updateFailed: 0, judgeFailed: 0, server: 'idle', behind: 0, unreachable: false }
   for (const day of days) {
     const rows = isHomeUsable ? await readLog($, joinPath(dir, `${day}.jsonl`)) : []
     week.sessions.push(rows.filter(r => r.event === 'init').length)
@@ -106,6 +106,9 @@ const readLogs = async ($: any) => {
     week.updateFailed.push(failed)
     if (day === today) {
       health.updateFailed = failed
+      // The updater logs step "fetch" when it cannot reach the update server at all. Then
+      // origin/main is whatever the last successful fetch left, and `behind` is a guess.
+      health.unreachable = rows.some(r => r.event === 'update_failed' && r.details?.step === 'fetch')
       const last = rows.filter(r => r.event === 'mcp_call').at(-1)
       if (last) health.server = last.details?.status === 'ok' ? 'ok' : 'down'
     }
@@ -263,8 +266,15 @@ const barChart = (days: string[], series: Series[], isStacked: boolean) => {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="sans-serif">${parts.join('')}</svg>`
 }
 
+// One sentence for "how far behind is this machine", shared by the card, the chart
+// title and /ownmind-week so they never disagree.
+const gapText = (h: Health) =>
+  h.behind ? `這台電腦落後 ${h.behind} 版`
+  : h.unreachable ? '今天連不上更新伺服器，查不到有沒有新版'
+  : '已是最新版'
+
 const weekSummary = async ($: any) => {
-  const { week } = await readLogs($)
+  const { week, health } = await readLogs($)
   const sessions = sum(week.sessions)
   const lookups = sum(week.lookups)
   const per = lookups ? Math.round(sessions / lookups) : 0
@@ -274,7 +284,7 @@ const weekSummary = async ($: any) => {
     '',
     `- 開啟 ${sessions} 次對話，查詢 OwnMind ${lookups} 次${per > 1 ? `，平均 ${per} 次對話才查一次` : ''}`,
     `- commit 後檢查：漏做 ${sum(week.violate)} 次，照做 ${sum(week.comply)} 次`,
-    `- 自動更新失敗 ${failed} 次${failed ? '，規矩可能不是最新版' : ''}`,
+    `- 自動更新失敗 ${failed} 次${failed ? `，${gapText(health)}` : ''}`,
   ].join('\n')
 }
 
@@ -346,7 +356,7 @@ export const register: Register = on => {
     )
 
     const kinds = Object.entries(v.triggers.byKind).map(([k, n]) => `${k} ${n}`).join('、')
-    const updateSub = health.behind ? `比最新版舊 ${health.behind} 版` : '已是最新版'
+    const updateSub = gapText(health)
 
     const sessions = sum(week.sessions)
     const lookups = sum(week.lookups)
@@ -379,7 +389,7 @@ export const register: Register = on => {
       },
       {
         title: failed === 0 ? '最近 7 天自動更新都沒有失敗'
-          : `自動更新 7 天失敗 ${failed} 次${health.behind ? `，這台電腦比最新版舊 ${health.behind} 版` : ''}`,
+          : `自動更新 7 天失敗 ${failed} 次，${gapText(health)}`,
         sub: '每天自動更新失敗的次數',
         series: [{ name: '自動更新失敗', color: BLUE, values: week.updateFailed }],
         isStacked: false,
