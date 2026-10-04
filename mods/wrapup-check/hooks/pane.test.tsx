@@ -161,17 +161,22 @@ test('words that only look like a wrap-up do not trigger it', async ($, on) => {
     'claude plugin test mods/wrapup-check',
     'review the wrapup-check mod',
     '/wrapup',
+    // issue #169: describing the moment of wrapping up is not wrapping up
+    '我收工時有哪些沒做',
+    '收工的時候要檢查什麼',
+    '收工前先把這個推上去',
+    '收工後再處理',
   ]) {
     await ($ as any).prompt.submit({ text, wait: false })
   }
   expect(opened.length).toBe(0)
-  for (const text of ['收工', '今天先到這，下班', '我要交接給 Amiee', "let's wrap up", 'wrap-up time']) {
+  for (const text of ['收工', '今天先到這，下班', '我要交接給 Amiee', "let's wrap up", 'wrap-up time', '好，收工了', '收工囉']) {
     await ($ as any).prompt.submit({ text, wait: false })
   }
-  expect(opened.length).toBe(5)
+  expect(opened.length).toBe(7)
   // A background task's notice that mentions a wrap-up is not the user wrapping up.
   await ($ as any).prompt.submit({ text: 'Agent "Review wrap-up resolve change" finished', wait: false, origin: { kind: 'task-notification' } })
-  expect(opened.length).toBe(5)
+  expect(opened.length).toBe(7)
 })
 
 test('a clean repo shows green tiles and no red mark', async ($, on) => {
