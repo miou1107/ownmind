@@ -387,7 +387,7 @@ mods/ownmind-monitor/.claude-plugin/plugin.json
 mods/ownmind-monitor/hooks/hooks.json
                                      — 指向 register.tsx
 mods/ownmind-monitor/hooks/register.tsx
-                                     — 輸入框下方的 🟢／🔴 OwnMind 按鈕、運作狀況面板、
+                                     — 輸入框下方的 🟢／🔴 OM 按鈕（v1.31.12 前叫 OwnMind）、運作狀況面板、
                                        /ownmind 與 /ownmind-week；家目錄在 Windows 改讀
                                        USERPROFILE（HOME 不存在或是 Git Bash 的 /c/ 寫法時）；
                                        警告訊息顯示 5 秒後自動收起；自動更新失敗的提醒只在這台電腦

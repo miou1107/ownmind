@@ -330,7 +330,7 @@ export const register: Register = on => {
       <Box flexDirection="row" gap={1}>
         {engine}
         <Button key="ownmind-open" plain
-          label={needsLook(v) ? '🔴 OwnMind' : '🟢 OwnMind'}
+          label={needsLook(v) ? '🔴 OM' : '🟢 OM'}
           onPress={() => openPane($)} />
       </Box>
     )
