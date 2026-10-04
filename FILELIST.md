@@ -37,7 +37,7 @@ mods/wrapup-check/.claude-plugin/plugin.json
                                      — Claude Code 外掛的名稱與版本
 mods/wrapup-check/hooks/hooks.json   — 指向 register.tsx
 mods/wrapup-check/hooks/register.tsx
-                                     — 使用者打收工、收尾、下班、交接、wrap up 或 /wrapup 時，
+                                     — 使用者打收工（後面接時／前／後的不算）、收尾、下班、交接、wrap up 或 /wrapup 時，
                                        跑團隊規範 723 的六項檢查（git、docker ps、lsof、
                                        session 自己的紀錄），開面板「OwnMind 收工自我檢查」
                                        （六項打勾清單：上面「完成 n / 6」和進度條，每一項

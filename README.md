@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.31.12** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.31.13** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -41,6 +41,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
 - **`/ownmind-week` still said the rules might be stale on a current install** — on 2026-10-04 it printed "自動更新失敗 70 次，規矩可能不是最新版" on a machine updated by hand that morning, while the pane card said 已是最新版. The card, the chart title and `/ownmind-week` now share one sentence: how many versions behind, or 已是最新版. When one of today's update attempts failed at the fetch step (the updater records that step), all three say the update server could not be reached instead of claiming the install is current. Client update only. `v1.31.11`
+- **A sentence that merely mentioned "收工" ran the wrap-up check** — on 2026-10-04 Vin typed "我收工時有哪些沒做" while describing an idea for a mod, and the six checks ran and the pane opened. 收工 followed by a time word (時, 前, 後, 的時候, 時間) no longer counts; "收工", "好，收工了" and "收工囉" still do. Client update only. `v1.31.13`
 - **The OwnMind button under the prompt was squeezed into "…"** — the desktop app fits about two mode buttons at the bottom right; with two more of Vin's own buttons (VPS, CLI) the 🟢 OwnMind button became "…" and could not be clicked. It is now 🟢 OM / 🔴 OM; the colours and the pane it opens are unchanged, and `/ownmind` still works. Client update only. `v1.31.12`
 - **The update-failed toast kept coming back** — on 2026-10-04 the auto-update failed four times on one Mac: a hand-edited file in the install folder blocked the pull. After the install was fixed by hand, every new window still toasted "auto-update failed 4 times today", sometimes twice in one window. The toast now needs both: three or more failed attempts today, and an installed copy that really is behind. It says how many versions behind and that telling the AI "升級 OwnMind" fixes it. Overlapping refreshes no longer show the same toast twice. Client update only. `v1.31.10`
 - **"收工" listed things other windows had left** — on 2026-10-04 the pane said a port was still open; it was a database an idaytour window had started the night before. Branches, stash entries and commits from other windows in the same repo counted the same way. All six checks now count only what this session added or changed since it started: branches it made or moved, files it changed, its own unpushed commits and stash entries, and ports opened by its own processes. The version item is ticked when the session made no commit and left the version files alone. Commits waiting on the remote are no longer listed as a to-do. Client update only. `v1.31.9`

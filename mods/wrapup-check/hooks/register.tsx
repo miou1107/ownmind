@@ -12,10 +12,12 @@ import type { WrapupBaseline, WrapupReport, WrapupResolution, WrapupRow } from '
 
 const PANE = 'wrapup-check'
 const TITLE = 'OwnMind 收工自我檢查'
-// 收工 always counts. The other words also appear inside ordinary sentences (交接文件, 下班前,
+// 收工 counts unless it is followed by a time word. The other words also appear inside ordinary sentences (交接文件, 下班前,
 // 收尾一下) and are only taken when they stand on their own. The English form must not be
 // part of a longer token, so the mod's own name (wrapup-check) and /wrapup do not count.
-const TRIGGER = /收工|收尾(?!一下|工作|的)|下班(?!前|後|時間|之後|以後)|交接(?!文件|單|人|事項|書|清單|流程)|(?<![\w\/-])wrap[\s-]?up(?![\w-])/i
+// 收工 followed by 時/前/後 (收工時有哪些沒做, 收工前先推一下) is talking about the moment, not
+// wrapping up now (issue #169, 2026-10-04: a sentence describing a mod idea opened the pane).
+const TRIGGER = /收工(?!時|的時候|之前|前|以前|之後|後|以後|時間)|收尾(?!一下|工作|的)|下班(?!前|後|時間|之後|以後)|交接(?!文件|單|人|事項|書|清單|流程)|(?<![\w\/-])wrap[\s-]?up(?![\w-])/i
 const NOT_THE_USER = new Set(['task-notification', 'scheduled-trigger', 'peer', 'peer-send-message', 'coordinator', 'observer', 'observer-activity'])
 const TEST_CMD = /\b(pytest|vitest|jest|mocha|go test|cargo test|npm test|pnpm test|yarn test|bun test|plugin test|make test)\b/
 const MAIN_CANDIDATES = ['main', 'master']
