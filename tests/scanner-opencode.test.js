@@ -211,6 +211,21 @@ describe('createOpenCodeAdapter.readSince', () => {
     assert.match(logs[0], /'\/nonexistent\/sqlite3'/);
   });
 
+  it('ENOENT with no database at the path is no_install, not sqlite_missing (v1.31.14)', async () => {
+    // bot.kkvin.com 2026-10-04: no sqlite3 and no OpenCode, yet the daily self-check said
+    // "install sqlite3" for a tool nobody runs there.
+    const logs = [];
+    const adapter = createOpenCodeAdapter({
+      runSqlite: async () => { const e = new Error('spawn sqlite3 ENOENT'); e.code = 'ENOENT'; throw e; },
+      exists: async () => false,
+      logger: { warn: (m) => logs.push(m) }
+    });
+    const r = await adapter.readSince({});
+    assert.deepEqual(r.events, []);
+    assert.equal(r.reason, 'no_install');
+    assert.equal(logs.length, 0, 'no sqlite3 advice for a tool that is not installed');
+  });
+
   it("SQL injection defense — high_water_id containing '' escape handled", async () => {
     const captured = [];
     const adapter = createOpenCodeAdapter({

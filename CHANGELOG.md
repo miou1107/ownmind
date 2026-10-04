@@ -1,5 +1,13 @@
 # OwnMind 更新紀錄
 
+## v1.31.14 — 沒裝 OpenCode 或 Cursor 的機器，不再被說「缺 sqlite3」
+
+只有電腦端要更新，伺服器的程式沒有改。
+
+bot.kkvin.com 上沒有裝 OpenCode 也沒有 Cursor，也沒有 sqlite3。每天的自我檢查卻說 opencode、cursor「這台機器讀不到，請裝 sqlite3」，Vin 2026-10-04 收到警告之後說把那兩個關掉。
+
+- **先問有沒有那個工具的資料庫，再怪 sqlite3**：找不到 sqlite3 的時候，資料庫檔也不存在，就是「這台沒裝這個工具」，跟其他沒裝的工具一樣安靜略過；資料庫檔在、sqlite3 不在，才會提醒裝 sqlite3。opencode、cursor、antigravity 三個都照這個順序。
+
 ## v1.31.13 — 句子裡提到「收工」不再誤跑收工自檢
 
 只有電腦端要更新，伺服器的程式沒有改。
