@@ -73,9 +73,18 @@ describe('readVscodeTelemetry', () => {
     const enoent = new Error('spawn sqlite3 ENOENT');
     enoent.code = 'ENOENT';
     const t = await readVscodeTelemetry({
-      dbPath: '/x', runSqlite: async () => { throw enoent; }
+      dbPath: '/x', runSqlite: async () => { throw enoent; }, exists: async () => true
     });
     assert.deepEqual(t, { failure: 'sqlite_missing' });
+  });
+
+  it('ENOENT with no database at the path is no_install (v1.31.14)', async () => {
+    const enoent = new Error('spawn sqlite3 ENOENT');
+    enoent.code = 'ENOENT';
+    const t = await readVscodeTelemetry({
+      dbPath: '/x', runSqlite: async () => { throw enoent; }, exists: async () => false
+    });
+    assert.deepEqual(t, { failure: 'no_install' });
   });
 
   it('distinct ENOENT message for missing sqlite3 CLI', async () => {
@@ -84,6 +93,7 @@ describe('readVscodeTelemetry', () => {
       dbPath: '/x',
       sqlitePath: '/nowhere/sqlite3',
       runSqlite: async () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; },
+      exists: async () => true,
       logger: { warn: (m) => logs.push(m) }
     });
     assert.match(logs[0], /sqlite3 CLI not found/);

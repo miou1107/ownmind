@@ -33,7 +33,8 @@ export const TELEMETRY_KEYS = [
  */
 export async function readVscodeTelemetry({
   dbPath, sqlitePath = 'sqlite3',
-  runSqlite = runSqliteCli, logger = null
+  runSqlite = runSqliteCli, logger = null,
+  exists = databaseExists
 }) {
   const sql = `SELECT key, value FROM ItemTable
                 WHERE key IN (${TELEMETRY_KEYS.map(sqlQuote).join(',')})`;
@@ -41,6 +42,10 @@ export async function readVscodeTelemetry({
   try {
     rows = await runSqlite({ sqlitePath, dbPath, sql });
   } catch (err) {
+    // v1.31.14 — no sqlite3 on a machine that has no such database is not a sqlite problem:
+    // the tool is not installed here. Asked first, so a server without Cursor stops failing
+    // its self-check with "install sqlite3" (bot.kkvin.com, 2026-10-04).
+    if (err.code === 'ENOENT' && !(await exists(dbPath))) return { failure: NO_INSTALL };
     // v1.26.69 — the caller needs to tell "no sqlite3 on this machine" apart from "this
     // database would not open". They are different problems with different fixes, and
     // on Windows the first one is a single command. Both used to return the same {}.
@@ -144,7 +149,7 @@ export function createVscodeAdapter(opts) {
           : looked === 0 ? NO_INSTALL
             : NO_NEW_ACTIVITY;
 
-      if (emptyReason === UNREADABLE && !skipMissing && candidates.length > 0) {
+      if ((emptyReason === UNREADABLE || emptyReason === SQLITE_MISSING) && !skipMissing && candidates.length > 0) {
         const present = await Promise.all(candidates.map((p) => exists(p)));
         if (!present.some(Boolean)) emptyReason = NO_INSTALL;
       }
@@ -245,7 +250,7 @@ async function readFreshestSessionDate({
   for (const dbPath of candidates) {
     if (skipMissing && !(await exists(dbPath))) continue;
     looked += 1;
-    const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger });
+    const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger, exists });
     if (t.failure) failures.push(t.failure);
     // v1.26.68 — both, rather than `currentSessionDate ?? lastSessionDate`. The
     // coalescing version picked the current one whenever it existed and only then let

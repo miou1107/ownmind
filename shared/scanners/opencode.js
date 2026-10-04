@@ -82,7 +82,12 @@ export function createOpenCodeAdapter({
         // containers). Distinguish this so installer / user knows to install
         // sqlite3 or pass sqlitePath.
         let reason;
-        if (err.code === 'ENOENT') {
+        if (err.code === 'ENOENT' && !(await exists(dbPath))) {
+          // v1.31.14 — no sqlite3 AND no database: the person does not run OpenCode here, so
+          // there is nothing sqlite3 would read. Reporting `sqlite_missing` made the self-check
+          // on bot.kkvin.com fail every day for a tool that was never installed (2026-10-04).
+          reason = NO_INSTALL;
+        } else if (err.code === 'ENOENT') {
           reason = SQLITE_MISSING;
           logger?.warn?.(
             `[opencode scanner] sqlite3 CLI not found at '${sqlitePath}'. ` +
