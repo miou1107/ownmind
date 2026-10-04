@@ -171,6 +171,8 @@ const readTranscriptSignals = async ($: any) => {
 
 // Rebuilds the whole view from the transcript and the logs, so a reload or a
 // mod loaded mid-session still counts what happened before it.
+let lastWarned = ''
+
 const refresh = async ($: any) => {
   const stamps = await read($, times)
   const lookups: Activity[] = []
@@ -195,16 +197,23 @@ const refresh = async ($: any) => {
   const prev = await read($, view)
   const next: View = { memory, lookups, saves, blocks, triggers, health, week, warned: prev.warned }
 
+  // The update toast needs two things: today's attempts failed, and the installed
+  // copy really is behind. A copy that is current despite the failures stays quiet.
   const trouble =
-    health.updateFailed >= 3 ? `OwnMind 自動更新今天已失敗 ${health.updateFailed} 次，目前用的規矩可能不是最新版`
+    health.updateFailed >= 3 && health.behind > 0 ? `OwnMind 今天自動更新失敗 ${health.updateFailed} 次，這台電腦的規矩還是舊版，落後 ${health.behind} 版。跟 AI 說「升級 OwnMind」就會修好`
     : health.judgeFailed >= 3 ? `OwnMind 回話檢查今天已失敗 ${health.judgeFailed} 次，有一部分回話沒被檢查到`
     : health.server === 'down' ? 'OwnMind 主機連不上，這段時間查不到記憶'
     : ''
+  // Refreshes overlap (session start, every tool call, the /ownmind command), and each
+  // one read `prev` before any of them wrote it back, so the same warning used to toast
+  // once per overlapping refresh. The module-level key is set synchronously, before the
+  // next refresh can reach this line.
   const key = trouble.replace(/\d+/g, '')
-  if (trouble && key !== prev.warned) {
+  if (trouble && key !== prev.warned && key !== lastWarned) {
+    lastWarned = key
     $.ui.toast(trouble, { timeoutMs: 5000 })
-    next.warned = key
   }
+  next.warned = lastWarned || prev.warned
   await update($, view, () => next)
 
   $.ui.status(undefined)

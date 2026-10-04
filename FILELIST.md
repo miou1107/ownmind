@@ -390,10 +390,13 @@ mods/ownmind-monitor/hooks/register.tsx
                                      — 輸入框下方的 🟢／🔴 OwnMind 按鈕、運作狀況面板、
                                        /ownmind 與 /ownmind-week；家目錄在 Windows 改讀
                                        USERPROFILE（HOME 不存在或是 Git Bash 的 /c/ 寫法時）；
-                                       警告訊息顯示 5 秒後自動收起
+                                       警告訊息顯示 5 秒後自動收起；自動更新失敗的提醒只在這台電腦
+                                       真的落後版本時才跳，同一個提醒一個視窗只跳一次（v1.31.10）
 mods/ownmind-monitor/hooks/pane.test.tsx
-                                     — 3 條：面板與按鈕在桌面版、終端機都畫得出來；Windows
-                                       沒有 HOME、HOME 是 /c/Users/x 時都從 USERPROFILE 讀日誌
+                                     — 5 條：面板與按鈕在桌面版、終端機都畫得出來；Windows
+                                       沒有 HOME、HOME 是 /c/Users/x 時都從 USERPROFILE 讀日誌；
+                                       自動更新失敗四次但已是最新版不跳提醒，落後兩版才跳
+                                       而且只跳一次（v1.31.10）
 mods/ownmind-monitor/types/index.d.ts
                                      — 面板資料的型別
 mods/ownmind-monitor/tsconfig.json   — 編輯器用的型別設定
