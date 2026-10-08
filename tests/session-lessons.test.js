@@ -397,7 +397,7 @@ describe('renderSessionContext — the waiting line', () => {
   it('names the count and the page when lessons wait', () => {
     const out = renderSessionContext({ ...base, lessons_waiting: 3 });
     assert.match(out, /## Lessons waiting: 3/);
-    assert.match(out, /\/portal\/lessons/);
+    assert.match(out, /\/inbox\/lessons/);   // v1.32.6: 待你處理 › 學到的
   });
 
   it('says nothing when none wait, or when the server could not count', () => {

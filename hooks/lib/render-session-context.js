@@ -197,7 +197,7 @@ export function renderSessionContext(data, broadcasts, {
   // person, relayed through the AI; it changes nothing about what the AI must do.
   if (Number.isInteger(d.lessons_waiting) && d.lessons_waiting > 0) {
     lines.push('## Lessons waiting: ' + d.lessons_waiting);
-    lines.push('Tell the user once: lessons from earlier sessions are waiting on the console page /portal/lessons to be kept or dismissed.');
+    lines.push('Tell the user once: lessons from earlier sessions are waiting on the console page /inbox/lessons to be kept or dismissed.');
     lines.push('');
   }
 

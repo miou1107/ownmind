@@ -12,7 +12,7 @@ the page works at phone width in light and dark, and the old paths it replaces r
 - [x] `src/routes/usage/admin-clients.js`: return `api_host` and `on_old_host`
 - [x] `/system/config`: column 「連的主機」, red pill when `on_old_host`
 - [x] tests: heartbeat with and without `api_host`; admin list flags kkvin.com
-- [ ] release, deploy, then read the list to close #152 step 2
+- [ ] release, deploy, then read the list to close #152 step 2 (deploy is the owner's, on the Mac)
 
 ## Phase 1 — shell and navigation
 
@@ -54,6 +54,6 @@ the page works at phone width in light and dark, and the old paths it replaces r
 
 ## Phase 6 — cleanup
 
-- [ ] delete the old page components and their view-models no longer imported
-- [ ] copy pass against the prototype's wording rules
-- [ ] FILELIST, README ×3, CHANGELOG, version
+- [x] delete the old page components and their view-models no longer imported (UsagePage in v1.32.4, AuditFindings and 26 retired strings here)
+- [x] copy pass against the prototype's wording rules (tests pin no collector/heartbeat/token/合規 on 總覽, 規矩遵守, 成員, 規矩; hook reminders point at the inbox)
+- [x] FILELIST, README ×3, CHANGELOG, version (one per phase: v1.32.0 – v1.32.6)

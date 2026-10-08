@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.32.5** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.32.6** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -41,6 +41,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
 - **`/ownmind-week` still said the rules might be stale on a current install** — on 2026-10-04 it printed "自動更新失敗 70 次，規矩可能不是最新版" on a machine updated by hand that morning, while the pane card said 已是最新版. The card, the chart title and `/ownmind-week` now share one sentence: how many versions behind, or 已是最新版. When one of today's update attempts failed at the fetch step (the updater records that step), all three say the update server could not be reached instead of claiming the install is current. Client update only. `v1.31.11`
+- **Console rebuild wrap-up** — the six phases of openspec v1.32.0-console-rebuild are done. This release deletes what nothing uses any more (the old usage-page warning component and 26 retired menu strings), points the AI's start-of-session and pre-release reminders at the new inbox addresses, and sends the retired /me address to 總覽. Server, console and client update. `v1.32.6`
 - **團隊 › 成員 is one table, open to everyone** — a member sees who is on the team, their last activity, sessions in 14 days and whether OwnMind can see them, all from the report they could already read; an admin sees the former 團隊用量 table with coverage and the per-person drawer. User add/edit/delete moved to 管理 › 使用者 (/admin/team redirects there; /team/usage redirects to 成員). New 記憶 › 規矩 lists your iron rules and visible team standards, read-only; 專案歷程 gains a search box. Console redeploy only. `v1.32.5`
 - **用量與規矩 has four tabs, each its own address** — 我的對話, 規矩遵守, 專案, 全隊 (admin), sharing one range control. 我的對話 gains a sessions-per-day chart and 電腦／連的主機 columns on the versions table (red when a computer still posts to the old server). 規矩遵守 is new: the rate with its formula on the card, times broken, sessions the AI never reported on, one three-colour bar per rule worst first, and the old 踩坑紀錄 beneath. No data reads 沒有資料, never 0 or 100%. The per-member ranking is back at /team/usage as 團隊 › 用量排行. Server and console redeploy. `v1.32.4`
 - **待你處理 shows how many things wait, and the number drops the moment you handle one** — a total on the rail entry and one per tab, from a new /api/me/overview/pending-count. Only a real positive number is shown; nothing before the first answer, nothing on failure, nothing for zero. Accepting a handoff, keeping or dropping a lesson, reviewing a task or changing a bug's status re-reads the count at once. Server and console redeploy. `v1.32.3`

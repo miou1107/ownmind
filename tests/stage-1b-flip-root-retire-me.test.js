@@ -108,7 +108,7 @@ describe('v1.26.48 — root redirect points at the console', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('v1.26.48 — /me family retires to the console usage page', () => {
-  it('GET /me → 301 to dashboard/portal/usage (relative)', async () => {
+  it('GET /me → 301 to dashboard/home (relative)', async () => {
     const r = await fetchOnce('/me');
     assert.equal(r.status, 301);
     assert.ok(r.location, 'Location header must be present');
@@ -116,9 +116,9 @@ describe('v1.26.48 — /me family retires to the console usage page', () => {
       !r.location.startsWith('/'),
       `Location must be relative, got "${r.location}"`,
     );
-    // /me sits at the root's directory, so `dashboard/portal/usage` alone works
+    // /me sits at the root's directory, so `dashboard/home` alone works
     const resolved = resolveLocation('http://example.com/ownmind/me', r.location);
-    assert.equal(resolved, 'http://example.com/ownmind/dashboard/portal/usage');
+    assert.equal(resolved, 'http://example.com/ownmind/dashboard/home');
   });
 
   it('GET /me/ (trailing slash) → 301, same terminal URL', async () => {
@@ -126,7 +126,7 @@ describe('v1.26.48 — /me family retires to the console usage page', () => {
     assert.equal(r.status, 301);
     assert.ok(!r.location.startsWith('/'));
     const resolved = resolveLocation('http://example.com/ownmind/me/', r.location);
-    assert.equal(resolved, 'http://example.com/ownmind/dashboard/portal/usage');
+    assert.equal(resolved, 'http://example.com/ownmind/dashboard/home');
   });
 
   it('GET /me/foo → 301, deep segment discarded', async () => {
@@ -134,14 +134,14 @@ describe('v1.26.48 — /me family retires to the console usage page', () => {
     assert.equal(r.status, 301);
     assert.ok(!r.location.startsWith('/'));
     const resolved = resolveLocation('http://example.com/ownmind/me/foo', r.location);
-    assert.equal(resolved, 'http://example.com/ownmind/dashboard/portal/usage');
+    assert.equal(resolved, 'http://example.com/ownmind/dashboard/home');
   });
 
   it('GET /me/foo/bar (two segments deep) → 301, same terminal URL', async () => {
     const r = await fetchOnce('/me/foo/bar');
     assert.equal(r.status, 301);
     const resolved = resolveLocation('http://example.com/ownmind/me/foo/bar', r.location);
-    assert.equal(resolved, 'http://example.com/ownmind/dashboard/portal/usage');
+    assert.equal(resolved, 'http://example.com/ownmind/dashboard/home');
   });
 
   it('GET /me does not serve the legacy HTML at any URL under /me', async () => {

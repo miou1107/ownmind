@@ -372,16 +372,16 @@ describe('v1.26.57 — no regression in the paths v1.26.48 made relative', () =>
     );
   });
 
-  it('/me resolves to the console usage page under both bases', async () => {
+  it('/me resolves to the console home under both bases', async () => {
     const r = await fetchOnce(app, '/me');
     assert.equal(r.status, 301);
     assert.equal(
       resolveLocation('http://x/ownmind/me', r.location),
-      'http://x/ownmind/dashboard/portal/usage',
+      'http://x/ownmind/dashboard/home',
     );
     assert.equal(
       resolveLocation('http://x/me', r.location),
-      'http://x/dashboard/portal/usage',
+      'http://x/dashboard/home',
     );
   });
 
