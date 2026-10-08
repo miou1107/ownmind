@@ -12,7 +12,8 @@ the page works at phone width in light and dark, and the old paths it replaces r
 - [x] `src/routes/usage/admin-clients.js`: return `api_host` and `on_old_host`
 - [x] `/system/config`: column 「連的主機」, red pill when `on_old_host`
 - [x] tests: heartbeat with and without `api_host`; admin list flags kkvin.com
-- [ ] release, deploy, then read the list to close #152 step 2 (deploy is the owner's, on the Mac)
+- [x] release (v1.32.6 tagged 2026-10-08) and deploy (server_version 1.32.6 verified; BlackHome's heartbeat shows its host end to end)
+- [ ] read the list to close #152 step 2 — waits for the other machines to auto-upgrade to 1.32.x, since only a 1.32 client reports its host
 
 ## Phase 1 — shell and navigation
 
