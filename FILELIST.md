@@ -1,5 +1,15 @@
 # OwnMind 檔案結構
 
+## v1.32.7 修改（收工面板只在整則訊息就是收工時打開）
+
+修改檔：
+```
+mods/wrapup-check/hooks/register.tsx                    — 觸發條件改成整則訊息比對：去掉空白、標點、符號、表情符號的隱藏標記，全形字先轉半形，再比對「前綴＋收工類詞＋語尾」；/ 開頭的訊息不算
+mods/wrapup-check/hooks/pane.test.tsx                   — 不觸發清單加上提到收工的長句與問句，觸發清單加上「好了，收工」「那就收工吧」「收工❤️」「ＯＫ收工」等說法
+openspec/changes/v1.31.4-wrapup-check-mod/spec.md       — 觸發條件那一段改成整則訊息就是收工
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.6 → 1.32.7
+```
+
 ## v1.31.6 修改（資安掃描的 8 個低等級問題）
 
 新增檔：
