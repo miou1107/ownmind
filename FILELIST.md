@@ -5509,6 +5509,7 @@ tests/collector-api-host.test.js            — v1.32.0：回報帶 api_host（�
 tests/me-overview.test.js                   — v1.32.2：燈不裝綠、舊主機點名、成員拿不到錯誤回報、沒有資料不顯示 0、文案不出現 collector／heartbeat／token／合規、三語字串齊
 tests/me-inbox-count.test.js                — v1.32.3：成員不算錯誤回報、總數相加、沒答案不顯示 0、四個頁面處理完都通知左欄、徽章字串三語齊
 tests/usage-rules-vm.test.js                — v1.32.4：比例算法不算 observed、長條最差優先、沒資料不顯示 0／100%、區間查詢字串、四個分頁與 /team/usage 的接線、versions 帶 api_host
+tests/team-members-rules.test.js            — v1.32.5：成員名單排序與字樣、規矩分組、成員那條路不打管理員 API、兩個搬家的轉址、搜尋接線、三語字串
 tests/collector-failure-reporting.test.js       — 掛掉／卡住／被跳過三種都要回報；訊息只進
                                                    稽核表且截到 1000 字；自我檢查不可以把
                                                    自己送出的失敗通知讀成成功
@@ -6580,6 +6581,10 @@ package.json                                                        — 版號 1
 新增檔：
 ```
 client/src/pages/Team/TeamUsagePage.jsx                             — 排行榜頁：兩支 API、覆蓋率面板、成員明細開合
+client/src/pages/Team/MembersPage.jsx             — v1.32.5：團隊 › 成員。成員看 /api/me/report 的團隊名單；管理員看 TeamUsagePage（embedded）那張表
+client/src/pages/Team/members-vm.js               — 成員名單的純邏輯：排序（最近活動優先、沒紀錄最後）、「OwnMind 看得到嗎」
+client/src/pages/Memory/MemoryRulesPage.jsx       — v1.32.5：記憶 › 規矩。你的鐵律（等級、觸發）＋看得到的團隊規範，點一條看全文，只能看
+client/src/pages/Memory/memory-rules-vm.js        — 規矩頁的純邏輯：鐵律嚴重優先、trigger 標籤、載失敗是 null 不是空
 client/src/pages/Team/TeamUsageTable.jsx                            — 排行榜表格，9 欄（舊的 13 欄）
 client/src/pages/Team/MemberDetail.jsx                              — 成員明細：總計卡、用量分佈、最近對話
 client/src/pages/Team/team-usage-vm.js                              — 列的 view model、排序、覆蓋率、台北日界

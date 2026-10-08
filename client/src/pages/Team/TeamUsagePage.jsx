@@ -30,7 +30,8 @@ function taipeiYmd(offsetDays = 0) {
   }).format(at);
 }
 
-export default function TeamUsagePage() {
+// v1.32.5 — `embedded`: rendered inside 團隊 › 成員, which has its own heading.
+export default function TeamUsagePage({ embedded = false } = {}) {
   const t = useT();
 
   const [from, setFrom] = useState(() => taipeiYmd(-DEFAULT_DAYS));
@@ -90,13 +91,15 @@ export default function TeamUsagePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
-          <Users size={20} />
-          {t('team_usage.title')}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">{t('team_usage.subtitle')}</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
+            <Users size={20} />
+            {t('team_usage.title')}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">{t('team_usage.subtitle')}</p>
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">

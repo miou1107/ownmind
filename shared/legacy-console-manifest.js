@@ -52,7 +52,7 @@ export const LEGACY_CONSOLE_FEATURES = [
   // v1.26.49: team-management rebuilt in the console. /admin/team now renders
   // <TeamPage>; the amber dot next to 成員 in the sidebar disappears. /admin/
   // stays served — the six other signposts still need it.
-  { id: 'team-management', consolePath: '/team/members', legacyTab: 'users', state: 'live' },
+  { id: 'team-management', consolePath: '/admin/users', legacyTab: 'users', state: 'live' },
   // v1.26.51: bug-reports rebuilt in the console. Report list + spam-suspect
   // sub-tab + detail-and-status modal, all against the same /api/bug-reports
   // routes the legacy tab called.
@@ -75,7 +75,7 @@ export const LEGACY_CONSOLE_FEATURES = [
   // /api/usage/stats. The Notional cost column is not ported (Requirement 8) and
   // the coverage panel counts members with usage data instead of collector
   // heartbeats. One signpost left, so /admin/ is still served.
-  { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'live' },
+  { id: 'team-usage', consolePath: '/team/members', legacyTab: 'team-usage', state: 'live' },
   // v1.26.59: 週報月報 rebuilt in the console, and with it the list is empty.
   //
   // This entry is the one that ends the migration: `isLegacyConsoleRetired()` now

@@ -7,6 +7,16 @@ import { fmtDate } from '../../utils/fmtDate';
 // 專案歷程頁 — list 你的所有 type=project memories、按 updated_at 倒序
 // 點 row 開 Modal 看完整 content
 
+/** Case-insensitive match on title or content; every word of the query must appear. */
+export function filterMemories(items, q) {
+  const words = String(q ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return items ?? [];
+  return (items ?? []).filter((m) => {
+    const hay = `${m.title ?? ''}\n${m.content ?? ''}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
 export default function ProjectHistoryPage() {
   const t = useT();
   const { locale } = useLocale();
@@ -15,6 +25,10 @@ export default function ProjectHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selected, setSelected] = useState(null);
+  // v1.32.5 — a search box over title and content, in the browser: the list is the
+  // person's own project memories, small enough to filter where it is.
+  const [q, setQ] = useState('');
+  const shown = filterMemories(items, q);
 
   useEffect(() => {
     let aborted = false;
@@ -37,6 +51,18 @@ export default function ProjectHistoryPage() {
       <h1 className="text-2xl font-bold text-sage-700">{t('project_history.title')}</h1>
       <p className="text-slate-500 mt-1 text-sm">{t('project_history.subtitle')}</p>
 
+      <input
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t('project_history.search.placeholder')}
+        aria-label={t('project_history.search.label')}
+        className="mt-4 w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-sage-500"
+      />
+      {q && !loading && !loadError && (
+        <p className="mt-2 text-xs text-slate-500">{t('project_history.search.count').replace('{n}', shown.length)}</p>
+      )}
+
       {loading ? (
         <p className="mt-6 text-slate-500">{t('common.loading')}</p>
       ) : loadError ? (
@@ -48,9 +74,11 @@ export default function ProjectHistoryPage() {
         </div>
       ) : items.length === 0 ? (
         <p className="mt-6 text-slate-500">{t('common.empty')}</p>
+      ) : shown.length === 0 ? (
+        <p className="mt-6 text-slate-500">{t('project_history.search.none')}</p>
       ) : (
         <ul className="mt-6 space-y-3">
-          {items.map((m) => (
+          {shown.map((m) => (
             <li key={m.id}>
               <button
                 type="button"
