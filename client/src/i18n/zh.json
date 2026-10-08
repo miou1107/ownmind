@@ -848,5 +848,6 @@
   "home.time.today": "今天",
   "home.time.yesterday": "昨天",
   "home.daily": "這 {n} 天你每天開幾場對話",
-  "home.daily.more": "看完整用量"
+  "home.daily.more": "看完整用量",
+  "nav.badge.pending": "{n} 件等你處理"
 }

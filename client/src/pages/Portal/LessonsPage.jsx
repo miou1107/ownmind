@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useT, useLocale } from '../../i18n/LocaleContext';
 import { apiGet, apiPut } from '../../api';
+import { notifyInboxChanged } from '../../hooks/useInboxCount';
 import { fmtDate } from '../../utils/fmtDate';
 
 // 學到的 — the lessons each closed session left behind (v1.31.0).
@@ -52,6 +53,7 @@ export default function LessonsPage() {
       return;
     }
     setItems((prev) => prev.filter((l) => l.id !== id));
+    notifyInboxChanged();
     setToast(action === 'promote' ? t('lessons.promoted') : t('lessons.dismissed'));
   }
 

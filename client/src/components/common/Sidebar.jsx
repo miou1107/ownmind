@@ -36,7 +36,7 @@ export function isEntryActive(entry, pathname) {
   return pathname === entry.path || pathname.startsWith(`${entry.path}/`);
 }
 
-export default function Sidebar({ role = 'user', version, onNavigate, onClose }) {
+export default function Sidebar({ role = 'user', version, onNavigate, onClose, badges = {} }) {
   const t = useT();
   const { pathname } = useLocation();
 
@@ -83,6 +83,17 @@ export default function Sidebar({ role = 'user', version, onNavigate, onClose })
                 >
                   <Icon size={16} />
                   <span className="flex-1 truncate">{t(entry.labelKey)}</span>
+                  {/* v1.32.3 — how many things wait, on the entry that holds them. Only a
+                      real number from the server is shown; null (not loaded, failed) and
+                      zero show nothing. */}
+                  {typeof badges[entry.id] === 'number' && badges[entry.id] > 0 && (
+                    <span
+                      aria-label={t('nav.badge.pending').replace('{n}', badges[entry.id])}
+                      className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-rose-600 text-white text-[11px] font-bold inline-grid place-items-center tabular-nums"
+                    >
+                      {badges[entry.id]}
+                    </span>
+                  )}
                 </Link>
               </li>
             );

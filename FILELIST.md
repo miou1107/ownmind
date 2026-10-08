@@ -5507,6 +5507,7 @@ tests/auto-update-shared.test.js                — 用注入的行程執行器�
                                                    都要回報 step 並放掉鎖、失敗不蓋當日戳記
 tests/collector-api-host.test.js            — v1.32.0：回報帶 api_host（只有主機名、不帶金鑰）、伺服器收下／不收怪值／沒帶不動舊值、管理清單標 on_old_host、後台分組帶主機、自檢第一行印主機
 tests/me-overview.test.js                   — v1.32.2：燈不裝綠、舊主機點名、成員拿不到錯誤回報、沒有資料不顯示 0、文案不出現 collector／heartbeat／token／合規、三語字串齊
+tests/me-inbox-count.test.js                — v1.32.3：成員不算錯誤回報、總數相加、沒答案不顯示 0、四個頁面處理完都通知左欄、徽章字串三語齊
 tests/collector-failure-reporting.test.js       — 掛掉／卡住／被跳過三種都要回報；訊息只進
                                                    稽核表且截到 1000 字；自我檢查不可以把
                                                    自己送出的失敗通知讀成成功
@@ -7069,6 +7070,8 @@ openspec/changes/archive/v1.26.43-dashboard-version-source/tasks.md     — v1.2
 src/utils/server-version.js                                     — 新增、SERVER_VERSION 的唯一定義（讀不到 package.json 回 0.0.0、不丟例外）
 src/routes/version.js                                           — 新增、GET /api/version 只回 { version }，factory 形式（比照 createDebugRouter）掛在 auth 後面
 client/src/hooks/useServerVersion.js                             — 新增、走 apiGet('/api/version')，初值空字串、失敗維持空字串。模組層級快取（只快取成功值）。**只能從 Layout 呼叫**：從 App 呼叫會在還沒登入時吃 401 且永不重試
+client/src/hooks/useInboxCount.js                 — v1.32.3：待你處理的數字（總數＋每分頁），讀 /api/me/overview/pending-count，收到 INBOX_CHANGED 事件就重讀；notifyInboxChanged() 給頁面呼叫
+client/src/hooks/inbox-badges.js                  — useInboxCount 的純邏輯：伺服器的數字變成左欄／分頁要顯示的形狀，不是數字就 null（不顯示）
 tests/dashboard-version-source.test.js                           — 20 tests：共用模組對得上 package.json、manifest 壞掉退 0.0.0、src/ 底下沒有本地 SERVER_VERSION 定義、使用者都 import 共用模組、端點回傳與 auth 卡控、client/src 沒有版號字面值、hook 只能從 Layout 呼叫且每個 Layout 都在 RequireAuth 裡、LoginPage 不渲染 Layout、hook 走 apiGet 不用裸 fetch、失敗不進快取、Footer 空狀態與三語系字串。去註解工具改成會辨識字串（原本會被 glob 裡的 /* 騙）
 ```
 修改檔：

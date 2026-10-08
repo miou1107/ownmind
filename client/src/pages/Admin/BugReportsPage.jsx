@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Bug, RefreshCw } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { apiGet } from '../../api';
+import { notifyInboxChanged } from '../../hooks/useInboxCount';
 import { bugReportRowVm } from './bug-report-row-vm.js';
 import BugReportDetailModal from './BugReportDetailModal.jsx';
 import SpamSuspectModal from './SpamSuspectModal.jsx';
@@ -292,6 +293,9 @@ export default function BugReportsPage() {
           setDetailTargetId(null);
           showToast(t('bug_reports.toast.saved'));
           loadAll();
+          // v1.32.3 — a status change can take a report out of "new"; the rail's
+          // 待你處理 number re-reads itself.
+          notifyInboxChanged();
         }}
       />
 

@@ -33,9 +33,9 @@ the page works at phone width in light and dark, and the old paths it replaces r
 
 ## Phase 3 — 待你處理
 
-- [ ] tabs 交接／學到的／任務卡／錯誤回報(admin), each a list with one primary button
-- [ ] reuse the existing handoff accept, lesson keep/dismiss, task review, bug status APIs
-- [ ] an item handled disappears without a reload; counts in the rail update
+- [x] tabs 交接／學到的／任務卡／錯誤回報(admin), each a list with one primary button (the Phase 1 tabs already were)
+- [x] reuse the existing handoff accept, lesson keep/dismiss, task review, bug status APIs
+- [x] an item handled disappears without a reload; counts in the rail update (`/api/me/overview/pending-count`, `useInboxCount`)
 
 ## Phase 4 — 用量與規矩
 

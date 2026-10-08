@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useT, useLocale } from '../../i18n/LocaleContext';
 import { apiGet, apiPut } from '../../api';
+import { notifyInboxChanged } from '../../hooks/useInboxCount';
 import { fmtDate } from '../../utils/fmtDate';
 
 // 工作交接頁 — list 待處理交接、接手後從清單移除
@@ -64,6 +65,7 @@ export default function HandoffsPage() {
     }
     // 從 list 移除
     setItems((prev) => prev.filter((h) => h.id !== id));
+    notifyInboxChanged();
     setToast(t('handoffs.accept_success'));
   }
 
