@@ -290,16 +290,22 @@ describe('the real sqlite3 CLI, on this machine', () => {
     // the adapter actually uses in production. This one drives the whole chain — adapter
     // to defaultRunSqlite to runSqliteCli to the snapshot fallback — with a real CLI and
     // a real logger, against a path with nothing at it.
+    // v1.31.14 made "no sqlite3 and no database" a quiet no_install with no warning at
+    // all, so the CLI's absence can no longer be read off the warnings. Ask the CLI
+    // itself, the way the test below does; the Windows CI runner has no sqlite3 and used
+    // to fail here with an empty warning list.
+    try {
+      await promisify(execFile)('sqlite3', ['-version']);
+    } catch (err) {
+      if (err.code === 'ENOENT') { t.skip('sqlite3 CLI not installed'); return; }
+      throw err;
+    }
     const warnings = [];
     const adapter = createOpenCodeAdapter({
       dbPath: nodePath.join(ROOT, 'absent', 'opencode.db'),
       logger: { warn: (m) => warnings.push(m) }
     });
     const out = await adapter.readSince({});
-    if (warnings.some((w) => /sqlite3 CLI not found/.test(w))) {
-      t.skip('sqlite3 CLI not installed');
-      return;
-    }
     assert.equal(out.reason, 'no_install');
     assert.ok(
       warnings.some((w) => w.startsWith('[sqlite-cli]')),
