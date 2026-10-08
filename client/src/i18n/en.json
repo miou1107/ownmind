@@ -848,5 +848,6 @@
   "home.time.today": "Today",
   "home.time.yesterday": "Yesterday",
   "home.daily": "Sessions per day, last {n} days",
-  "home.daily.more": "See full usage"
+  "home.daily.more": "See full usage",
+  "nav.badge.pending": "{n} waiting for you"
 }

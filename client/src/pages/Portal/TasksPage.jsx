@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useT, useLocale } from '../../i18n/LocaleContext';
 import { apiGet, apiPut } from '../../api';
+import { notifyInboxChanged } from '../../hooks/useInboxCount';
 import { fmtDate } from '../../utils/fmtDate';
 
 // Task cards (v1.31.3): the cards this person owns or holds. A `done` card is reviewed here,
@@ -96,6 +97,7 @@ export default function TasksPage() {
       return;
     }
     setItems((prev) => prev.filter((c) => c.id !== id));
+    notifyInboxChanged();
     setToast(t('tasks.reviewed_ok'));
   }
 

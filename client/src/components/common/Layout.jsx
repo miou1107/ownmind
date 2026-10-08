@@ -5,6 +5,7 @@ import useServerVersion from '../../hooks/useServerVersion';
 import useChangelog from '../../hooks/useChangelog';
 import { useSession } from '../../session/SessionContext';
 import { navLabelKey, navEntryFor, visibleItems } from './nav-sections';
+import useInboxCount from '../../hooks/useInboxCount';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import Footer from './Footer';
@@ -35,6 +36,9 @@ export default function Layout({ children }) {
   const changelog = useChangelog();
   const { role, name, error, ready, logout } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  // v1.32.3 — 待你處理 的數字：左欄的入口旁一個總數，分頁列上每個分頁各一個。
+  const inbox = useInboxCount();
+  const badges = { inbox: inbox.total };
 
   // 換頁就把小螢幕的選單收起來，不然點了入口選單還蓋在新頁面上。
   useEffect(() => { setMenuOpen(false); }, [pathname]);
@@ -56,11 +60,11 @@ export default function Layout({ children }) {
   return (
     <div className="flex h-screen bg-linen-100">
       <div className="hidden min-[960px]:block">
-        <Sidebar role={role} version={version} />
+        <Sidebar role={role} version={version} badges={badges} />
       </div>
       {menuOpen && (
         <div className="fixed inset-0 z-40 flex min-[960px]:hidden">
-          <Sidebar role={role} version={version} onNavigate={() => setMenuOpen(false)} onClose={() => setMenuOpen(false)} />
+          <Sidebar role={role} version={version} badges={badges} onNavigate={() => setMenuOpen(false)} onClose={() => setMenuOpen(false)} />
           <button
             type="button"
             aria-label={t('nav.menu_close')}
@@ -94,6 +98,11 @@ export default function Layout({ children }) {
                         : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300')}
                   >
                     {t(tab.labelKey)}
+                    {entry.id === 'inbox' && typeof inbox.byTab[tab.id] === 'number' && inbox.byTab[tab.id] > 0 && (
+                      <span className="ml-1.5 inline-grid place-items-center min-w-[18px] h-[18px] px-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold tabular-nums">
+                        {inbox.byTab[tab.id]}
+                      </span>
+                    )}
                   </NavLink>
                 </li>
               ))}

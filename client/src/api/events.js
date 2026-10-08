@@ -15,3 +15,7 @@ export const SESSION_CHANGED = 'ownmind:session-changed';
 
 /** The credential is gone or rejected; whoever owns routing should return to /login. */
 export const AUTH_EXPIRED = 'ownmind:auth-expired';
+
+// v1.32.3 — a page handled something in 待你處理 (accepted a handoff, kept a lesson,
+// reviewed a task, changed a bug's status). The rail re-reads its count on this.
+export const INBOX_CHANGED = 'ownmind:inbox-changed';

@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.32.2** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.32.3** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -41,6 +41,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
 - **`/ownmind-week` still said the rules might be stale on a current install** — on 2026-10-04 it printed "自動更新失敗 70 次，規矩可能不是最新版" on a machine updated by hand that morning, while the pane card said 已是最新版. The card, the chart title and `/ownmind-week` now share one sentence: how many versions behind, or 已是最新版. When one of today's update attempts failed at the fetch step (the updater records that step), all three say the update server could not be reached instead of claiming the install is current. Client update only. `v1.31.11`
+- **待你處理 shows how many things wait, and the number drops the moment you handle one** — a total on the rail entry and one per tab, from a new /api/me/overview/pending-count. Only a real positive number is shown; nothing before the first answer, nothing on failure, nothing for zero. Accepting a handoff, keeping or dropping a lesson, reviewing a task or changing a bug's status re-reads the count at once. Server and console redeploy. `v1.32.3`
 - **總覽 is now a real first screen** — three status lights (memory server, usage reporting, rule checks), each with one sentence saying what to do; a 等你處理 list with one button per kind; four tiles compared with the previous range; sessions per day. One new endpoint, /api/me/overview, composes numbers the console already had. A value the server does not have reads 沒有資料, never 0. The three warning banners on the usage page became the lights. Server and console redeploy. `v1.32.2`
 - **The console rail went from 20 items in 5 groups to 7 entries** — 總覽, 待你處理, 用量與規矩, 團隊, 記憶, 我的設定, 管理, each holding tabs. Every page is still the page it was and every role sees exactly what it saw; this release is the skeleton (openspec v1.32.0-console-rebuild, Phase 1). All 20 old addresses redirect to the tab that took them over, so links in memories and notices keep working. Login lands on 總覽, which for now is the door to each area. Console redeploy only. `v1.32.1`
 - **The admin console now shows which server each computer reports to** — a week after the move to fapa.welcometw.com, two computers were still posting to the retired host kkvin.com, and every row in the install list said 1.31.14 and nothing else (#152). Each heartbeat now carries the host it posts to (host only, never the key), the server stores it, and 系統設定 › 裝機狀況 has a 「連的主機」 column: a computer on the old host is red, with the one sentence that says what to do. The AI self-check prints the host on its first line. Server and client update; the server runs db/031 on start. `v1.32.0`

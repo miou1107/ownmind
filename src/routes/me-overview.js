@@ -60,6 +60,17 @@ export function createOverviewRouter(deps = {}) {
   const router = Router();
   router.use(auth);
 
+  // v1.32.3 — the number on the 待你處理 entry and its tabs. Cheap on purpose: four
+  // counts, read on every page change and after every inbox action.
+  router.get('/pending-count', async (req, res) => {
+    try {
+      res.json(await buildPendingCount({ query, user: req.user }));
+    } catch (err) {
+      logger.error('me/overview/pending-count failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to count pending items' });
+    }
+  });
+
   router.get('/', async (req, res) => {
     try {
       const data = await buildOverview({
@@ -347,6 +358,33 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
     tiles,
     daily: (daily.rows ?? []).map((r) => ({ date: r.date, count: int(r.count) })),
   };
+}
+
+/**
+ * How many items wait in each inbox tab, for the caller.
+ *
+ * `bugs` is null for a member: the bug list is not theirs to handle, so it is neither
+ * counted nor queried. `total` is what the rail shows.
+ */
+export async function buildPendingCount({ query, user }) {
+  const uid = user.id;
+  const admin = isAtLeast(user.role, 'admin');
+  const [h, l, t, b] = await Promise.all([
+    query(`SELECT COUNT(*)::int AS n FROM handoffs WHERE user_id = $1 AND status = 'pending'`, [uid]),
+    query(`SELECT COUNT(*)::int AS n FROM session_lessons WHERE user_id = $1 AND status = 'new'`, [uid]),
+    query(`SELECT COUNT(*)::int AS n FROM tasks WHERE user_id = $1 AND status = 'done'`, [uid]),
+    admin
+      ? query(`SELECT COUNT(*)::int AS n FROM bug_reports WHERE status = 'new'`)
+      : Promise.resolve(null),
+  ]);
+  const counts = {
+    handoffs: int(h.rows[0]?.n),
+    lessons: int(l.rows[0]?.n),
+    tasks: int(t.rows[0]?.n),
+    bugs: b ? int(b.rows[0]?.n) : null,
+  };
+  counts.total = counts.handoffs + counts.lessons + counts.tasks + (counts.bugs ?? 0);
+  return counts;
 }
 
 /** comply ÷ (comply + skip + violate); null when nothing was reported. */

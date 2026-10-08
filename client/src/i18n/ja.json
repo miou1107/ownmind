@@ -848,5 +848,6 @@
   "home.time.today": "今日",
   "home.time.yesterday": "昨日",
   "home.daily": "直近 {n} 日、1 日あたりの会話回数",
-  "home.daily.more": "利用量をすべて見る"
+  "home.daily.more": "利用量をすべて見る",
+  "nav.badge.pending": "{n} 件があなたの対応待ち"
 }
