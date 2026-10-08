@@ -94,6 +94,6 @@ export function routeTierFor(minRole) {
  * identity failed to resolve bounces from the fallback to the fallback forever. Asserted by
  * tests/console-nav-structure.test.js against the navigation's own minRole for this path.
  */
-export const ROLE_DENIED_REDIRECT = '/portal/usage';
+export const ROLE_DENIED_REDIRECT = '/home';
 
 export { ROLE_RANK };

@@ -32,7 +32,7 @@ export default function LoginPage() {
   // 防 self-loop：若 from path 本身就是 /login（理論上不會、防禦性編程），導 /portal/usage
   if (getSessionToken()) {
     const from = location.state?.from?.pathname;
-    const to = from && from !== '/login' ? from : '/portal/usage';
+    const to = from && from !== '/login' ? from : '/home';
     return <Navigate to={to} replace />;
   }
 
@@ -77,8 +77,8 @@ export default function LoginPage() {
     setMustChangePassword(!!r.data.must_change_password);
     // 必須改預設密碼 → 強制導去帳密頁，user 改完密碼才能用其他功能
     const to = r.data.must_change_password
-      ? '/preference/security'
-      : (location.state?.from?.pathname || '/portal/usage');
+      ? '/settings/security'
+      : (location.state?.from?.pathname || '/home');
     navigate(to, { replace: true });
   }
 
@@ -144,7 +144,7 @@ export default function LoginPage() {
     prime(r.data);
     // No flag to write and no detour to /preference/security: the password was just set.
     setMustChangePassword(false);
-    navigate(location.state?.from?.pathname || '/portal/usage', { replace: true });
+    navigate(location.state?.from?.pathname || '/home', { replace: true });
   }
 
   if (mode === 'first-password') {

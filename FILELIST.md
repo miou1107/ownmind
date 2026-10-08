@@ -6304,6 +6304,7 @@ src/routes/me.js                     — 登入改問 first-password 政策；�
 src/app.js                           — authLimiter 掛上 /api/me/first-password
 client/src/pages/login-outcome.js    — 第四種結果 first_password，排在 api_key 檢查之前
 client/src/pages/LoginPage.jsx       — 第三種模式，沿用既有 mode 狀態的形狀
+client/src/pages/Home/HomePage.jsx                 — 總覽第一版（v1.32.1）：七個入口的門，每區一句話；第 2 段換成狀態燈與數字卡
 client/src/i18n/{zh,en,ja}.json      — 5 個新 key
 CHANGELOG.md, FILELIST.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.63
 openspec/BACKLOG.md                  — 第 1 條出去，換成「管理員重設那條路 + 要不要輪換 api_key」

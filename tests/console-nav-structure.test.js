@@ -5,6 +5,10 @@
 // here are about every item resolving to something real, and about the sidebar's idea of
 // who may see what agreeing with the route guards'.
 //
+// v1.32.0 — 20 pages became 7 entries with tabs (openspec v1.32.0-console-rebuild,
+// Phase 1). The promises are the same, plus two new ones: every old address redirects to
+// a tab that exists, and an entry's bare address lands on a tab its reader may see.
+//
 // Most of this executes the navigation module rather than reading its source. The parts
 // that must read source are the ones that live in JSX, which node --test cannot parse.
 
@@ -15,7 +19,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  NAV_SECTIONS, allNavItems, visibleSections, visibleItems, navMinRole, navLabelKey,
+  NAV_ENTRIES, NAV_SECTIONS, OLD_PATHS, allNavItems, visibleSections, visibleItems,
+  navMinRole, navLabelKey, navEntryFor, firstVisiblePath, entryMinRole,
 } from '../client/src/components/common/nav-sections.js';
 import { ROLE_DENIED_REDIRECT, roleAtLeast } from '../client/src/session/roles.js';
 import {
@@ -27,6 +32,7 @@ const read = (p) => readFileSync(join(repoRoot, p), 'utf8');
 
 const APP = 'client/src/App.jsx';
 const SIDEBAR = 'client/src/components/common/Sidebar.jsx';
+const LAYOUT = 'client/src/components/common/Layout.jsx';
 const ROLES = ['user', 'admin', 'super_admin'];
 
 describe('nav structure — every item resolves to something real', () => {
@@ -49,6 +55,11 @@ describe('nav structure — every item resolves to something real', () => {
       assert.equal(isSignpost(item.path), false,
         `${item.path} is signposted, which is no longer a thing that can work`);
     }
+    // And nothing is wired that the navigation does not reach.
+    const navPaths = new Set(allNavItems().map((i) => i.path));
+    for (const p of realPaths) {
+      assert.ok(navPaths.has(p), `${p} is wired in App.jsx but no nav item points there`);
+    }
   });
 
   it('every manifest entry has a seat in the navigation', () => {
@@ -62,13 +73,13 @@ describe('nav structure — every item resolves to something real', () => {
     }
   });
 
-  it('every item has an icon, so the sidebar cannot render undefined as a component', () => {
+  it('every entry has an icon, so the rail cannot render undefined as a component', () => {
     const sidebar = read(SIDEBAR);
-    for (const item of allNavItems()) {
+    for (const entry of NAV_ENTRIES) {
       assert.match(
         sidebar,
-        new RegExp(`'${item.path.replace(/\//g, '\\/')}':`),
-        `Sidebar ICONS has no entry for ${item.path}`,
+        new RegExp(`'${entry.path.replace(/\//g, '\\/')}':`),
+        `Sidebar ICONS has no entry for ${entry.path}`,
       );
     }
   });
@@ -91,12 +102,129 @@ describe('nav structure — every item resolves to something real', () => {
   it('every label key exists in all three locales', () => {
     const keys = new Set([
       ...allNavItems().map((i) => i.labelKey),
-      ...NAV_SECTIONS.map((s) => s.labelKey),
+      ...NAV_ENTRIES.map((e) => e.labelKey),
     ]);
     for (const loc of ['zh', 'en', 'ja']) {
       const dict = JSON.parse(read(`client/src/i18n/${loc}.json`));
       for (const key of keys) {
         assert.ok(dict[key], `${loc}.json has no value for ${key}`);
+      }
+    }
+  });
+});
+
+describe('v1.32.0 — seven entries, each a prefix of its own tabs', () => {
+  it('there are seven, in the order the prototype fixed', () => {
+    assert.deepEqual(NAV_ENTRIES.map((e) => e.id),
+      ['home', 'inbox', 'usage', 'team', 'memory', 'settings', 'admin']);
+    assert.equal(NAV_SECTIONS, NAV_ENTRIES, 'the old name must still resolve');
+  });
+
+  it('every tab lives under its entry\'s path, and ids are unique within an entry', () => {
+    for (const entry of NAV_ENTRIES) {
+      const ids = new Set();
+      for (const tab of entry.tabs) {
+        assert.ok(tab.path.startsWith(`${entry.path}/`), `${tab.path} is not under ${entry.path}`);
+        assert.ok(!ids.has(tab.id), `${entry.id} has two tabs called ${tab.id}`);
+        ids.add(tab.id);
+        assert.equal(navEntryFor(tab.path), entry);
+      }
+      assert.equal(navEntryFor(entry.path), entry);
+    }
+    assert.equal(navEntryFor('/nope'), null);
+  });
+
+  it('no entry path is a prefix of another, so the active entry is unambiguous', () => {
+    for (const a of NAV_ENTRIES) {
+      for (const b of NAV_ENTRIES) {
+        if (a === b) continue;
+        assert.ok(!b.path.startsWith(`${a.path}/`), `${b.path} sits under ${a.path}`);
+      }
+    }
+  });
+
+  it('an entry\'s bare path lands on the first tab the role may see', () => {
+    const inbox = NAV_ENTRIES.find((e) => e.id === 'inbox');
+    assert.equal(firstVisiblePath(inbox, 'user'), '/inbox/handoffs');
+    const admin = NAV_ENTRIES.find((e) => e.id === 'admin');
+    assert.equal(firstVisiblePath(admin, 'admin'), '/admin/machines');
+    assert.equal(firstVisiblePath(admin, 'user'), null, 'a member may see no admin tab at all');
+    const team = NAV_ENTRIES.find((e) => e.id === 'team');
+    assert.equal(firstVisiblePath(team, 'user'), '/team/observe',
+      'a member skips 成員 (admin) and lands on the first tab they may see');
+    assert.equal(firstVisiblePath(team, 'admin'), '/team/members');
+  });
+
+  it('an entry\'s minimum role is the lowest among its tabs', () => {
+    assert.equal(entryMinRole(NAV_ENTRIES.find((e) => e.id === 'home')), 'user');
+    assert.equal(entryMinRole(NAV_ENTRIES.find((e) => e.id === 'team')), 'user');
+    assert.equal(entryMinRole(NAV_ENTRIES.find((e) => e.id === 'admin')), 'admin');
+  });
+
+  it('App.jsx redirects an entry\'s bare path through the session, not a fixed target', () => {
+    const app = read(APP);
+    assert.match(app, /firstVisiblePath\(entry, role\)/,
+      'the entry index must pick the tab by role; a fixed first tab would send a member to an admin page');
+    assert.match(app, /if \(!ready\) return null;/,
+      'and must wait for the identity, or a null role sends every admin to 總覽');
+  });
+
+  it('Layout titles the page by entry and subtitles it by tab', () => {
+    const layout = read(LAYOUT);
+    assert.match(layout, /navEntryFor\(pathname\)/);
+    assert.match(layout, /navLabelKey\(pathname\)/);
+    assert.match(layout, /visibleItems\(entry, role\)/, 'the tab strip shows only tabs the role may see');
+  });
+});
+
+describe('v1.32.0 — every old address still works', () => {
+  const OLD_TWENTY = [
+    '/portal/usage', '/portal/project-history', '/portal/handoffs', '/portal/lessons',
+    '/portal/tasks', '/portal/reports', '/portal/narrative', '/portal/pitfalls',
+    '/portal/periodic-reports', '/team/usage', '/team/stats', '/team/tasks',
+    '/preference/profile', '/preference/security', '/preference/vault',
+    '/admin/team', '/admin/bugs', '/system/config', '/system/broadcast', '/system/work-log',
+  ];
+
+  it('each of the twenty is either a redirect or still a route', () => {
+    const navPaths = new Set(allNavItems().map((i) => i.path));
+    for (const old of OLD_TWENTY) {
+      assert.ok(old in OLD_PATHS || navPaths.has(old),
+        `${old} neither redirects nor exists; a link in somebody's memory just broke`);
+    }
+  });
+
+  it('every redirect target is a nav item, so a redirect cannot land on 404', () => {
+    const navPaths = new Set(allNavItems().map((i) => i.path));
+    for (const [from, to] of Object.entries(OLD_PATHS)) {
+      assert.ok(navPaths.has(to), `${from} redirects to ${to}, which is not a page`);
+      assert.ok(!navPaths.has(from), `${from} is both a redirect and a page`);
+    }
+  });
+
+  it('App.jsx renders the redirects from OLD_PATHS rather than listing them again', () => {
+    const app = read(APP);
+    assert.match(app, /Object\.entries\(OLD_PATHS\)/);
+  });
+
+  it('nothing in the client still links to an old address', () => {
+    // The guards, the login page and the top bar all used to name /portal/usage or
+    // /preference/*. A link left behind would work — the redirect catches it — but it is a
+    // second place to update, which is how the first one went stale.
+    const files = [
+      APP, SIDEBAR, LAYOUT,
+      'client/src/components/common/TopBar.jsx',
+      'client/src/components/common/RequireFreshPassword.jsx',
+      'client/src/components/common/RequireRole.jsx',
+      'client/src/pages/LoginPage.jsx',
+      'client/src/pages/Preference/SecurityPage.jsx',
+      'client/src/session/roles.js',
+    ];
+    for (const f of files) {
+      const src = read(f).replace(/\/\/.*$/gm, '');
+      for (const old of Object.keys(OLD_PATHS)) {
+        assert.doesNotMatch(src, new RegExp(`['"\`]${old.replace(/\//g, '\\/')}['"\`]`),
+          `${f} still links to ${old}`);
       }
     }
   });
@@ -118,16 +246,18 @@ describe('nav structure — role filtering', () => {
         assert.ok(!paths.includes(item.path), `${item.path} must not be visible to a user`);
       }
     }
+    // The entries a member sees: everything but 管理.
+    assert.deepEqual(sections.map((s) => s.id), ['home', 'inbox', 'usage', 'team', 'memory', 'settings']);
   });
 
-  it('a section appears when at least one of its items does, and not otherwise', () => {
+  it('an entry appears when at least one of its tabs does, and not otherwise', () => {
     for (const role of ROLES) {
       const shown = new Set(visibleSections(role).map((s) => s.id));
-      for (const section of NAV_SECTIONS) {
-        const any = visibleItems(section, role).length > 0;
+      for (const entry of NAV_ENTRIES) {
+        const any = visibleItems(entry, role).length > 0;
         assert.equal(
-          shown.has(section.id), any,
-          `section ${section.id} visibility for ${role} disagrees with its items`,
+          shown.has(entry.id), any,
+          `entry ${entry.id} visibility for ${role} disagrees with its tabs`,
         );
       }
     }
@@ -137,13 +267,26 @@ describe('nav structure — role filtering', () => {
     // Identity failed to resolve. Failing closed here is what keeps the console from
     // offering admin tools during a database blip.
     for (const role of [null, undefined, '', 'root', 'valueOf']) {
-      assert.deepEqual(visibleSections(role), [], `role ${String(role)} should see no sections`);
+      assert.deepEqual(visibleSections(role), [], `role ${String(role)} should see no entries`);
     }
   });
 
   it('a super_admin sees every item', () => {
     const paths = visibleSections('super_admin').flatMap((s) => s.items.map((i) => i.path));
     assert.equal(paths.length, allNavItems().length);
+  });
+
+  it('nobody gained or lost a page in the move', () => {
+    // Phase 1 is a move, not a change of policy. Each tab carries the role its old page
+    // had; this pins the ones that would be easiest to get wrong.
+    assert.equal(navMinRole('/team/observe'), 'user', '整體分析 was open to members');
+    assert.equal(navMinRole('/team/reports'), 'user', '週報月報 was open to members (v1.26.59)');
+    assert.equal(navMinRole('/team/members'), 'admin');
+    assert.equal(navMinRole('/inbox/bugs'), 'admin');
+    assert.equal(navMinRole('/usage/team'), 'admin');
+    assert.equal(navMinRole('/admin/machines'), 'admin');
+    assert.equal(navMinRole('/admin/broadcast'), 'super_admin');
+    assert.equal(navMinRole('/admin/work-log'), 'super_admin');
   });
 });
 
@@ -156,7 +299,7 @@ describe('nav structure — the guards agree with the navigation', () => {
     assert.match(app, /allNavItems\(\)/, 'App.jsx must build its feature routes from the nav data');
     assert.doesNotMatch(
       app,
-      /<Route\s+path="\/(portal|team|admin|system)\//,
+      /<Route\s+path="\/(portal|team|admin|system|inbox|usage|memory|settings)\//,
       'App.jsx must not hardcode feature routes; they come from allNavItems()',
     );
   });
@@ -170,6 +313,7 @@ describe('nav structure — the guards agree with the navigation', () => {
     // RequireRole sends a denied role to ROLE_DENIED_REDIRECT. If that path were itself
     // role-gated, a session whose identity failed to resolve would bounce from the
     // fallback to the fallback forever.
+    assert.equal(ROLE_DENIED_REDIRECT, '/home', '總覽 is the first screen and the fallback');
     assert.equal(
       navMinRole(ROLE_DENIED_REDIRECT), 'user',
       `${ROLE_DENIED_REDIRECT} is where a denied role is sent, so it must be open to user`,
@@ -186,8 +330,7 @@ describe('nav structure — the guards agree with the navigation', () => {
 
 describe('nav structure — 稽核記錄 is gone, not hidden', () => {
   it('no source file still routes or labels the audit page', () => {
-    for (const file of [APP, SIDEBAR, 'client/src/components/common/nav-sections.js',
-      'client/src/components/common/Layout.jsx']) {
+    for (const file of [APP, SIDEBAR, 'client/src/components/common/nav-sections.js', LAYOUT]) {
       assert.doesNotMatch(read(file), /super\/audit/, `${file} still references /super/audit`);
     }
   });
@@ -225,7 +368,7 @@ describe('nav structure — 稽核記錄 is gone, not hidden', () => {
 
 describe('nav structure — page titles have one source', () => {
   it('Layout reads the title from the navigation instead of its own table', () => {
-    const layout = read('client/src/components/common/Layout.jsx');
+    const layout = read(LAYOUT);
     assert.match(layout, /navLabelKey\(/, 'Layout must resolve titles through navLabelKey');
     assert.doesNotMatch(
       layout,

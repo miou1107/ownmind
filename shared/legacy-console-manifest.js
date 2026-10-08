@@ -52,19 +52,19 @@ export const LEGACY_CONSOLE_FEATURES = [
   // v1.26.49: team-management rebuilt in the console. /admin/team now renders
   // <TeamPage>; the amber dot next to 成員 in the sidebar disappears. /admin/
   // stays served — the six other signposts still need it.
-  { id: 'team-management', consolePath: '/admin/team', legacyTab: 'users', state: 'live' },
+  { id: 'team-management', consolePath: '/team/members', legacyTab: 'users', state: 'live' },
   // v1.26.51: bug-reports rebuilt in the console. Report list + spam-suspect
   // sub-tab + detail-and-status modal, all against the same /api/bug-reports
   // routes the legacy tab called.
-  { id: 'bug-reports', consolePath: '/admin/bugs', legacyTab: 'bug-reports', state: 'live' },
+  { id: 'bug-reports', consolePath: '/inbox/bugs', legacyTab: 'bug-reports', state: 'live' },
   // v1.26.50: system-config and broadcast rebuilt in the console. Two more
   // amber dots gone; the pricing card in the same legacy tab is not ported
   // (Stage 8 deletion). The other five signposts still keep /admin/ served.
-  { id: 'system-config', consolePath: '/system/config', legacyTab: 'settings', state: 'live' },
-  { id: 'broadcast', consolePath: '/system/broadcast', legacyTab: 'settings', state: 'live' },
+  { id: 'system-config', consolePath: '/admin/machines', legacyTab: 'settings', state: 'live' },
+  { id: 'broadcast', consolePath: '/admin/broadcast', legacyTab: 'settings', state: 'live' },
   // v1.26.51: work-log rebuilt in the console. Three-source merged timeline
   // (activity / compliance / session) against /api/admin/work-log.
-  { id: 'work-log', consolePath: '/system/work-log', legacyTab: 'work-log', state: 'live' },
+  { id: 'work-log', consolePath: '/admin/work-log', legacyTab: 'work-log', state: 'live' },
   // v1.26.56: stats-dashboard rebuilt in the console. Two views (cross-user
   // overview and per-user detail) against /api/activity/stats/all, /stats and
   // /stats/rules — endpoints the console had never called before, so this one
@@ -75,7 +75,7 @@ export const LEGACY_CONSOLE_FEATURES = [
   // /api/usage/stats. The Notional cost column is not ported (Requirement 8) and
   // the coverage panel counts members with usage data instead of collector
   // heartbeats. One signpost left, so /admin/ is still served.
-  { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'live' },
+  { id: 'team-usage', consolePath: '/usage/team', legacyTab: 'team-usage', state: 'live' },
   // v1.26.59: 週報月報 rebuilt in the console, and with it the list is empty.
   //
   // This entry is the one that ends the migration: `isLegacyConsoleRetired()` now
@@ -84,7 +84,7 @@ export const LEGACY_CONSOLE_FEATURES = [
   // header. The feature's permission also widens here: the report is per-user
   // (`GET /api/session/report` filters `WHERE user_id = $1`) and only sat at admin
   // because no member below admin can log in to the legacy console it pointed at.
-  { id: 'periodic-reports', consolePath: '/portal/periodic-reports', legacyTab: 'reports', state: 'live' },
+  { id: 'periodic-reports', consolePath: '/team/reports', legacyTab: 'reports', state: 'live' },
 ];
 
 /**

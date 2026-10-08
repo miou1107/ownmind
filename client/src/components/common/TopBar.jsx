@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, User, LogOut } from 'lucide-react';
+import { ChevronDown, User, LogOut, Menu } from 'lucide-react';
 import { SUPPORTED_LOCALES } from '../../i18n';
 import { useLocale, useT } from '../../i18n/LocaleContext';
 import RoleBadge from './RoleBadge';
@@ -22,6 +22,7 @@ export default function TopBar({
   currentRole,
   userName,
   onLogout,
+  onOpenMenu,
 }) {
   const { locale, setLocale } = useLocale();
   const t = useT();
@@ -39,8 +40,19 @@ export default function TopBar({
   }, []);
 
   return (
-    <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between gap-4">
-      <div className="min-w-0">
+    <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+      {/* v1.32.0 — 960px 以下左邊的入口列收起來，從這顆按鈕打開。 */}
+      {onOpenMenu && (
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          aria-label={t('nav.menu_open')}
+          className="min-[960px]:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100"
+        >
+          <Menu size={18} />
+        </button>
+      )}
+      <div className="min-w-0 flex-1">
         <h1 className="text-lg font-bold text-slate-900 truncate">
           {pageTitle || t('header.title')}
         </h1>
@@ -86,7 +98,7 @@ export default function TopBar({
           {menuOpen && (
             <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-40">
               <Link
-                to="/preference/profile"
+                to="/settings/profile"
                 onClick={() => setMenuOpen(false)}
                 className="w-full flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
               >
