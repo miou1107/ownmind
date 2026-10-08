@@ -49,7 +49,7 @@ export function createSelfCheckRouter(deps = {}) {
     try {
       const [beats, counts, memory] = await Promise.all([
         query(
-          `SELECT tool, machine, os, scanner_version,
+          `SELECT tool, machine, os, scanner_version, api_host,
                   last_reported_at, last_event_ts, reason
              FROM collector_heartbeat
             WHERE user_id = $1
@@ -106,6 +106,8 @@ export function createSelfCheckRouter(deps = {}) {
           machine: r.machine ?? null,
           os: r.os ?? null,
           scanner_version: r.scanner_version ?? null,
+          // v1.32.0 — which server this row was reported to; null before v1.32.0.
+          api_host: r.api_host ?? null,
           last_reported_at: toIso(r.last_reported_at),
           last_event_ts: toIso(r.last_event_ts),
           reason: r.reason ?? null,

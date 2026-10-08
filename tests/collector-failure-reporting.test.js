@@ -73,7 +73,8 @@ describe('reportCollectorState', () => {
     assert.deepEqual(calls[0].body.events, []);
     assert.deepEqual(calls[0].body.heartbeat, {
       tool: 'codex', reason: ADAPTER_ERROR, scanner_version: '1.26.142',
-      machine: 'LAPTOP-1', error: 'ENOENT: no such file'
+      machine: 'LAPTOP-1', error: 'ENOENT: no such file',
+      api_host: 'example.test'   // v1.32.0 — every heartbeat says which server it went to
     });
   });
 

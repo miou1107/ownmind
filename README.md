@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.31.14** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.32.0** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -41,6 +41,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
 - **`/ownmind-week` still said the rules might be stale on a current install** — on 2026-10-04 it printed "自動更新失敗 70 次，規矩可能不是最新版" on a machine updated by hand that morning, while the pane card said 已是最新版. The card, the chart title and `/ownmind-week` now share one sentence: how many versions behind, or 已是最新版. When one of today's update attempts failed at the fetch step (the updater records that step), all three say the update server could not be reached instead of claiming the install is current. Client update only. `v1.31.11`
+- **The admin console now shows which server each computer reports to** — a week after the move to fapa.welcometw.com, two computers were still posting to the retired host kkvin.com, and every row in the install list said 1.31.14 and nothing else (#152). Each heartbeat now carries the host it posts to (host only, never the key), the server stores it, and 系統設定 › 裝機狀況 has a 「連的主機」 column: a computer on the old host is red, with the one sentence that says what to do. The AI self-check prints the host on its first line. Server and client update; the server runs db/031 on start. `v1.32.0`
 - **A machine without OpenCode or Cursor was told to install sqlite3** — bot.kkvin.com has neither tool nor sqlite3, and the daily self-check failed every day with "opencode, cursor: could not be read, install sqlite3". The scanners now ask whether the tool's database exists before blaming sqlite3: no database means the tool is simply not installed here. Client update only. `v1.31.14`
 - **A sentence that merely mentioned "收工" ran the wrap-up check** — on 2026-10-04 Vin typed "我收工時有哪些沒做" while describing an idea for a mod, and the six checks ran and the pane opened. 收工 followed by a time word (時, 前, 後, 的時候, 時間) no longer counts; "收工", "好，收工了" and "收工囉" still do. Client update only. `v1.31.13`
 - **The OwnMind button under the prompt was squeezed into "…"** — the desktop app fits about two mode buttons at the bottom right; with two more of Vin's own buttons (VPS, CLI) the 🟢 OwnMind button became "…" and could not be clicked. It is now 🟢 OM / 🔴 OM; the colours and the pane it opens are unchanged, and `/ownmind` still works. Client update only. `v1.31.12`

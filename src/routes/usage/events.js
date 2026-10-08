@@ -35,7 +35,7 @@ const HEARTBEAT_RATE_LIMIT_SECONDS = 30;
  *   - Codex fingerprint flow (D13): material is required → canonicalize →
  *     expectedId override → collision / mismatch audit (still accepted, just
  *     observed).
- *   - Heartbeat: body.heartbeat { tool, scanner_version, machine } → UPSERT
+ *   - Heartbeat: body.heartbeat { tool, scanner_version, machine, api_host } → UPSERT
  *     collector_heartbeat.
  *
  * Known limitations (carried over from P2):
@@ -486,6 +486,25 @@ export function normaliseMachine(raw) {
   return name.length > MACHINE_MAX_LEN ? name.slice(0, MACHINE_MAX_LEN) : name;
 }
 
+/**
+ * v1.32.0 — the host a scanner says it posts to.
+ *
+ * A host name and nothing else: letters, digits, dots and hyphens, up to the column
+ * width. Anything else — a full URL, a path, a key that ended up in the wrong field —
+ * is treated as "did not say", so an odd value can neither stop a heartbeat nor land in
+ * the table. Null means the heartbeat did not carry the field (an older scanner, or the
+ * MCP), and the stored value is left alone.
+ */
+const API_HOST_MAX_LEN = 255;   // matches collector_heartbeat.api_host VARCHAR(255)
+const API_HOST_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+
+export function normaliseApiHost(raw) {
+  if (typeof raw !== 'string') return null;
+  const host = raw.trim().toLowerCase();
+  if (!host || host.length > API_HOST_MAX_LEN || !API_HOST_RE.test(host)) return null;
+  return host;
+}
+
 async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
   if (!heartbeat || typeof heartbeat !== 'object' || !heartbeat.tool) return;
   try {
@@ -510,9 +529,14 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
     // previous one. Anything old enough not to report a hostname is old enough that the
     // answer genuinely is unknown.
     const machine = normaliseMachine(heartbeat.machine);
+    // v1.32.0 — same shape as `reason`: only a heartbeat that carries a usable host may
+    // write the column, so a reasonless MCP beat cannot null out what the scanner said.
+    const apiHost = normaliseApiHost(heartbeat.api_host);
+    const apiHostProvided = apiHost !== null;
     const beat = await query(
       `INSERT INTO collector_heartbeat
-         (user_id, tool, last_reported_at, scanner_version, machine, os, status, reason)
+         (user_id, tool, last_reported_at, scanner_version, machine, os, status, reason,
+          api_host)
        -- Every parameter here is cast. This is INSERT ... SELECT, not INSERT ... VALUES,
        -- so the SELECT is analysed on its own and a bare parameter in the list is
        -- unknown-typed, settling as text, while the same parameter in the WHERE below is
@@ -521,7 +545,7 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
        -- "inconsistent types deduced for parameter $2", which is what production said
        -- about every heartbeat on 2026-08-06.
        SELECT $1::int, $2::varchar, NOW(), $3::varchar, $4::varchar, $5::varchar,
-              'active', $6::varchar
+              'active', $6::varchar, $8::varchar
         WHERE EXISTS (
                 SELECT 1 FROM collector_heartbeat
                  WHERE user_id = $1 AND tool = $2 AND machine = $4)
@@ -541,15 +565,21 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
          -- knows a reason; letting a reasonless MCP beat null it out would make the two
          -- disagree on every beat, so the IS DISTINCT clause below would always be true
          -- and the rate limit would stop working for the busiest tool on the machine.
-         reason           = CASE WHEN $7 THEN $6 ELSE collector_heartbeat.reason END
+         reason           = CASE WHEN $7 THEN $6 ELSE collector_heartbeat.reason END,
+         -- v1.32.0 — which server this machine posts to. Only written by a heartbeat that
+         -- said so; the MCP's reasonless beat leaves it alone.
+         api_host         = CASE WHEN $9 THEN $8 ELSE collector_heartbeat.api_host END
        WHERE collector_heartbeat.last_reported_at < NOW() - INTERVAL '${HEARTBEAT_RATE_LIMIT_SECONDS} seconds'
-          OR ($7 AND collector_heartbeat.reason IS DISTINCT FROM $6)`,
+          OR ($7 AND collector_heartbeat.reason IS DISTINCT FROM $6)
+          OR ($9 AND collector_heartbeat.api_host IS DISTINCT FROM $8)`,
       [userId, heartbeat.tool,
        heartbeat.scanner_version ?? null,
        machine,
        heartbeat.os ?? null,
        reason,
-       reasonProvided]
+       reasonProvided,
+       apiHost,
+       apiHostProvided]
     );
     // v1.26.142 — the message that says *what* broke.
     //

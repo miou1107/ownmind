@@ -20,7 +20,8 @@ const STATUS_RANK = { offline: 0, stale: 1, unknown: 2, active: 3 };
  *
  * @param {Array} clients  from /api/usage/admin/clients — { tool, version, machine, os,
  *                         status, last_heartbeat_at, needs_upgrade, reason }
- * @returns {Array} [{ machine, os, status, last_heartbeat_at, needs_upgrade, tools[] }]
+ * @returns {Array} [{ machine, os, status, last_heartbeat_at, needs_upgrade, api_host,
+ *                     on_old_host, tools[] }]
  *                  worst status first, then oldest heartbeat first
  */
 export function groupClientsByMachine(clients) {
@@ -39,6 +40,10 @@ export function groupClientsByMachine(clients) {
         status: c.status ?? 'unknown',
         last_heartbeat_at: c.last_heartbeat_at ?? null,
         needs_upgrade: false,
+        // v1.32.0 — which server the computer posts to. One value per computer: every
+        // tool's scanner on it reads the same config, so the first row that says wins.
+        api_host: null,
+        on_old_host: false,
         tools: []
       });
     }
@@ -54,6 +59,8 @@ export function groupClientsByMachine(clients) {
 
     if (c.os && !g.os) g.os = c.os;
     if (c.needs_upgrade) g.needs_upgrade = true;
+    if (c.api_host && !g.api_host) g.api_host = c.api_host;
+    if (c.on_old_host) g.on_old_host = true;
     // The machine's status is its worst tool's. One dead collector on an otherwise busy
     // computer is the case this whole change exists to make visible; averaging it away
     // would put it straight back.

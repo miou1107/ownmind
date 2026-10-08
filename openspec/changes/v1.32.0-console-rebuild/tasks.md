@@ -5,13 +5,13 @@ the page works at phone width in light and dark, and the old paths it replaces r
 
 ## Phase 0 — which server each machine talks to
 
-- [ ] `db/0xx_collector_api_host.sql`: `collector_heartbeat.api_host VARCHAR(255) NULL`
-- [ ] scanner heartbeat sends `api_host` (host only) — `hooks/ownmind-usage-scanner.js`
-- [ ] `src/routes/usage/events.js`: accept, length-check and store `api_host`; an older
+- [x] `db/031_collector_api_host.sql`: `collector_heartbeat.api_host VARCHAR(255) NULL`
+- [x] scanner heartbeat sends `api_host` (host only) — `shared/scanners/base.js` postBatch, so every heartbeat carries it
+- [x] `src/routes/usage/events.js`: accept, length-check and store `api_host`; an older
       client that sends none leaves the stored value alone
-- [ ] `src/routes/usage/admin-clients.js`: return `api_host` and `on_old_host`
-- [ ] `/system/config`: column 「連的主機」, red pill when `on_old_host`
-- [ ] tests: heartbeat with and without `api_host`; admin list flags kkvin.com
+- [x] `src/routes/usage/admin-clients.js`: return `api_host` and `on_old_host`
+- [x] `/system/config`: column 「連的主機」, red pill when `on_old_host`
+- [x] tests: heartbeat with and without `api_host`; admin list flags kkvin.com
 - [ ] release, deploy, then read the list to close #152 step 2
 
 ## Phase 1 — shell and navigation

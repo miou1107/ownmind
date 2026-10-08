@@ -138,12 +138,37 @@ export function chunk(arr, size = BATCH_SIZE) {
 }
 
 /**
+ * v1.32.0 — the host this scanner posts to, as the heartbeat reports it.
+ *
+ * Host only: lower-cased, no scheme, port, path, query or credentials. The server stores
+ * this next to the version so the admin list can say which computer still talks to a
+ * retired host (issue #152: two machines posted to kkvin.com for a week after the move,
+ * and every row they produced read "1.31.14" and nothing else). Anything that is not a
+ * parseable URL yields null and the field is left out.
+ *
+ * @param {string} apiUrl
+ * @returns {string|null}
+ */
+export function apiHostOf(apiUrl) {
+  try {
+    const host = new URL(String(apiUrl)).hostname;
+    return host ? host.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * POST /api/usage/events — throws on failure.
  * fetchFn is injectable for tests.
  */
 export async function postBatch({ apiUrl, apiKey, fetchFn = fetch, timeoutMs = POST_TIMEOUT_MS }, payload) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // v1.32.0 — every heartbeat this scanner sends passes through here, so this is the one
+  // place that knows both the heartbeat and the address it is going to.
+  const host = payload?.heartbeat && !payload.heartbeat.api_host ? apiHostOf(apiUrl) : null;
+  const body = host ? { ...payload, heartbeat: { ...payload.heartbeat, api_host: host } } : payload;
   try {
     const res = await fetchFn(`${apiUrl.replace(/\/+$/, '')}/api/usage/events`, {
       method: 'POST',
@@ -151,7 +176,7 @@ export async function postBatch({ apiUrl, apiKey, fetchFn = fetch, timeoutMs = P
         'content-type': 'application/json',
         'authorization': `Bearer ${apiKey}`
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: controller.signal
     });
     if (!res.ok) {

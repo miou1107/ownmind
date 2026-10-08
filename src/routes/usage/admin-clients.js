@@ -16,13 +16,14 @@ const STALE_WINDOW_MS = 48 * 60 * 60 * 1000;
  *   server_version: '1.17.0',
  *   coverage: {
  *     total_users, installed, active, stale, offline, not_installed,
- *     needs_upgrade
+ *     needs_upgrade, on_old_host
  *   },
  *   users: [{
  *     user_id, user_name, email, role,
  *     any_active, needs_upgrade, installed,
  *     clients: [
- *       { tool, version, machine, last_heartbeat_at, status, needs_upgrade }
+ *       { tool, version, machine, last_heartbeat_at, status, needs_upgrade,
+ *         api_host, on_old_host }
  *     ]
  *   }]
  * }
@@ -44,12 +45,18 @@ export function createAdminClientsRouter(deps = {}) {
   const adminAuth = deps.adminAuth ?? defaultAdminAuth;
   const serverVersion = deps.serverVersion ?? SERVER_VERSION;
   const now = deps.now ?? (() => new Date());
+  // v1.32.0 — read per request, not at import: the env is what production sets, and a
+  // test that sets it after importing this module should still see it.
+  const canonicalUrl = deps.canonicalUrl ?? (() => process.env.CANONICAL_URL || '');
 
   const router = Router();
 
   router.get('/', adminAuth, async (_req, res) => {
     try {
-      const data = await loadClients({ query, serverVersion, now: now() });
+      const data = await loadClients({
+        query, serverVersion, now: now(),
+        canonicalHost: canonicalHostOf(typeof canonicalUrl === 'function' ? canonicalUrl() : canonicalUrl)
+      });
       res.json(data);
     } catch (err) {
       logger.error('admin/clients query failed', { error: err.message });
@@ -60,7 +67,22 @@ export function createAdminClientsRouter(deps = {}) {
   return router;
 }
 
-export async function loadClients({ query, serverVersion, now }) {
+/**
+ * v1.32.0 — the host of the server's own address, from CANONICAL_URL.
+ *
+ * Null when the variable is unset or not a URL, and then no client is ever flagged: a
+ * self-hosted install with no canonical address has no "old host" to be on.
+ */
+export function canonicalHostOf(canonicalUrl) {
+  try {
+    const host = new URL(String(canonicalUrl || '')).hostname;
+    return host ? host.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadClients({ query, serverVersion, now, canonicalHost = null }) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
 
   // Fetch all users and their per-(user, tool) heartbeats in one query.
@@ -69,7 +91,8 @@ export async function loadClients({ query, serverVersion, now }) {
   // (Removed DISTINCT ON and the unused heartbeat_status column, per codex review.)
   const result = await query(
     `SELECT u.id AS user_id, u.name AS user_name, u.email, u.role,
-            h.tool, h.scanner_version, h.machine, h.os, h.last_reported_at, h.reason
+            h.tool, h.scanner_version, h.machine, h.os, h.last_reported_at, h.reason,
+            h.api_host
        FROM users u
        LEFT JOIN collector_heartbeat h ON h.user_id = u.id
       ORDER BY u.id, h.tool NULLS LAST, h.machine NULLS LAST`
@@ -119,7 +142,12 @@ export async function loadClients({ query, serverVersion, now }) {
         // collector talking". `reason` comes from the collector itself and answers
         // "why did it have nothing to say". Null for anything older than v1.26.69.
         reason: row.reason ?? null,
-        needs_upgrade: needsUpgrade
+        needs_upgrade: needsUpgrade,
+        // v1.32.0 — which server this machine posts to, as the scanner reported it. Null
+        // for a scanner older than v1.32.0. `on_old_host` is the thing to act on: the
+        // host is known and it is not this server's own (issue #152).
+        api_host: row.api_host ?? null,
+        on_old_host: Boolean(canonicalHost && row.api_host && row.api_host !== canonicalHost)
       });
     }
   }
@@ -128,7 +156,8 @@ export async function loadClients({ query, serverVersion, now }) {
     const installed = u.clients.length > 0;
     const anyActive = u.clients.some((c) => c.status === 'active');
     const needsUpgrade = u.clients.some((c) => c.needs_upgrade);
-    return { ...u, installed, any_active: anyActive, needs_upgrade: needsUpgrade };
+    const onOldHost = u.clients.some((c) => c.on_old_host);
+    return { ...u, installed, any_active: anyActive, needs_upgrade: needsUpgrade, on_old_host: onOldHost };
   });
 
   // Coverage summary.
@@ -145,7 +174,8 @@ export async function loadClients({ query, serverVersion, now }) {
         && u.clients.every((c) => c.status === 'offline' || c.status === 'unknown')
     ).length,
     not_installed: users.filter((u) => !u.installed).length,
-    needs_upgrade: users.filter((u) => u.installed && u.needs_upgrade).length
+    needs_upgrade: users.filter((u) => u.installed && u.needs_upgrade).length,
+    on_old_host: users.filter((u) => u.on_old_host).length
   };
 
   // Sort: needs_upgrade first, then uninstalled last, otherwise by id.

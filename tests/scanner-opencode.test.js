@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 
 const { createOpenCodeAdapter, buildEventFromRow } =
   await import('../shared/scanners/opencode.js');
@@ -197,6 +198,9 @@ describe('createOpenCodeAdapter.readSince', () => {
     const logs = [];
     const adapter = createOpenCodeAdapter({
       sqlitePath: '/nonexistent/sqlite3',
+      // v1.31.14 reports sqlite_missing only when the database file exists; a machine
+      // without OpenCode (every CI runner, BlackHome) would otherwise see no_install here.
+      dbPath: fileURLToPath(import.meta.url),
       runSqlite: async () => {
         const e = new Error('spawn sqlite3 ENOENT');
         e.code = 'ENOENT';

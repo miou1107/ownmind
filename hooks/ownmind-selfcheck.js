@@ -25,6 +25,7 @@ import { createRequire } from 'module';
 import { buildSelfCheckReport, renderSelfCheckReport, fetchSelfCheck }
   from '../shared/scanners/selfcheck.js';
 import { readCredentials } from '../shared/helpers.js';
+import { apiHostOf } from '../shared/scanners/base.js';
 
 /**
  * @param {object} deps  everything injected, so the interesting paths are testable
@@ -52,6 +53,11 @@ export async function runSelfCheck({
       '  No credentials in ~/.claude/settings.json (mcpServers.ownmind.env).\n'
       + '  Nothing can be reported until OwnMind is connected to a server.');
   }
+  // v1.32.0 — say which server, by host, before anything else. When a self-check result
+  // is pasted to an admin, this line is the one that answers issue #152 ("is this the
+  // computer still on the old host?") without anyone opening the config file.
+  print(`  Server: ${apiHostOf(apiUrl) ?? '(not a valid address)'}`);
+  print('');
 
   let local;
   try {

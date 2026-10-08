@@ -147,6 +147,7 @@ package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja
 shared/task-body.js                        — normalizeTaskCreate／normalizeTaskDone／normalizeLinks：卡的上限（標題 500、正文 4000、連結 10）
                                              與形狀；claimNote：交回或過期時寫進卡的註記；CLAIM_TTL_HOURS = 24
 db/030_tasks.sql                           — tasks 表：open／claimed／done／reviewed／dropped，誰領、哪個對話、結果、連結、誰審
+db/031_collector_api_host.sql              — collector_heartbeat 多一欄 api_host：每台電腦回報時連的是哪台主機（只有主機名），v1.32.0，#152
 src/routes/tasks.js                        — createTasksRouter：開卡、列（專案／我的／全部）、領、做完、交回、審過；可見性一處決定；
                                              expireStaleClaims
 src/jobs/task-claim-expiry.js              — 每天 03:20 把領了超過 24 小時沒做完的卡交回
@@ -5503,6 +5504,7 @@ tests/auto-update-shared.test.js                — 用注入的行程執行器�
                                                    沒有新版、完整升級順序、--autostash 退路、
                                                    Windows 用 npm.cmd + shell、每個步驟失敗
                                                    都要回報 step 並放掉鎖、失敗不蓋當日戳記
+tests/collector-api-host.test.js            — v1.32.0：回報帶 api_host（只有主機名、不帶金鑰）、伺服器收下／不收怪值／沒帶不動舊值、管理清單標 on_old_host、後台分組帶主機、自檢第一行印主機
 tests/collector-failure-reporting.test.js       — 掛掉／卡住／被跳過三種都要回報；訊息只進
                                                    稽核表且截到 1000 字；自我檢查不可以把
                                                    自己送出的失敗通知讀成成功

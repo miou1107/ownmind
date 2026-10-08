@@ -33,6 +33,9 @@ function statusColor(status) {
 
 function overallBadge(row, t) {
   if (!row.installed) return <span className="text-slate-400">⚪ {t('system.config.overall.not_installed')}</span>;
+  // v1.32.0 — a computer still posting to a retired host outranks a version lag: its data
+  // only arrives through a forward that is going away (issue #152).
+  if (row.on_old_host) return <span className="text-rose-600">🔴 {t('system.config.overall.old_host')}</span>;
   if (row.needs_upgrade) return <span className="text-amber-600">🟡 {t('system.config.overall.needs_upgrade')}</span>;
   if (row.any_active) return <span className="text-emerald-600">🟢 {t('system.config.overall.active')}</span>;
   const anyStale = (row.clients || []).some((c) => c.status === 'stale');
@@ -160,6 +163,7 @@ export default function SystemConfigPage() {
                 <th className="text-left px-3 py-2">{t('system.config.col.role')}</th>
                 <th className="text-left px-3 py-2">{t('system.config.col.overall')}</th>
                 <th className="text-left px-3 py-2">{t('system.config.col.tools')}</th>
+                <th className="text-left px-3 py-2">{t('system.config.col.api_host')}</th>
               </tr>
             </thead>
             <tbody>
@@ -221,6 +225,37 @@ export default function SystemConfigPage() {
                             </div>
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-xs">
+                    {/* v1.32.0 — which server each computer posts to (issue #152). A
+                        computer on a host other than this server's is red, with the one
+                        sentence that says what to do about it. Blank when the scanner is
+                        older than v1.32.0 and cannot say. */}
+                    {(!row.clients || row.clients.length === 0) ? (
+                      <span className="text-slate-400">—</span>
+                    ) : (
+                      <div className="space-y-2">
+                        {groupClientsByMachine(row.clients).map((g) => (
+                          <div key={g.machine ?? '(unknown)'} className="leading-5">
+                            {g.api_host ? (
+                              <code className={g.on_old_host ? 'text-rose-700' : 'text-slate-600'}>
+                                {g.api_host}
+                              </code>
+                            ) : (
+                              <span className="text-slate-400">{t('system.config.api_host.unknown')}</span>
+                            )}
+                            {g.on_old_host && (
+                              <span className="ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
+                                {t('system.config.api_host.old_host')}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {row.on_old_host && (
+                          <p className="text-rose-700 max-w-xs">{t('system.config.api_host.old_host_hint')}</p>
+                        )}
                       </div>
                     )}
                   </td>
