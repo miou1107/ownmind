@@ -127,7 +127,8 @@ app.get(['/setup.js', '/setup/setup.js'], (req, res) => {
 // Location is computed per-request by relativeRedirectTarget — the same helper the
 // legacy-admin-mount uses for the analogous /admin retirement.
 app.use('/me', (req, res) => {
-  res.redirect(301, relativeRedirectTarget(req.originalUrl, 'dashboard/portal/usage'));
+  // v1.32.6: the console's first screen is 總覽 now, not the usage page.
+  res.redirect(301, relativeRedirectTarget(req.originalUrl, 'dashboard/home'));
 });
 
 // request logging

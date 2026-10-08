@@ -52,10 +52,11 @@ export function bugReportNotificationLines(notif) {
   }
   if (segments.length === 0) return [];
 
-  // The dashboard route is /admin/bugs. Until 2026-10-02 this line said /admin/bug-reports,
-  // a page that does not exist. The full address comes from the server this machine talks to.
-  // A member who is not an admin cannot open /admin/bugs; their own reports are /portal/reports.
-  const page = notif.admin && notif.admin.unhandled_count > 0 ? 'admin/bugs' : 'portal/reports';
+  // v1.32.6 — the console's 待你處理 tabs: every report for an admin, the member's own for
+  // everyone else. Until 2026-10-02 this line said /admin/bug-reports, a page that did not
+  // exist; the older /admin/bugs and /portal/reports still redirect here. The full address
+  // comes from the server this machine talks to.
+  const page = notif.admin && notif.admin.unhandled_count > 0 ? 'inbox/bugs' : 'inbox/reports';
   const where = typeof notif.dashboard_base === 'string' && notif.dashboard_base
     ? `open ${notif.dashboard_base}/${page}`
     : 'open the dashboard';
