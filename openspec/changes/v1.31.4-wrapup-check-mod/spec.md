@@ -3,7 +3,9 @@
 ## The mod
 
 GIVEN a session in a git checkout
-WHEN the user's prompt contains 收工, 收尾, 下班, 交接 or "wrap up" (any case, optional space or hyphen)
+WHEN the user's prompt is only a wrap-up: 收工, 收尾, 下班, 交接 or "wrap up", with at most a short lead-in
+  (好, 好了, 那就, OK, 今天先到這, let's) and closing particles (了, 囉, 吧), spaces, punctuation and emoji ignored
+  (2026-10-08: a sentence that merely mentions one of these words no longer counts)
 THEN the six checks run, the pane "OwnMind 收工自我檢查" opens focused,
 AND the prompt reaches the model with a context block "[收工自檢 HH:MM]" split into 已乾淨 and 待辦.
 

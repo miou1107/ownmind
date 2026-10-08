@@ -170,17 +170,25 @@ test('words that only look like a wrap-up do not trigger it', async ($, on) => {
     '收工的時候要檢查什麼',
     '收工前先把這個推上去',
     '收工後再處理',
+    // 2026-10-08: a sentence that only mentions a wrap-up word is not a wrap-up
+    '我的ownmind右側面板收工常會自己跳出',
+    '好像是某些關鍵字很容易不小心誤觸發，可不可以真的在跑收工流程時才會觸發',
+    '我要交接給 Amiee',
+    'wrap-up time',
+    '收工了嗎',
   ]) {
     await ($ as any).prompt.submit({ text, wait: false })
   }
   expect(opened.length).toBe(0)
-  for (const text of ['收工', '今天先到這，下班', '我要交接給 Amiee', "let's wrap up", 'wrap-up time', '好，收工了', '收工囉']) {
+  const wrapUps = ['收工', '今天先到這，下班', "let's wrap up", 'wrap up', '好，收工了', '收工囉', 'OK 收工！',
+    '好了，收工', '那就收工吧', '我要收工了', '收工了，謝謝', '收工❤️', 'ＯＫ收工', 'wrap it up']
+  for (const text of wrapUps) {
     await ($ as any).prompt.submit({ text, wait: false })
   }
-  expect(opened.length).toBe(7)
+  expect(opened.length).toBe(wrapUps.length)
   // A background task's notice that mentions a wrap-up is not the user wrapping up.
   await ($ as any).prompt.submit({ text: 'Agent "Review wrap-up resolve change" finished', wait: false, origin: { kind: 'task-notification' } })
-  expect(opened.length).toBe(7)
+  expect(opened.length).toBe(wrapUps.length)
 })
 
 test('a clean repo shows green tiles and no red mark', async ($, on) => {
