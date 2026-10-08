@@ -34,14 +34,18 @@ const CLEAN: Record<string, string> = {
 type World = { containers: string; agents: any[]; files: Record<string, string>; ports?: string; tools?: any[]; procs?: string; cwds?: Record<string, string>; refs?: string; mtimes?: Record<string, number> }
 const world = (): World => ({ containers: '', agents: [], files: {} })
 
+// On Windows the engine hands the fs hooks `C:\w\idaytour\x` for the module's `/w/idaytour/x`;
+// the fixtures are keyed the POSIX way, so look them up that way on every machine.
+const posix = (p: string) => p.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/')
+
 const setup = (on: any, git: Record<string, string>, w: World) => {
   on('clock.now', () => ({ value: T0 }))
   on('session.cwd', () => ({ value: CWD }))
   on('session.start', () => ({ cwd: CWD }))
   on('env.get', () => ({ value: '/home/v' }))
   // Unless a test says otherwise, every file was written after the session started.
-  on('fs.stat', (_: any, e: any) => ({ value: { mtimeMs: w.mtimes?.[e.path] ?? T0 + 1 } }))
-  on('fs.read', (_: any, e: any) => (e.path in w.files ? { value: w.files[e.path] } : { deny: 'missing' }))
+  on('fs.stat', (_: any, e: any) => ({ value: { mtimeMs: w.mtimes?.[posix(e.path)] ?? T0 + 1 } }))
+  on('fs.read', (_: any, e: any) => (posix(e.path) in w.files ? { value: w.files[posix(e.path)] } : { deny: 'missing' }))
   on('ui.toast', () => ({ value: undefined }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   on('command.register', () => ({ value: { command: 'wrapup' } }))
