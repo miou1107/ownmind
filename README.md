@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.32.7** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.32.8** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -41,6 +41,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
 - **`/ownmind-week` still said the rules might be stale on a current install** — on 2026-10-04 it printed "自動更新失敗 70 次，規矩可能不是最新版" on a machine updated by hand that morning, while the pane card said 已是最新版. The card, the chart title and `/ownmind-week` now share one sentence: how many versions behind, or 已是最新版. When one of today's update attempts failed at the fetch step (the updater records that step), all three say the update server could not be reached instead of claiming the install is current. Client update only. `v1.31.11`
+- **The overview's numbers count what they say** — a conversation is counted once however many times its session-start hook fired (startup, resume, clear and compact all run it; the hook now sends the session id), 「等你處理」 shows the real count rather than the length of a 20-row preview, the reporting light no longer lists MCP function names as silent tools, the top project is the one with the most sessions, and the last activity names the AI tool. Server, console and client update. `v1.32.8`
 - **The wrap-up pane opens only when the message is a wrap-up** — on 2026-10-08 asking why the wrap-up pane kept opening by itself opened it again, because any message containing 收工, 收尾, 下班, 交接 or wrap up counted. Now, ignoring spaces, punctuation and emoji, the whole message has to be the wrap-up itself: 收工, 好，收工了, 那就收工吧, let's wrap up. A sentence that mentions one of these words no longer opens the pane; /wrapup still does. Client update only. `v1.32.7`
 - **Console rebuild wrap-up** — the six phases of openspec v1.32.0-console-rebuild are done. This release deletes what nothing uses any more (the old usage-page warning component and 26 retired menu strings), points the AI's start-of-session and pre-release reminders at the new inbox addresses, and sends the retired /me address to 總覽. Server, console and client update. `v1.32.6`
 - **團隊 › 成員 is one table, open to everyone** — a member sees who is on the team, their last activity, sessions in 14 days and whether OwnMind can see them, all from the report they could already read; an admin sees the former 團隊用量 table with coverage and the per-person drawer. User add/edit/delete moved to 管理 › 使用者 (/admin/team redirects there; /team/usage redirects to 成員). New 記憶 › 規矩 lists your iron rules and visible team standards, read-only; 專案歷程 gains a search box. Console redeploy only. `v1.32.5`

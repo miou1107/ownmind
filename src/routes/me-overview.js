@@ -18,7 +18,8 @@
  *                  stale_tools: [tool] },
  *     rules:     { state, checks, unverified }
  *   },
- *   pending: { handoffs: [...], lessons: [...], tasks: [...], bugs: [...] | null },
+ *   pending: { counts: { handoffs, lessons, tasks, bugs | null, total },
+ *              handoffs: [...], lessons: [...], tasks: [...], bugs: [...] | null },   (lists are capped previews)
  *   tiles: {
  *     sessions:    { current, previous },
  *     compliance:  { rate | null, previous_rate | null, worst_rule | null },
@@ -93,6 +94,21 @@ export function createOverviewRouter(deps = {}) {
 const int = (v) => Number.parseInt(v, 10) || 0;
 
 /**
+ * One conversation, once (v1.32.8). The hook puts Claude Code's session id on its init
+ * event; a row without one is its own conversation, as every row was before.
+ */
+const SESSION_KEY = "COALESCE(details->>'session_id', id::text)";
+const SESSION_KEY_A = "COALESCE(a.details->>'session_id', a.id::text)";
+
+/**
+ * activity_logs.tool is the AI tool (claude-code, codex…) on hook and scanner rows, but
+ * the MCP function name (ownmind_search…) on mcp_call rows, plus 'scanner' and 'server'
+ * for the two services. Only the first kind has a collector that can be silent or a name
+ * worth showing as "the tool you used".
+ */
+const IS_AI_TOOL = "(tool NOT LIKE 'ownmind\\_%' AND tool NOT IN ('scanner', 'server'))";
+
+/**
  * Everything the page needs, from the database. Exported so the composition is testable
  * with a fake `query`.
  */
@@ -105,7 +121,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
   const [
     inits, heartbeats, staleTools, compliance, orphans,
     sessions, topProject, lastActivity, daily,
-    handoffs, lessons, tasks, bugs, teamVisible,
+    handoffs, lessons, tasks, bugs, teamVisible, counts,
   ] = await Promise.all([
     // 記憶主機: did the AI load memory recently? (same source as the self-check)
     query(
@@ -132,6 +148,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
            FROM activity_logs
           WHERE user_id = $1 AND ts >= NOW() - INTERVAL '7 days'
             AND tool IS NOT NULL AND tool NOT IN ('unknown', 'mcp')
+            AND ${IS_AI_TOOL}
           GROUP BY tool_key
        ), hb AS (
          SELECT LOWER(TRIM(tool)) AS tool_key, MAX(last_reported_at) AS last_hb
@@ -173,9 +190,17 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
       [uid, COMPLIANCE_ARRAY_SINCE],
     ),
     // 你的 AI 對話: this range vs the one before.
+    //
+    // v1.32.8 — one conversation, counted once. The SessionStart hook fires on startup,
+    // resume, clear AND compact (all four matchers, on purpose — see
+    // scripts/install-helpers/session-hook-command.cjs), so a long conversation that was
+    // compacted three times used to read as four. Measured 2026-10-08 on the owner's account:
+    // 215 "conversations" in 7 days, 204 of them on one day. From v1.32.8 the hook sends the
+    // session id with the init event; rows that carry one collapse per conversation, older
+    // rows (and other clients) still count once each.
     query(
-      `SELECT COUNT(*) FILTER (WHERE ts >= NOW() - INTERVAL '${days}')::int AS current,
-              COUNT(*) FILTER (WHERE ts <  NOW() - INTERVAL '${days}')::int AS previous
+      `SELECT COUNT(DISTINCT ${SESSION_KEY}) FILTER (WHERE ts >= NOW() - INTERVAL '${days}')::int AS current,
+              COUNT(DISTINCT ${SESSION_KEY}) FILTER (WHERE ts <  NOW() - INTERVAL '${days}')::int AS previous
          FROM activity_logs
         WHERE user_id = $1 AND event = 'init' AND ts >= NOW() - INTERVAL '${twice}'`,
       [uid],
@@ -191,7 +216,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
           WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '${days}'
             AND details->>'project' IS NOT NULL AND TRIM(details->>'project') != ''
           GROUP BY project_key
-          ORDER BY turns DESC NULLS LAST, sessions DESC
+          ORDER BY sessions DESC, turns DESC NULLS LAST
           LIMIT 1
        )
        SELECT p.project, p.sessions, p.turns,
@@ -205,7 +230,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
     query(
       `SELECT ts, tool, details->>'project' AS project
          FROM activity_logs
-        WHERE user_id = $1
+        WHERE user_id = $1 AND (tool IS NULL OR ${IS_AI_TOOL})
         ORDER BY ts DESC
         LIMIT 1`,
       [uid],
@@ -218,7 +243,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
                   (NOW() AT TIME ZONE 'Asia/Taipei')::date, '1 day')::date AS day
        )
        SELECT to_char(d.day, 'YYYY-MM-DD') AS date,
-              COUNT(a.id)::int AS count
+              COUNT(DISTINCT ${SESSION_KEY_A})::int AS count
          FROM d
          LEFT JOIN activity_logs a
            ON a.user_id = $1 AND a.event = 'init'
@@ -264,6 +289,9 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
           ORDER BY u.id`,
       )
       : Promise.resolve(null),
+    // v1.32.8 — the sentence says how many wait; the lists above are capped previews (the
+    // owner had 67 handoffs pending and the page said 20).
+    buildPendingCount({ query, user }),
   ]);
 
   // ── lights ──
@@ -308,7 +336,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
   const rate = complianceRate(cur);
   const previousRate = complianceRate(prev);
   const worst = cur
-    .filter((r) => int(r.violate) > 0)
+    .filter((r) => int(r.violate) > 0 && r.rule_code)
     .sort((a, b) => int(b.violate) - int(a.violate))[0];
   const tp = topProject.rows[0];
   const la = lastActivity.rows[0];
@@ -347,6 +375,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
     range_days: rangeDays,
     lights: { memory, reporting, rules },
     pending: {
+      counts,
       handoffs: (handoffs.rows ?? []).map((h) => ({
         id: h.id, project: h.project, from_tool: h.from_tool ?? null,
         from_machine: h.from_machine ?? null, created_at: toIso(h.created_at),

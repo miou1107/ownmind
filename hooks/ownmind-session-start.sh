@@ -85,6 +85,16 @@ if [ ! -t 0 ]; then
 fi
 printf '%s' "$GATE_STDIN_PAYLOAD" | node "$LIB_DIR/gate-provision.js" >/dev/null 2>&1 || true
 
+# v1.32.8 — the init event below carries Claude Code's session id and why the hook fired
+# (startup / resume / clear / compact), so the server can count one conversation once. The
+# values are whitelisted here, not trusted: an id is [A-Za-z0-9._-], a source is one of four.
+HOOK_SESSION_ID=""
+HOOK_START_SOURCE=""
+if [ -n "$GATE_STDIN_PAYLOAD" ]; then
+  HOOK_SESSION_ID=$(printf '%s' "$GATE_STDIN_PAYLOAD" | node -e 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{try{const v=String(JSON.parse(s).session_id||"");process.stdout.write(/^[A-Za-z0-9._-]{1,128}$/.test(v)?v:"")}catch{}})' || true)
+  HOOK_START_SOURCE=$(printf '%s' "$GATE_STDIN_PAYLOAD" | node -e 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{try{const v=String(JSON.parse(s).source||"");process.stdout.write(/^(startup|resume|clear|compact)$/.test(v)?v:"")}catch{}})' || true)
+fi
+
 # --- Gate message i18n, task 2 of 7: SessionStart OS-locale detection ---
 # getLocale() (hooks/lib/locale.js) must stay sync and subprocess-free so it can run on every
 # hook message, so this is the one place allowed to shell out for the machine's OS locale,
@@ -511,7 +521,9 @@ if [ -z "$INIT_DATA" ]; then
   exit 0
 fi
 
-log_event "init" "status" "ok"
+# shellcheck disable=SC2086 — the two optional pairs are deliberately unquoted-expanded
+# as separate words; the values are whitelisted above.
+log_event "init" "status" "ok" ${HOOK_SESSION_ID:+"session_id" "$HOOK_SESSION_ID"} ${HOOK_START_SOURCE:+"start_source" "$HOOK_START_SOURCE"}
 
 # --- v1.17.0 P3: 抓當前應顯示的廣播（fail-silent，不擋 SessionStart）---
 # v1.17.18: 帶 client_version 讓 server semver filter 生效

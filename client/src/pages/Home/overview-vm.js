@@ -11,6 +11,7 @@
  */
 
 const STATES = new Set(['good', 'warn', 'bad', 'none']);
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 export function lightState(raw) {
   return STATES.has(raw) ? raw : 'none';
@@ -85,12 +86,15 @@ export function lightsVm(overview, t, { role } = {}) {
  */
 export function pendingVm(overview, t) {
   const P = overview?.pending ?? {};
+  // v1.32.8 — the lists are capped previews; the server's counts say how many really wait.
+  const C = P.counts ?? {};
+  const n = (key, list) => (isNum(C[key]) ? C[key] : list.length);
   const rows = [];
   const handoffs = P.handoffs ?? [];
-  if (handoffs.length) {
+  if (n('handoffs', handoffs)) {
     rows.push({
       id: 'handoffs',
-      text: fill(t, 'home.pending.handoffs', { n: handoffs.length }),
+      text: fill(t, 'home.pending.handoffs', { n: n('handoffs', handoffs) }),
       detail: handoffs.map((h) => h.from_tool
         ? fill(t, 'home.pending.handoff_item', { project: h.project ?? '—', tool: h.from_tool, machine: h.from_machine ?? '—' })
         : (h.project ?? '—')).join('、'),
@@ -99,30 +103,30 @@ export function pendingVm(overview, t) {
     });
   }
   const lessons = P.lessons ?? [];
-  if (lessons.length) {
+  if (n('lessons', lessons)) {
     rows.push({
       id: 'lessons',
-      text: fill(t, 'home.pending.lessons', { n: lessons.length }),
+      text: fill(t, 'home.pending.lessons', { n: n('lessons', lessons) }),
       detail: [...new Set(lessons.map((l) => l.project).filter(Boolean))].join('、'),
       to: '/inbox/lessons',
       action: t('home.pending.lessons.action'),
     });
   }
   const tasks = P.tasks ?? [];
-  if (tasks.length) {
+  if (n('tasks', tasks)) {
     rows.push({
       id: 'tasks',
-      text: fill(t, 'home.pending.tasks', { n: tasks.length }),
+      text: fill(t, 'home.pending.tasks', { n: n('tasks', tasks) }),
       detail: tasks.map((x) => x.title).join('、'),
       to: '/inbox/tasks',
       action: t('home.pending.tasks.action'),
     });
   }
   const bugs = P.bugs;   // null for a member: not theirs to handle
-  if (Array.isArray(bugs) && bugs.length) {
+  if (Array.isArray(bugs) && n('bugs', bugs)) {
     rows.push({
       id: 'bugs',
-      text: fill(t, 'home.pending.bugs', { n: bugs.length }),
+      text: fill(t, 'home.pending.bugs', { n: n('bugs', bugs) }),
       detail: bugs.map((b) => (b.reporter_name ? `${b.reporter_name}：${b.title}` : b.title)).join('、'),
       to: '/inbox/bugs',
       action: t('home.pending.bugs.action'),
@@ -130,8 +134,6 @@ export function pendingVm(overview, t) {
   }
   return rows;
 }
-
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /** 「沒有資料」 when the server has no value; otherwise the number as a string. */
 export function numberOrNoData(v, t) {

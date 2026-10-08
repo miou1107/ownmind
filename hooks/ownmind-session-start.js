@@ -272,14 +272,37 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
  * is wrapped — provisioning must never delay or break session start; a machine this
  * skipped on is covered loudly by the gate CLI at first use.
  */
+/**
+ * The SessionStart payload, read once. stdin can only be drained once, and two callers
+ * need it: gate provisioning below, and the init event (v1.32.8), which carries the session
+ * id so the server can count a conversation once however many times this hook fired for it
+ * (startup, resume, clear and compact all run it).
+ */
+let hookPayload;
+function readHookPayload() {
+  if (hookPayload !== undefined) return hookPayload;
+  hookPayload = {};
+  // Only read stdin when something is piping into it; on a terminal this would wait for
+  // input that never comes (same guard as ownmind-prompt-inject.js).
+  if (!process.stdin.isTTY) {
+    try { hookPayload = JSON.parse(fs.readFileSync(0, 'utf8') || '{}') || {}; } catch { hookPayload = {}; }
+  }
+  return hookPayload;
+}
+
+/** { session_id, start_source } when the payload has them in a shape worth storing; else {}. */
+export function sessionFieldsOf(payload) {
+  const out = {};
+  const id = payload?.session_id;
+  if (typeof id === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(id)) out.session_id = id;
+  const src = payload?.source;
+  if (typeof src === 'string' && /^(startup|resume|clear|compact)$/.test(src)) out.start_source = src;
+  return out;
+}
+
 async function provisionGate() {
   try {
-    let payload = {};
-    // Only read stdin when something is piping into it; on a terminal this would wait for
-    // input that never comes (same guard as ownmind-prompt-inject.js).
-    if (!process.stdin.isTTY) {
-      try { payload = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { payload = {}; }
-    }
+    const payload = readHookPayload();
     let sessionId = payload?.session_id;
     if (typeof sessionId !== 'string' || !sessionId) return; // nothing to provision for
     // Unsafe ids collapse to 'unknown', matching action-gate-cli.js, so the nonce written
@@ -381,7 +404,7 @@ async function main() {
     if (tasks) initData = { ...initData, tasks };
   } catch { /* the block is a reminder; its absence must never cost the session its context */ }
 
-  reportEvent(apiUrl, apiKey, 'init', { status: 'ok' });
+  reportEvent(apiUrl, apiKey, 'init', { status: 'ok', ...sessionFieldsOf(readHookPayload()) });
 
   // v1.26.83 — broadcasts. The shell hook has always fetched these; this one never did, so
   // every announcement sent from the admin console was invisible to the Windows half of the team.

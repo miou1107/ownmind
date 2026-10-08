@@ -5517,6 +5517,7 @@ tests/auto-update-shared.test.js                — 用注入的行程執行器�
                                                    都要回報 step 並放掉鎖、失敗不蓋當日戳記
 tests/collector-api-host.test.js            — v1.32.0：回報帶 api_host（只有主機名、不帶金鑰）、伺服器收下／不收怪值／沒帶不動舊值、管理清單標 on_old_host、後台分組帶主機、自檢第一行印主機
 tests/me-overview.test.js                   — v1.32.2：燈不裝綠、舊主機點名、成員拿不到錯誤回報、沒有資料不顯示 0、文案不出現 collector／heartbeat／token／合規、三語字串齊
+tests/overview-numbers.test.js — v1.32.8: the overview counts a conversation once, says the real pending count, and never calls an MCP function name a tool
 tests/me-inbox-count.test.js                — v1.32.3：成員不算錯誤回報、總數相加、沒答案不顯示 0、四個頁面處理完都通知左欄、徽章字串三語齊
 tests/usage-rules-vm.test.js                — v1.32.4：比例算法不算 observed、長條最差優先、沒資料不顯示 0／100%、區間查詢字串、四個分頁與 /team/usage 的接線、versions 帶 api_host
 tests/team-members-rules.test.js            — v1.32.5：成員名單排序與字樣、規矩分組、成員那條路不打管理員 API、兩個搬家的轉址、搜尋接線、三語字串

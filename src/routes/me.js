@@ -338,9 +338,11 @@ router.get('/report', async (req, res) => {
     const me = req.user;
 
     // ── Personal section ──
+    // v1.32.8 — one conversation once (the hook fires on compact and clear too; it now
+    // sends the session id, and rows that carry one collapse). Same key as me-overview.js.
     const myStatsQ = await query(`
       SELECT
-        COUNT(*) FILTER (WHERE event = 'init') AS sessions,
+        COUNT(DISTINCT COALESCE(details->>'session_id', id::text)) FILTER (WHERE event = 'init') AS sessions,
         COUNT(*) AS events,
         MAX(ts) AS last_activity
       FROM activity_logs
@@ -718,6 +720,9 @@ router.get('/report', async (req, res) => {
         FROM activity_logs
         WHERE user_id = $1 AND ts >= NOW() - INTERVAL '7 days'
           AND tool IS NOT NULL AND tool NOT IN ('unknown', 'mcp')
+          -- v1.32.8: mcp_call rows hold the MCP function name here, not an AI tool; they
+          -- made this list 20 "tools" long (ownmind_search, scanner, server…).
+          AND tool NOT LIKE 'ownmind\\_%' AND tool NOT IN ('scanner', 'server')
         GROUP BY tool_key
       ),
       hb AS (
