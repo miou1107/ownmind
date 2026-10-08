@@ -129,27 +129,27 @@ describe('legacy-console manifest — shape', () => {
     // Stage 3 flip. The pages are built in this release; the two amber dots on
     // 系統設定 and 廣播管理 must be gone. If a future edit reverts either
     // entry to signpost, this test fires so no one has to notice via UI.
-    const cfg = legacyFeatureFor('/system/config');
-    const brd = legacyFeatureFor('/system/broadcast');
+    const cfg = legacyFeatureFor('/admin/machines');
+    const brd = legacyFeatureFor('/admin/broadcast');
     assert.ok(cfg, 'system-config entry missing from manifest');
     assert.ok(brd, 'broadcast entry missing from manifest');
     assert.equal(cfg.state, 'live', 'system-config should be live after Stage 3');
     assert.equal(brd.state, 'live', 'broadcast should be live after Stage 3');
-    assert.equal(isSignpost('/system/config'), false);
-    assert.equal(isSignpost('/system/broadcast'), false);
+    assert.equal(isSignpost('/admin/machines'), false);
+    assert.equal(isSignpost('/admin/broadcast'), false);
   });
 
   it('v1.26.51 — bug-reports and work-log are live, not signposts', () => {
     // Stage 4 flip. The two amber dots on 錯誤回報 and 工作紀錄 must be gone.
     // If a future edit reverts either entry, this test fires immediately.
-    const bugs = legacyFeatureFor('/admin/bugs');
-    const wlog = legacyFeatureFor('/system/work-log');
+    const bugs = legacyFeatureFor('/inbox/bugs');
+    const wlog = legacyFeatureFor('/admin/work-log');
     assert.ok(bugs, 'bug-reports entry missing from manifest');
     assert.ok(wlog, 'work-log entry missing from manifest');
     assert.equal(bugs.state, 'live', 'bug-reports should be live after Stage 4');
     assert.equal(wlog.state, 'live', 'work-log should be live after Stage 4');
-    assert.equal(isSignpost('/admin/bugs'), false);
-    assert.equal(isSignpost('/system/work-log'), false);
+    assert.equal(isSignpost('/inbox/bugs'), false);
+    assert.equal(isSignpost('/admin/work-log'), false);
   });
 
   it('v1.26.56 — stats-dashboard is live, not a signpost', () => {
@@ -162,18 +162,18 @@ describe('legacy-console manifest — shape', () => {
 
   it('v1.26.58 — team-usage is live, not a signpost', () => {
     // Stage 6 flip. The amber dot on 團隊用量 must be gone.
-    const usage = legacyFeatureFor('/team/usage');
+    const usage = legacyFeatureFor('/usage/team');
     assert.ok(usage, 'team-usage entry missing from manifest');
     assert.equal(usage.state, 'live', 'team-usage should be live after Stage 6');
-    assert.equal(isSignpost('/team/usage'), false);
+    assert.equal(isSignpost('/usage/team'), false);
   });
 
   it('v1.26.59 — 週報月報 is live', () => {
     // Stage 7 flip, and the last one. The amber dot on 週報月報 must be gone.
-    const periodic = legacyFeatureFor('/portal/periodic-reports');
+    const periodic = legacyFeatureFor('/team/reports');
     assert.ok(periodic, 'periodic-reports entry missing from manifest');
     assert.equal(periodic.state, 'live', 'periodic-reports should be live after Stage 7');
-    assert.equal(isSignpost('/portal/periodic-reports'), false);
+    assert.equal(isSignpost('/team/reports'), false);
   });
 
   it('v1.26.59 — the manifest is empty, so the legacy console is retired', () => {

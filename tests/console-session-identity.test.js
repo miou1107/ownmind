@@ -302,9 +302,9 @@ describe('Stage 0 — the role simulator is gone', () => {
       src,
       /onOpenProfile/,
       'onOpenProfile had two call sites with different arguments and no implementation. '
-      + 'The console already has /preference/* routes, so the menu should navigate there',
+      + 'The console already has /settings/* routes, so the menu should navigate there',
     );
-    assert.match(src, /\/preference\/profile/, 'the menu must link to the profile route');
+    assert.match(src, /\/settings\/profile/, 'the menu must link to the profile route');
   });
 });
 

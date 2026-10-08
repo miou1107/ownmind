@@ -5,9 +5,11 @@ import { AUTH_EXPIRED } from './api/events';
 import {
   Layout, RequireAuth, RequireFreshPassword, RequireRole,
 } from './components/common';
-import { allNavItems } from './components/common/nav-sections';
+import { NAV_ENTRIES, OLD_PATHS, allNavItems, firstVisiblePath } from './components/common/nav-sections';
 import { ROLE_DENIED_REDIRECT, routeTierFor } from './session/roles';
+import { useSession } from './session/SessionContext';
 import LoginPage from './pages/LoginPage';
+import HomePage from './pages/Home/HomePage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
 import VaultPage from './pages/Preference/VaultPage';
@@ -29,29 +31,30 @@ import SystemConfigPage from './pages/System/SystemConfigPage';
 import BroadcastPage from './pages/System/BroadcastPage';
 import WorkLogPage from './pages/System/WorkLogPage';
 
-// 後台的每一頁。v1.26.60 之前這裡只放「已經搬過來的」，還沒搬的由功能清單畫指路牌；
-// 整併做完之後沒有「還沒搬的」了，所以導覽列上的每一項都必須在這裡找得到，找不到就是接線錯誤。
+// 後台的每一頁，以 v1.32.0 的新路徑為鍵。導覽列上的每一項（入口或分頁）都必須在這裡
+// 找得到，找不到就是接線錯誤。舊路徑（OLD_PATHS）不在這裡，它們只負責轉址。
 const REAL_PAGES = {
-  '/portal/usage': <UsagePage />,
-  '/portal/project-history': <ProjectHistoryPage />,
-  '/portal/handoffs': <HandoffsPage />,
-  '/portal/lessons': <LessonsPage />,
-  '/portal/tasks': <TasksPage />,
-  '/portal/reports': <ReportsPage />,
-  '/portal/narrative': <NarrativePage />,
-  '/portal/pitfalls': <PitfallsPage />,
-  '/portal/periodic-reports': <PeriodicReportsPage />,
-  '/preference/profile': <ProfilePage />,
-  '/preference/security': <SecurityPage />,
-  '/preference/vault': <VaultPage />,
-  '/admin/team': <TeamPage />,
-  '/admin/bugs': <BugReportsPage />,
+  '/home': <HomePage />,
+  '/inbox/handoffs': <HandoffsPage />,
+  '/inbox/lessons': <LessonsPage />,
+  '/inbox/tasks': <TasksPage />,
+  '/inbox/reports': <ReportsPage />,
+  '/inbox/bugs': <BugReportsPage />,
+  '/usage/mine': <UsagePage />,
+  '/usage/rules': <PitfallsPage />,
+  '/usage/team': <TeamUsagePage />,
+  '/team/members': <TeamPage />,
+  '/team/observe': <NarrativePage />,
+  '/team/reports': <PeriodicReportsPage />,
   '/team/stats': <StatsPage />,
   '/team/tasks': <TeamTasksPage />,
-  '/team/usage': <TeamUsagePage />,
-  '/system/config': <SystemConfigPage />,
-  '/system/broadcast': <BroadcastPage />,
-  '/system/work-log': <WorkLogPage />,
+  '/memory/projects': <ProjectHistoryPage />,
+  '/settings/profile': <ProfilePage />,
+  '/settings/security': <SecurityPage />,
+  '/settings/vault': <VaultPage />,
+  '/admin/machines': <SystemConfigPage />,
+  '/admin/broadcast': <BroadcastPage />,
+  '/admin/work-log': <WorkLogPage />,
 };
 
 // 導覽列上有、但這裡沒有對應頁面的路徑 — 這是接線錯誤。
@@ -77,6 +80,15 @@ function NotFoundPage() {
   );
 }
 
+// v1.32.0 — 一個入口的網址本身（/inbox）不是頁面：依登入者的身分，轉到這個入口裡
+// 第一個他看得到的分頁。一個分頁都看不到，就跟角色不夠一樣，送回總覽。
+// 身分還沒回來時不轉，否則 null 身分會把管理員送走。
+function EntryIndex({ entry }) {
+  const { role, ready } = useSession();
+  if (!ready) return null;
+  return <Navigate to={firstVisiblePath(entry, role) ?? ROLE_DENIED_REDIRECT} replace />;
+}
+
 export default function App() {
   const navigate = useNavigate();
 
@@ -97,16 +109,11 @@ export default function App() {
   // role / profile / onLogout / onOpenProfile。那四個原本是寫死的佔位值：角色寫死
   // super_admin、姓名寫死 'User'、登出只 console.log、onOpenProfile 沒有實作。
   // 寫死的角色會讓每一個登入者都看到「管理」跟「超級管理」區塊。
-  //
-  // v1.26.126: the changelog left with them. It used to be passed from here as a
-  // literal `[]`, with a comment saying the real source was "a separate thing" --
-  // so the footer's changelog button opened an empty modal for six months. It is
-  // now GET /api/changelog, read by Layout like the version.
 
   // 一般頁面兩層守門員：
   //   RequireAuth — 沒登入直接導 /login
   //   RequireFreshPassword — 登入了但 must_change_password=true 強制導
-  //     /preference/security（該頁本身會被放行、避免無限循環）
+  //     /settings/security（該頁本身會被放行、避免無限循環）
   const renderPage = (page) => (
     <RequireAuth>
       <RequireFreshPassword>
@@ -147,6 +154,27 @@ export default function App() {
     );
   });
 
+  // v1.32.0 — 入口本身的網址轉到第一個看得到的分頁。
+  const entryRoutes = NAV_ENTRIES.filter((e) => e.tabs.length > 0).map((entry) => (
+    <Route
+      key={entry.path}
+      path={entry.path}
+      element={(
+        <RequireAuth>
+          <RequireFreshPassword>
+            <EntryIndex entry={entry} />
+          </RequireFreshPassword>
+        </RequireAuth>
+      )}
+    />
+  ));
+
+  // v1.32.0 — 改版前的二十個網址都還能用：記憶、通知、公告裡的舊連結直接轉到接手的
+  // 分頁。這份對照表在 nav-sections.js，跟新路徑放在一起，改路徑時兩邊會一起看到。
+  const redirectRoutes = Object.entries(OLD_PATHS).map(([from, to]) => (
+    <Route key={from} path={from} element={<Navigate to={to} replace />} />
+  ));
+
   return (
     <Routes>
       {/* /login 不包 Layout、不包 RequireAuth — 唯一公開路由 */}
@@ -156,6 +184,8 @@ export default function App() {
       <Route path="/" element={<Navigate to={ROLE_DENIED_REDIRECT} replace />} />
 
       {featureRoutes}
+      {entryRoutes}
+      {redirectRoutes}
 
       <Route path="*" element={renderPage(<NotFoundPage />)} />
     </Routes>

@@ -11,104 +11,177 @@
 // guards' idea, by a test that executes. Icons stay in Sidebar.jsx, keyed by path, so the
 // only import here is the role ladder itself.
 //
-// v1.26.46: permission moved from the section to the item. The 系統 group holds 系統設定
-// (admin+, matching the legacy 裝機狀況 card) next to 廣播管理 and 工作紀錄 (super_admin
-// only, matching their `super-admin-only` markup and `superAdminAuth` routes). A single
-// per-section role would have had to pick one, either hiding 系統設定 from admins who can
-// use it today or promising the other two to admins the server will refuse. A section is
-// now shown when at least one of its items is.
+// v1.32.0 (openspec v1.32.0-console-rebuild, Phase 1) — 20 pages become 7 entries.
+//
+// On 2026-10-04 the owner said the console was cluttered: the data was scattered over five
+// groups and twenty items, and finding one thing meant knowing which group somebody had
+// filed it under. The rail now has seven entries, each answering one question the reader
+// already has, and each entry holds tabs. A tab is a route (`/inbox/handoffs`) so it can
+// be linked from a notice or a memory; an entry's own path (`/inbox`) sends the reader to
+// the first tab their role may see.
+//
+// Every one of the twenty old paths keeps working as a redirect to the tab that took it
+// over (OLD_PATHS below), so links in memories, notices and broadcasts do not break.
+//
+// Permission stays on the item (the tab), as it has since v1.26.46: an entry is shown
+// when at least one of its tabs is, and a tab the role may not see is not rendered, with
+// its URL redirecting to the entry's first visible tab. `minRole` on a tab must equal the
+// `min` passed to RequireRole for the same path in App.jsx; asserted by
+// tests/console-nav-structure.test.js.
 
 import { roleAtLeast } from '../../session/roles.js';
 
 /**
- * `minRole` is the lowest role that may see the item, and must equal the `min` passed to
- * RequireRole for the same path in App.jsx. Asserted by tests/console-nav-structure.test.js.
- *
- * Until v1.26.60 some items rendered a signpost into the legacy console instead of a real
- * page, and their `minRole` was floored at that console's own login requirement so nobody
- * was sent to a door that would not open. Every item is a real page now, so each one
- * carries the role its own endpoints require and nothing else.
+ * The seven entries. Phase 1 moves the existing pages under them unchanged — each tab
+ * renders the component the old path rendered — and keeps every role exactly where it
+ * was, so nobody gains or loses a page in this release. Phases 2–5 replace the tab
+ * contents one entry at a time.
  */
-export const NAV_SECTIONS = [
+export const NAV_ENTRIES = [
   {
-    id: 'mine',
-    labelKey: 'nav.section.mine',
-    items: [
-      { path: '/portal/usage', labelKey: 'nav.usage', minRole: 'user' },
-      { path: '/portal/project-history', labelKey: 'nav.project_history', minRole: 'user' },
-      { path: '/portal/handoffs', labelKey: 'nav.handoffs', minRole: 'user' },
+    id: 'home',
+    path: '/home',
+    labelKey: 'nav.home',
+    minRole: 'user',
+    tabs: [],
+  },
+  {
+    id: 'inbox',
+    path: '/inbox',
+    labelKey: 'nav.inbox',
+    tabs: [
+      { id: 'handoffs', path: '/inbox/handoffs', labelKey: 'nav.inbox.handoffs', minRole: 'user' },
       // v1.31.0: personal — GET /api/session/lessons filters WHERE user_id = $1.
-      { path: '/portal/lessons', labelKey: 'nav.lessons', minRole: 'user' },
+      { id: 'lessons', path: '/inbox/lessons', labelKey: 'nav.inbox.lessons', minRole: 'user' },
       // v1.31.3: personal — GET /api/tasks?mine=true filters on the caller.
-      { path: '/portal/tasks', labelKey: 'nav.tasks', minRole: 'user' },
-      { path: '/portal/reports', labelKey: 'nav.reports', minRole: 'user' },
-      { path: '/portal/narrative', labelKey: 'nav.narrative', minRole: 'user' },
-      { path: '/portal/pitfalls', labelKey: 'nav.pitfalls', minRole: 'user' },
-      // Personal by nature: GET /api/session/report filters WHERE user_id = $1. It sat
-      // at admin from v1.26.46 to v1.26.58 only because it was a signpost and the legacy
-      // console refuses a `user` at login — a signpost to a door that will not open is
-      // worse than none. v1.26.59 built the real page, so it drops to its true role.
-      { path: '/portal/periodic-reports', labelKey: 'nav.periodic_reports', minRole: 'user' },
+      { id: 'tasks', path: '/inbox/tasks', labelKey: 'nav.inbox.tasks', minRole: 'user' },
+      // The member's own bug reports and what happened to them.
+      { id: 'reports', path: '/inbox/reports', labelKey: 'nav.inbox.reports', minRole: 'user' },
+      // Every report, for the people who fix them.
+      { id: 'bugs', path: '/inbox/bugs', labelKey: 'nav.inbox.bugs', minRole: 'admin' },
+    ],
+  },
+  {
+    id: 'usage',
+    path: '/usage',
+    labelKey: 'nav.usage',
+    tabs: [
+      { id: 'mine', path: '/usage/mine', labelKey: 'nav.usage.mine', minRole: 'user' },
+      { id: 'rules', path: '/usage/rules', labelKey: 'nav.usage.rules', minRole: 'user' },
+      // Backs onto adminAuth routes: /api/usage/team-stats and /api/usage/admin/team-overview.
+      { id: 'team', path: '/usage/team', labelKey: 'nav.usage.team', minRole: 'admin' },
     ],
   },
   {
     id: 'team',
-    labelKey: 'nav.section.team',
-    items: [
-      // Both back onto adminAuth routes: /api/usage/team-stats and /api/activity/stats*.
-      { path: '/team/usage', labelKey: 'nav.team_usage', minRole: 'admin' },
-      { path: '/team/stats', labelKey: 'nav.team_stats', minRole: 'admin' },
+    path: '/team',
+    labelKey: 'nav.team',
+    tabs: [
+      // User CRUD lives here until Phase 5 splits the member list from the admin tools.
+      { id: 'members', path: '/team/members', labelKey: 'nav.team.members', minRole: 'admin' },
+      { id: 'observe', path: '/team/observe', labelKey: 'nav.team.observe', minRole: 'user' },
+      // Personal by nature: GET /api/session/report filters WHERE user_id = $1.
+      { id: 'reports', path: '/team/reports', labelKey: 'nav.team.reports', minRole: 'user' },
+      { id: 'stats', path: '/team/stats', labelKey: 'nav.team.stats', minRole: 'admin' },
       // v1.31.3: GET /api/tasks?all=true answers 403 below admin.
-      { path: '/team/tasks', labelKey: 'nav.team_tasks', minRole: 'admin' },
+      { id: 'tasks', path: '/team/tasks', labelKey: 'nav.team.tasks', minRole: 'admin' },
     ],
   },
   {
-    id: 'preference',
-    labelKey: 'nav.section.preference',
-    items: [
-      { path: '/preference/profile', labelKey: 'nav.profile', minRole: 'user' },
-      { path: '/preference/security', labelKey: 'nav.security', minRole: 'user' },
-      { path: '/preference/vault', labelKey: 'nav.vault', minRole: 'user' },
+    id: 'memory',
+    path: '/memory',
+    labelKey: 'nav.memory',
+    tabs: [
+      { id: 'projects', path: '/memory/projects', labelKey: 'nav.memory.projects', minRole: 'user' },
+    ],
+  },
+  {
+    id: 'settings',
+    path: '/settings',
+    labelKey: 'nav.settings',
+    tabs: [
+      { id: 'profile', path: '/settings/profile', labelKey: 'nav.settings.profile', minRole: 'user' },
+      { id: 'security', path: '/settings/security', labelKey: 'nav.settings.security', minRole: 'user' },
+      { id: 'vault', path: '/settings/vault', labelKey: 'nav.settings.vault', minRole: 'user' },
     ],
   },
   {
     id: 'admin',
-    labelKey: 'nav.section.admin',
-    items: [
-      { path: '/admin/team', labelKey: 'nav.members', minRole: 'admin' },
-      { path: '/admin/bugs', labelKey: 'nav.bugs', minRole: 'admin' },
-    ],
-  },
-  {
-    id: 'system',
-    labelKey: 'nav.section.system',
-    items: [
-      // 裝機狀況 is revealed to admin+ in the legacy console and its data comes from
-      // adminAuth routes, so it stays admin+ here.
-      { path: '/system/config', labelKey: 'nav.config', minRole: 'admin' },
-      // Both super_admin: the legacy broadcast card carries `super-admin-only`, and
-      // /api/admin/work-log is superAdminAuth throughout.
-      { path: '/system/broadcast', labelKey: 'nav.broadcast', minRole: 'super_admin' },
-      { path: '/system/work-log', labelKey: 'nav.work_log', minRole: 'super_admin' },
+    path: '/admin',
+    labelKey: 'nav.admin',
+    tabs: [
+      // Its data comes from adminAuth routes, so admin+.
+      { id: 'machines', path: '/admin/machines', labelKey: 'nav.admin.machines', minRole: 'admin' },
+      // Both super_admin: /api/broadcast/admin and /api/admin/work-log are superAdminAuth.
+      { id: 'broadcast', path: '/admin/broadcast', labelKey: 'nav.admin.broadcast', minRole: 'super_admin' },
+      { id: 'work-log', path: '/admin/work-log', labelKey: 'nav.admin.work_log', minRole: 'super_admin' },
     ],
   },
 ];
 
-/** Items of one section that `role` may see. */
-export function visibleItems(section, role) {
-  return section.items.filter((item) => roleAtLeast(role, item.minRole));
+/**
+ * The twenty paths the console had before v1.32.0, each pointing at the tab that took it
+ * over. Two of them (`/team/stats`, `/team/tasks`) kept their address and are not here.
+ * App.jsx renders a redirect for every key.
+ */
+export const OLD_PATHS = {
+  '/portal/usage': '/usage/mine',
+  '/portal/project-history': '/memory/projects',
+  '/portal/handoffs': '/inbox/handoffs',
+  '/portal/lessons': '/inbox/lessons',
+  '/portal/tasks': '/inbox/tasks',
+  '/portal/reports': '/inbox/reports',
+  '/portal/narrative': '/team/observe',
+  '/portal/pitfalls': '/usage/rules',
+  '/portal/periodic-reports': '/team/reports',
+  '/team/usage': '/usage/team',
+  '/preference/profile': '/settings/profile',
+  '/preference/security': '/settings/security',
+  '/preference/vault': '/settings/vault',
+  '/admin/team': '/team/members',
+  '/admin/bugs': '/inbox/bugs',
+  '/system/config': '/admin/machines',
+  '/system/broadcast': '/admin/broadcast',
+  '/system/work-log': '/admin/work-log',
+};
+
+/** The lowest role that may see an entry: the lowest among its tabs, or its own. */
+export function entryMinRole(entry) {
+  if (entry.minRole) return entry.minRole;
+  const ranks = { user: 1, admin: 2, super_admin: 3 };
+  return entry.tabs.reduce(
+    (low, t) => ((ranks[t.minRole] ?? Infinity) < (ranks[low] ?? Infinity) ? t.minRole : low),
+    null,
+  );
 }
 
-/** Sections with at least one item visible to `role`, each carrying its filtered items. */
+/**
+ * The items of an entry, as routes: a single-page entry is one item at its own path, a
+ * tabbed entry is one item per tab. Each carries `sectionId` (the entry id) so a page can
+ * find its entry.
+ */
+function itemsOf(entry) {
+  if (entry.tabs.length === 0) {
+    return [{ id: entry.id, path: entry.path, labelKey: entry.labelKey, minRole: entry.minRole, sectionId: entry.id }];
+  }
+  return entry.tabs.map((t) => ({ ...t, sectionId: entry.id }));
+}
+
+/** Items (tabs) of one entry that `role` may see. */
+export function visibleItems(entry, role) {
+  return itemsOf(entry).filter((item) => roleAtLeast(role, item.minRole));
+}
+
+/** Entries with at least one item visible to `role`, each carrying its filtered items. */
 export function visibleSections(role) {
-  return NAV_SECTIONS
-    .map((section) => ({ ...section, items: visibleItems(section, role) }))
-    .filter((section) => section.items.length > 0);
+  return NAV_ENTRIES
+    .map((entry) => ({ ...entry, items: visibleItems(entry, role) }))
+    .filter((entry) => entry.items.length > 0);
 }
 
-/** Every nav item, flattened, with its section id attached. */
+/** Every routed item, flattened, with its entry id attached. */
 export function allNavItems() {
-  return NAV_SECTIONS.flatMap((s) => s.items.map((item) => ({ ...item, sectionId: s.id })));
+  return NAV_ENTRIES.flatMap(itemsOf);
 }
 
 /** The declared minimum role for a path, or null when the path is not in the navigation. */
@@ -125,3 +198,22 @@ export function navMinRole(path) {
 export function navLabelKey(path) {
   return allNavItems().find((i) => i.path === path)?.labelKey ?? null;
 }
+
+/** The entry a path belongs to (its own path or one of its tabs), or null. */
+export function navEntryFor(path) {
+  return NAV_ENTRIES.find((e) => e.path === path || e.tabs.some((t) => t.path === path)) ?? null;
+}
+
+/**
+ * Where an entry's bare path sends `role`: its first tab they may see, or null when they
+ * may see none (RequireRole then sends them to ROLE_DENIED_REDIRECT).
+ */
+export function firstVisiblePath(entry, role) {
+  return visibleItems(entry, role)[0]?.path ?? null;
+}
+
+/**
+ * Kept for the two tests and the sidebar that still say "sections": an entry is what a
+ * section became.
+ */
+export const NAV_SECTIONS = NAV_ENTRIES;

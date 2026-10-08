@@ -66,7 +66,7 @@ export default function SecurityPage() {
     // 用 setTimeout 讓 user 看到 toast 1.5 秒再跳；ref 存 id 讓 unmount 可 cleanup
     if (mustChange) {
       navTimerRef.current = setTimeout(
-        () => navigate('/portal/usage', { replace: true }),
+        () => navigate('/home', { replace: true }),
         1500,
       );
     }

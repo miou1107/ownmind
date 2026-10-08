@@ -16,11 +16,11 @@ the page works at phone width in light and dark, and the old paths it replaces r
 
 ## Phase 1 — shell and navigation
 
-- [ ] `nav-sections.js`: 7 entries, roles per entry and per tab
-- [ ] tab state in the URL (`/home`, `/inbox/handoffs`, …) so a tab can be linked
-- [ ] redirects from all 20 old paths to their new tab
-- [ ] left rail with counts (待你處理), collapses to a menu under 960px
-- [ ] `tests/e2e/route-ids.spec.mjs` updated for the new ids and the redirects
+- [x] `nav-sections.js`: 7 entries, roles per entry and per tab (NAV_ENTRIES, OLD_PATHS)
+- [x] tab state in the URL (`/home`, `/inbox/handoffs`, …) so a tab can be linked
+- [x] redirects from all 20 old paths to their new tab (18 redirect, `/team/stats` and `/team/tasks` kept their address)
+- [x] left rail, collapses to a menu under 960px — the 待你處理 count arrives with Phase 3, which builds the endpoint it needs
+- [x] `tests/e2e/console.spec.mjs` and `tests/console-nav-structure.test.js` updated for the entries, tabs and redirects
 
 ## Phase 2 — 總覽
 
