@@ -565,7 +565,9 @@ test.describe('v1.26.58 team usage', () => {
   test('members with no usage data are marked, not shown as zero', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
     await page.goto(url('/dashboard/team/members'));
-    await expect(pageHeading(page, '團隊用量')).toBeVisible();
+    // v1.32.5: the table lives under 團隊 › 成員, whose title is the entry heading in the top
+    // bar, not inside main; the coverage panel is the first heading the page itself renders.
+    await expect(pageHeading(page, '這份排行涵蓋多少人')).toBeVisible();
 
     const header = page.getByRole('row').first();
     for (const col of ['成員', '最近活動', '對話場次', '最常做的專案', '鐵律遵守率',
@@ -597,7 +599,9 @@ test.describe('v1.26.58 team usage', () => {
     // render it, and the legacy sort-by-cost option is gone with it.
     await login(page, ACCOUNTS.admin);
     await page.goto(url('/dashboard/team/members'));
-    await expect(pageHeading(page, '團隊用量')).toBeVisible();
+    // v1.32.5: the table lives under 團隊 › 成員, whose title is the entry heading in the top
+    // bar, not inside main; the coverage panel is the first heading the page itself renders.
+    await expect(pageHeading(page, '這份排行涵蓋多少人')).toBeVisible();
 
     // `USD` deliberately not in the pattern: it matches member names and emails
     // as readily as it matches a currency, and a spec that fails because someone
@@ -715,7 +719,9 @@ test.describe('the pages ported from /me/', () => {
     await login(page, ACCOUNTS.admin);
     await page.goto(url('/dashboard/portal/pitfalls'));
 
-    await expect(pageHeading(page, /踩坑紀錄/)).toBeVisible();
+    // v1.32.4: the old address lands on 用量與規矩 › 規矩遵守, where the three sections are
+    // embedded under the tab's own heading.
+    await expect(page).toHaveURL(new RegExp('/dashboard/usage/rules$'));
 
     // The harness seeds one six-turn session with no compliance array, so all three
     // sections render and the third has a row. Asserting the all-clear state instead would
@@ -741,7 +747,8 @@ test.describe('the pages ported from /me/', () => {
 
   test('the custom date range queries the server with start and end', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/home'));
+    // v1.32.4: the range bar moved with the report to 用量與規矩 › 我的對話; /home is the overview.
+    await page.goto(url('/dashboard/usage/mine'));
 
     await page.getByRole('button', { name: '自訂區間' }).click();
     // Filling only one date must not fire a request: the effect depends on the computed
@@ -763,7 +770,7 @@ test.describe('the pages ported from /me/', () => {
 
   test('a reversed custom range is refused rather than silently returning nothing', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/home'));
+    await page.goto(url('/dashboard/usage/mine'));
     await page.getByRole('button', { name: '自訂區間' }).click();
     await page.locator('input[type=date]').first().fill('2026-07-15');
     await page.locator('input[type=date]').nth(1).fill('2026-07-01');
