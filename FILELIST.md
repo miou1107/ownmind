@@ -496,6 +496,7 @@ src/routes/activity.js                — memoryLookup 與 autoEmitObservedTrigg
 src/routes/me.js                      — /pitfalls 三個區塊回傳前經 scopePitfallRows；五個備援查詢加 AND user_id = 紀錄主人，
                                        比對規則改成模板字串裡正確的寫法，並限制最多 9 位數
 src/routes/me-narrative.js            — / 與 /insights 回傳和交給 AI 前先經 hideOthersRuleTitles
+src/routes/me-overview.js                   — GET /api/me/overview（v1.32.2）：把 report、self-check、收件匣、主機檢查已有的查詢合成總覽一支；只組既有數字
 client/src/i18n/zh.json, en.json, ja.json — 踩坑紀錄頁副標題照實改
 package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
                                      — 版號 1.30.42
@@ -5505,6 +5506,7 @@ tests/auto-update-shared.test.js                — 用注入的行程執行器�
                                                    Windows 用 npm.cmd + shell、每個步驟失敗
                                                    都要回報 step 並放掉鎖、失敗不蓋當日戳記
 tests/collector-api-host.test.js            — v1.32.0：回報帶 api_host（只有主機名、不帶金鑰）、伺服器收下／不收怪值／沒帶不動舊值、管理清單標 on_old_host、後台分組帶主機、自檢第一行印主機
+tests/me-overview.test.js                   — v1.32.2：燈不裝綠、舊主機點名、成員拿不到錯誤回報、沒有資料不顯示 0、文案不出現 collector／heartbeat／token／合規、三語字串齊
 tests/collector-failure-reporting.test.js       — 掛掉／卡住／被跳過三種都要回報；訊息只進
                                                    稽核表且截到 1000 字；自我檢查不可以把
                                                    自己送出的失敗通知讀成成功
@@ -6304,7 +6306,8 @@ src/routes/me.js                     — 登入改問 first-password 政策；�
 src/app.js                           — authLimiter 掛上 /api/me/first-password
 client/src/pages/login-outcome.js    — 第四種結果 first_password，排在 api_key 檢查之前
 client/src/pages/LoginPage.jsx       — 第三種模式，沿用既有 mode 狀態的形狀
-client/src/pages/Home/HomePage.jsx                 — 總覽第一版（v1.32.1）：七個入口的門，每區一句話；第 2 段換成狀態燈與數字卡
+client/src/pages/Home/HomePage.jsx                 — 總覽（v1.32.2）：三個狀態燈、等你處理、四張數字卡、每天幾場對話；吃 /api/me/overview
+client/src/pages/Home/overview-vm.js              — 總覽的純資料層：燈的狀態與句子、等你處理的列、數字卡的比較句；沒有資料就顯示「沒有資料」
 client/src/i18n/{zh,en,ja}.json      — 5 個新 key
 CHANGELOG.md, FILELIST.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.63
 openspec/BACKLOG.md                  — 第 1 條出去，換成「管理員重設那條路 + 要不要輪換 api_key」
