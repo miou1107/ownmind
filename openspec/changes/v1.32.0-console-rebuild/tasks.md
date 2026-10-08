@@ -39,10 +39,10 @@ the page works at phone width in light and dark, and the old paths it replaces r
 
 ## Phase 4 — 用量與規矩
 
-- [ ] 我的對話: tiles, daily chart, my machines with version and 連的主機
-- [ ] 規矩遵守: rate with formula, per-rule bars, 「AI 沒回報的對話」 (old pitfalls)
-- [ ] 專案: project table, row opens who and handoffs
-- [ ] 全隊 (admin): team tiles, daily chart, time-of-day and weekday bars
+- [x] 我的對話: tiles, daily chart, my machines with version and 連的主機
+- [x] 規矩遵守: rate with formula, per-rule bars, 「AI 沒回報的對話」 (old pitfalls)
+- [x] 專案: project table, row opens who and handoffs
+- [x] 全隊 (admin): team tiles, daily chart, time-of-day and weekday bars (Portal/UsageTeam already had them); the per-member ranking stays at `/team/usage` as 團隊 › 用量排行 until Phase 5
 
 ## Phase 5 — 團隊、記憶、我的設定、管理
 

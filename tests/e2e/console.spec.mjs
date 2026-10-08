@@ -191,8 +191,8 @@ test.describe('v1.32.0 — every old address still works', () => {
     await expect(page).toHaveURL(/\/dashboard\/admin\/machines$/);
     await page.goto(url('/dashboard/admin/bugs'));
     await expect(page).toHaveURL(/\/dashboard\/inbox\/bugs$/);
-    await page.goto(url('/dashboard/usage/team'));
-    await expect(page).toHaveURL(/\/dashboard\/usage\/team$/);
+    await page.goto(url('/dashboard/team/usage'));
+    await expect(page).toHaveURL(/\/dashboard\/team\/usage$/);
   });
 });
 
@@ -552,7 +552,7 @@ test.describe('v1.26.58 team usage', () => {
 
   test('members with no usage data are marked, not shown as zero', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/usage/team'));
+    await page.goto(url('/dashboard/team/usage'));
     await expect(pageHeading(page, '團隊用量')).toBeVisible();
 
     const header = page.getByRole('row').first();
@@ -575,7 +575,7 @@ test.describe('v1.26.58 team usage', () => {
     // as missing. The admin has one logged conversation, so their row must show
     // it rather than joining the members with nothing.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/usage/team'));
+    await page.goto(url('/dashboard/team/usage'));
     const row = page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name });
     await expect(row.getByText('e2e-project')).toBeVisible();
   });
@@ -584,7 +584,7 @@ test.describe('v1.26.58 team usage', () => {
     // Requirement 8. The endpoint still answers with cost_usd; nothing here may
     // render it, and the legacy sort-by-cost option is gone with it.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/usage/team'));
+    await page.goto(url('/dashboard/team/usage'));
     await expect(pageHeading(page, '團隊用量')).toBeVisible();
 
     // `USD` deliberately not in the pattern: it matches member names and emails
@@ -600,7 +600,7 @@ test.describe('v1.26.58 team usage', () => {
 
   test('the coverage panel states its denominator and says who is missing', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/usage/team'));
+    await page.goto(url('/dashboard/team/usage'));
     await expect(page.getByText(`全隊 ${SEEDED_USER_COUNT} 人`)).toBeVisible();
     // None of them measured, which is well under the four-fifths mark.
     await expect(page.getByText(/只涵蓋 0%/)).toBeVisible();
@@ -610,7 +610,7 @@ test.describe('v1.26.58 team usage', () => {
 
   test('clicking a member opens the drill-down against the same window', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/usage/team'));
+    await page.goto(url('/dashboard/team/usage'));
     await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
 
     await expect(page.getByText(`成員明細：${ACCOUNTS.admin.name}`)).toBeVisible();
@@ -629,7 +629,7 @@ test.describe('v1.26.58 team usage', () => {
     // the dates are reversed, so there is still a row to click; the drill-down
     // then mounted with `loading` true and returned early without clearing it.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/usage/team'));
+    await page.goto(url('/dashboard/team/usage'));
     await page.locator('#team-from').fill('2026-08-10');
     await page.locator('#team-to').fill('2026-08-01');
     await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
@@ -643,7 +643,7 @@ test.describe('v1.26.58 team usage', () => {
     // heading switches immediately while the cards below still hold the previous
     // member, so one person's numbers appear under another person's name.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/usage/team'));
+    await page.goto(url('/dashboard/team/usage'));
 
     await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
     await expect(page.getByText(`成員明細：${ACCOUNTS.admin.name}`)).toBeVisible();

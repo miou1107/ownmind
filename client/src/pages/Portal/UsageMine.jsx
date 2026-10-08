@@ -1,6 +1,32 @@
 import { useT, useLocale } from '../../i18n/LocaleContext';
 import { StatCard } from '../../components/common';
 import { fmtDate } from '../../utils/fmtDate';
+import { DailyChart } from '../Team/charts.jsx';
+
+// v1.32.4 — 每天開幾場對話, from the activity rows the report already carries: one
+// `init` is one session. Days between the first and the last are zero-filled so a quiet
+// day reads as quiet, not as missing.
+export function dailySessions(activity) {
+  const byDay = new Map();
+  for (const a of activity ?? []) {
+    if (a?.event !== 'init' || !a.ts) continue;
+    const d = new Date(a.ts);
+    if (Number.isNaN(d.getTime())) continue;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    byDay.set(key, (byDay.get(key) ?? 0) + 1);
+  }
+  if (byDay.size === 0) return [];
+  const days = [...byDay.keys()].sort();
+  const out = [];
+  const cur = new Date(`${days[0]}T00:00:00`);
+  const last = new Date(`${days[days.length - 1]}T00:00:00`);
+  while (cur <= last) {
+    const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+    out.push({ date: key, count: byDay.get(key) ?? 0 });
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
 
 // 個人區塊 — 你自己的用量數據
 // KPI 卡：互動場次 / 事件數 / 最後活動時間 / 鐵律合規率
@@ -57,6 +83,16 @@ export default function UsageMine({ me }) {
           unit={rate === null ? '' : '%'}
         />
       </div>
+
+      {/* 每天幾場 — v1.32.4 */}
+      <section>
+        <h2 className="text-sm font-bold text-slate-900 mb-2">
+          {t('usage.mine.daily_title')}
+        </h2>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+          <DailyChart daily={dailySessions(activity)} emptyText={t('home.no_data')} />
+        </div>
+      </section>
 
       {/* 專案 */}
       <section>
@@ -139,24 +175,44 @@ export default function UsageMine({ me }) {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs text-slate-600">
                 <tr>
+                  <th className="text-left px-3 py-2">{t('usage.col.machine')}</th>
                   <th className="text-left px-3 py-2">{t('usage.col.tool')}</th>
                   <th className="text-left px-3 py-2">{t('usage.col.version')}</th>
                   <th className="text-left px-3 py-2">{t('usage.col.last_seen')}</th>
+                  <th className="text-left px-3 py-2">{t('usage.col.api_host')}</th>
                 </tr>
               </thead>
               <tbody>
                 {versions.map((v, i) => (
                   <tr key={`${v.tool}-${i}`} className="border-t border-slate-100">
+                    <td className="px-3 py-2 text-slate-700">{v.machine || '-'}</td>
                     <td className="px-3 py-2 text-slate-700">{v.tool}</td>
                     <td className="px-3 py-2 text-slate-700">{v.version || '-'}</td>
                     <td className="px-3 py-2 text-slate-500 text-xs">
                       {v.last_reported_at ? fmtDate(v.last_reported_at, locale) : '-'}
+                    </td>
+                    {/* v1.32.4 — which server this computer posts to (Phase 0's column). Red
+                        with the one sentence that says what to do when it is not this one. */}
+                    <td className="px-3 py-2 text-xs">
+                      {v.api_host ? (
+                        <code className={v.on_old_host ? 'text-rose-700' : 'text-slate-600'}>{v.api_host}</code>
+                      ) : (
+                        <span className="text-slate-400">{t('system.config.api_host.unknown')}</span>
+                      )}
+                      {v.on_old_host && (
+                        <span className="ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
+                          {t('system.config.api_host.old_host')}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+        {versions.some((v) => v.on_old_host) && (
+          <p className="mt-2 text-xs text-rose-700">{t('usage.mine.old_host_hint')}</p>
         )}
       </section>
 

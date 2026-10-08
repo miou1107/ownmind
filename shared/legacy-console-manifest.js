@@ -75,7 +75,7 @@ export const LEGACY_CONSOLE_FEATURES = [
   // /api/usage/stats. The Notional cost column is not ported (Requirement 8) and
   // the coverage panel counts members with usage data instead of collector
   // heartbeats. One signpost left, so /admin/ is still served.
-  { id: 'team-usage', consolePath: '/usage/team', legacyTab: 'team-usage', state: 'live' },
+  { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'live' },
   // v1.26.59: 週報月報 rebuilt in the console, and with it the list is empty.
   //
   // This entry is the one that ends the migration: `isLegacyConsoleRetired()` now

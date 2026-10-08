@@ -5508,6 +5508,7 @@ tests/auto-update-shared.test.js                — 用注入的行程執行器�
 tests/collector-api-host.test.js            — v1.32.0：回報帶 api_host（只有主機名、不帶金鑰）、伺服器收下／不收怪值／沒帶不動舊值、管理清單標 on_old_host、後台分組帶主機、自檢第一行印主機
 tests/me-overview.test.js                   — v1.32.2：燈不裝綠、舊主機點名、成員拿不到錯誤回報、沒有資料不顯示 0、文案不出現 collector／heartbeat／token／合規、三語字串齊
 tests/me-inbox-count.test.js                — v1.32.3：成員不算錯誤回報、總數相加、沒答案不顯示 0、四個頁面處理完都通知左欄、徽章字串三語齊
+tests/usage-rules-vm.test.js                — v1.32.4：比例算法不算 observed、長條最差優先、沒資料不顯示 0／100%、區間查詢字串、四個分頁與 /team/usage 的接線、versions 帶 api_host
 tests/collector-failure-reporting.test.js       — 掛掉／卡住／被跳過三種都要回報；訊息只進
                                                    稽核表且截到 1000 字；自我檢查不可以把
                                                    自己送出的失敗通知讀成成功
@@ -6994,7 +6995,14 @@ client/src/session/roles.js                                      — 新增 ROLE
 client/src/session/SessionContext.jsx                            — 身分多帶 id。舊後台從 om_user_id 還原 session，指路牌交憑證時需要
 client/src/api/client.js                                         — export appBase()，讓 legacy-handoff 不用再寫一份一樣的前綴 regex
 client/src/api/auth.js                                           — clearApiKey 一併清舊後台那四個鍵。指路牌會把一把真的可用的憑證寫進 om_api_key，只清自己那一份的話，登出之後下一個打開 /admin/ 的人會被還原成上一個人的身分
-client/src/pages/Portal/UsagePage.jsx                            — 補自訂日期區間（伺服器早就支援 ?start=&end=、只有舊 /me/ 有介面）。effect 依賴算好的查詢字串，所以日期填一半不會打出半套請求。資料品質警示放在分頁標籤上面，因為它警告的是「下面的數字可能不完整」
+client/src/pages/Usage/useMeReport.js             — v1.32.4：四個用量分頁共用的載入器（區間狀態＋ /api/me/report）
+client/src/pages/Usage/report-query.js            — useMeReport 的純邏輯：固定區間、查詢字串；自訂區間沒選齊或反了就 null
+client/src/pages/Usage/UsageRangeBar.jsx          — 四頁共用的區間選擇條＋載入／錯誤／空的狀態
+client/src/pages/Usage/UsageMinePage.jsx          — 用量與規矩 › 我的對話（包 Portal/UsageMine）
+client/src/pages/Usage/RulesPage.jsx              — 用量與規矩 › 規矩遵守：三張卡、每條規矩的三色長條、下接踩坑紀錄
+client/src/pages/Usage/rules-vm.js                — 規矩遵守的純邏輯：比例＝遵守÷(遵守＋略過＋違反)、長條排序、沒回報的對話數
+client/src/pages/Usage/UsageProjectsPage.jsx      — 用量與規矩 › 專案（包 Portal/UsageProjects）
+client/src/pages/Usage/UsageTeamPage.jsx          — 用量與規矩 › 全隊（包 Portal/UsageTeam）
 client/src/components/common/index.js                            — barrel 加 export Signpost
 client/src/i18n/{zh,en,ja}.json                                  — 新增五區塊名稱、七個新導覽項目、舊後台頁籤名稱、指路牌四句、整體分析與踩坑紀錄全部字串、資料品質警示、自訂區間。移除 nav.audit／nav.team／nav.section.{portal_analytics,personal,super}／placeholder.coming_soon 六個死鍵。nav.config 從「系統配置與計價」改成「系統設定」（計價依 Requirement 8 要移除）、nav.bugs／nav.members 對齊舊後台原本的頁籤名
 package.json                                                     — 版號 1.26.45 → 1.26.46

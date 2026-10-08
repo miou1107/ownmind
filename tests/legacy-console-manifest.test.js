@@ -162,10 +162,10 @@ describe('legacy-console manifest — shape', () => {
 
   it('v1.26.58 — team-usage is live, not a signpost', () => {
     // Stage 6 flip. The amber dot on 團隊用量 must be gone.
-    const usage = legacyFeatureFor('/usage/team');
+    const usage = legacyFeatureFor('/team/usage');
     assert.ok(usage, 'team-usage entry missing from manifest');
     assert.equal(usage.state, 'live', 'team-usage should be live after Stage 6');
-    assert.equal(isSignpost('/usage/team'), false);
+    assert.equal(isSignpost('/team/usage'), false);
   });
 
   it('v1.26.59 — 週報月報 is live', () => {
