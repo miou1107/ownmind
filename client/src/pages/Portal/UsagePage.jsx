@@ -4,7 +4,6 @@ import { apiGet } from '../../api';
 import UsageMine from './UsageMine';
 import UsageTeam from './UsageTeam';
 import UsageProjects from './UsageProjects';
-import AuditFindings from './AuditFindings';
 
 // 用量分析頁 — Portal 招牌頁
 // 三分頁標籤（個人 / 團隊 / 專案）+ 頂部時段切換條（7d / 14d / 30d / all / 自訂區間）
@@ -130,7 +129,7 @@ export default function UsagePage() {
       )}
 
       {/* 資料品質警示 — 警告下面的數字可能不完整，所以放在標籤條上面 */}
-      <AuditFindings findings={data?.me?.audit_findings} />
+      {/* v1.32.2 — the three warning banners that sat here became the status lights on 總覽. */}
 
       {/* 分頁標籤條 */}
       <div className="mt-4 border-b border-slate-200 flex gap-1">

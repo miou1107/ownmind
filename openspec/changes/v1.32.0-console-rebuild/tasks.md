@@ -24,12 +24,12 @@ the page works at phone width in light and dark, and the old paths it replaces r
 
 ## Phase 2 — 總覽
 
-- [ ] `/api/me/overview`: lights, pending counts, four tiles, daily sessions — composed
-      from existing queries
-- [ ] three status lights, each with its action button
-- [ ] 「等你處理」 list linking into the inbox tabs
-- [ ] four tiles with one comparison sentence each; 7/14/30-day range
-- [ ] remove the three banners from the old usage page
+- [x] `/api/me/overview`: lights, pending counts, four tiles, daily sessions — composed
+      from existing queries (`src/routes/me-overview.js`)
+- [x] three status lights, each with its action button
+- [x] 「等你處理」 list linking into the inbox tabs
+- [x] four tiles with one comparison sentence each; 7/14/30-day range
+- [x] remove the three banners from the old usage page
 
 ## Phase 3 — 待你處理
 

@@ -158,6 +158,7 @@ import adminWorkLogRoutes from './routes/admin-work-log.js';
 import adminIronRuleUpgradeRoutes from './routes/admin-iron-rule-upgrade.js';
 import meRoutes from './routes/me.js';
 import { createNarrativeRouter } from './routes/me-narrative.js';
+import { createOverviewRouter } from './routes/me-overview.js';
 import { createDebugRouter } from './routes/debug.js';
 import setupRoutes from './routes/setup.js';
 import adminPasswordResetRoutes from './routes/admin-password-reset.js';
@@ -211,6 +212,8 @@ app.use('/api/usage', usageRoutes);
 app.use('/api/broadcast', broadcastRoutes);
 // sub-paths must be mounted before /api/me, otherwise meRoutes receives the request first and 404s
 app.use('/api/me/narrative', createNarrativeRouter({ query, auth }));
+// v1.32.2: 總覽 — composes the numbers the console already has into one request.
+app.use('/api/me/overview', createOverviewRouter({ query, auth }));
 app.use('/api/me', meRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
 app.use('/api/debug', createDebugRouter({ query, auth }));
