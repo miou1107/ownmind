@@ -28,7 +28,8 @@ import PeriodicReportsPage from './pages/Portal/PeriodicReportsPage';
 import TeamPage from './pages/Admin/TeamPage';
 import BugReportsPage from './pages/Admin/BugReportsPage';
 import StatsPage from './pages/Team/StatsPage';
-import TeamUsagePage from './pages/Team/TeamUsagePage';
+import MembersPage from './pages/Team/MembersPage';
+import MemoryRulesPage from './pages/Memory/MemoryRulesPage';
 import SystemConfigPage from './pages/System/SystemConfigPage';
 import BroadcastPage from './pages/System/BroadcastPage';
 import WorkLogPage from './pages/System/WorkLogPage';
@@ -46,16 +47,17 @@ const REAL_PAGES = {
   '/usage/rules': <RulesPage />,
   '/usage/projects': <UsageProjectsPage />,
   '/usage/team': <UsageTeamPage />,
-  '/team/members': <TeamPage />,
-  '/team/usage': <TeamUsagePage />,
+  '/team/members': <MembersPage />,
   '/team/observe': <NarrativePage />,
   '/team/reports': <PeriodicReportsPage />,
   '/team/stats': <StatsPage />,
   '/team/tasks': <TeamTasksPage />,
   '/memory/projects': <ProjectHistoryPage />,
+  '/memory/rules': <MemoryRulesPage />,
   '/settings/profile': <ProfilePage />,
   '/settings/security': <SecurityPage />,
   '/settings/vault': <VaultPage />,
+  '/admin/users': <TeamPage />,
   '/admin/machines': <SystemConfigPage />,
   '/admin/broadcast': <BroadcastPage />,
   '/admin/work-log': <WorkLogPage />,

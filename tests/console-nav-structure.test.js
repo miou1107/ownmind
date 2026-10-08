@@ -147,12 +147,15 @@ describe('v1.32.0 — seven entries, each a prefix of its own tabs', () => {
     const inbox = NAV_ENTRIES.find((e) => e.id === 'inbox');
     assert.equal(firstVisiblePath(inbox, 'user'), '/inbox/handoffs');
     const admin = NAV_ENTRIES.find((e) => e.id === 'admin');
-    assert.equal(firstVisiblePath(admin, 'admin'), '/admin/machines');
+    assert.equal(firstVisiblePath(admin, 'admin'), '/admin/users');
     assert.equal(firstVisiblePath(admin, 'user'), null, 'a member may see no admin tab at all');
     const team = NAV_ENTRIES.find((e) => e.id === 'team');
-    assert.equal(firstVisiblePath(team, 'user'), '/team/observe',
-      'a member skips 成員 (admin) and lands on the first tab they may see');
+    // v1.32.5 — 成員 is open to everyone, so every role lands there; the per-role skip is
+    // exercised by 管理, whose first tab a member may not see.
+    assert.equal(firstVisiblePath(team, 'user'), '/team/members');
     assert.equal(firstVisiblePath(team, 'admin'), '/team/members');
+    const memory = NAV_ENTRIES.find((e) => e.id === 'memory');
+    assert.equal(firstVisiblePath(memory, 'user'), '/memory/projects');
   });
 
   it('an entry\'s minimum role is the lowest among its tabs', () => {
@@ -281,7 +284,11 @@ describe('nav structure — role filtering', () => {
     // had; this pins the ones that would be easiest to get wrong.
     assert.equal(navMinRole('/team/observe'), 'user', '整體分析 was open to members');
     assert.equal(navMinRole('/team/reports'), 'user', '週報月報 was open to members (v1.26.59)');
-    assert.equal(navMinRole('/team/members'), 'admin');
+    // v1.32.5 — the one deliberate change of policy: the member list is for everyone, and the
+    // admin tools (add/edit/delete, passwords) moved behind 管理 › 使用者.
+    assert.equal(navMinRole('/team/members'), 'user');
+    assert.equal(navMinRole('/admin/users'), 'admin');
+    assert.equal(navMinRole('/memory/rules'), 'user');
     assert.equal(navMinRole('/inbox/bugs'), 'admin');
     assert.equal(navMinRole('/usage/team'), 'admin');
     assert.equal(navMinRole('/admin/machines'), 'admin');

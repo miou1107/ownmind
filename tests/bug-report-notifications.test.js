@@ -403,7 +403,7 @@ describe('the person hears it, and can open it', () => {
   // 2026-10-02: a session opened with "9 of your reports have been resolved" in the AI's
   // context, and the AI never said a word of it. The section carried no instruction to relay,
   // unlike the broadcasts above it. It also pointed at /admin/bug-reports, a page that does
-  // not exist; the dashboard route is /admin/bugs.
+  // not exist; the dashboard route is /inbox/bugs.
   it('tells the AI to say it in its first sentence', () => {
     const text = bugReportNotificationLines({
       admin: { unhandled_count: 1, recent_unhandled: [] },
@@ -428,7 +428,8 @@ describe('the person hears it, and can open it', () => {
       httpGet: async () => JSON.stringify({ admin: { unhandled_count: 1, recent_unhandled: [] } }),
     });
     const text = bugReportNotificationLines(notif).join('\n');
-    assert.match(text, /https:\/\/example\.test\/ownmind\/dashboard\/admin\/bugs/);
+    // v1.32.6 — the console's 待你處理 › 錯誤回報 tab; the older /admin/bugs still redirects.
+    assert.match(text, /https:\/\/example\.test\/ownmind\/dashboard\/inbox\/bugs/);
     assert.doesNotMatch(text, /admin\/bug-reports/);
   });
 
@@ -438,8 +439,8 @@ describe('the person hears it, and can open it', () => {
       httpGet: async () => JSON.stringify({ reporter: { unread_resolved_count: 2, recent_resolved: [] } }),
     });
     const text = bugReportNotificationLines(notif).join('\n');
-    assert.match(text, /https:\/\/example\.test\/dashboard\/portal\/reports/);
-    assert.doesNotMatch(text, /admin\/bugs/);
+    assert.match(text, /https:\/\/example\.test\/dashboard\/inbox\/reports/);
+    assert.doesNotMatch(text, /inbox\/bugs/);
   });
 
   it('a title cannot start a line of its own in the AI context', () => {

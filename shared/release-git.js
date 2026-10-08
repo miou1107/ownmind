@@ -176,7 +176,7 @@ export function buildReleaseReport(facts, server) {
 
   if (server.lessons && Number.isInteger(server.lessons.new)) {
     lines.push(server.lessons.new > 0
-      ? `  lessons: ${server.lessons.new} from this project since the last tag still waiting on /portal/lessons`
+      ? `  lessons: ${server.lessons.new} from this project since the last tag still waiting on /inbox/lessons`
       : '  lessons: none waiting');
   }
 

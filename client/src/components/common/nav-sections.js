@@ -78,11 +78,11 @@ export const NAV_ENTRIES = [
     path: '/team',
     labelKey: 'nav.team',
     tabs: [
-      // User CRUD lives here until Phase 5 splits the member list from the admin tools.
-      { id: 'members', path: '/team/members', labelKey: 'nav.team.members', minRole: 'admin' },
-      // v1.32.4 — the per-member ranking with coverage. Phase 5 folds it into 成員; until
-      // then it keeps the address it always had, so this is a tab and not a redirect.
-      { id: 'usage', path: '/team/usage', labelKey: 'nav.team.usage', minRole: 'admin' },
+      // v1.32.5 — one table of people, for everyone. A member sees who is on the team and
+      // when each last worked with the AI (the team half of /api/me/report, open since
+      // v1.17); an admin sees the ranking, the coverage and the per-person drawer that
+      // used to be 團隊用量. User CRUD moved to 管理 › 使用者.
+      { id: 'members', path: '/team/members', labelKey: 'nav.team.members', minRole: 'user' },
       { id: 'observe', path: '/team/observe', labelKey: 'nav.team.observe', minRole: 'user' },
       // Personal by nature: GET /api/session/report filters WHERE user_id = $1.
       { id: 'reports', path: '/team/reports', labelKey: 'nav.team.reports', minRole: 'user' },
@@ -97,6 +97,9 @@ export const NAV_ENTRIES = [
     labelKey: 'nav.memory',
     tabs: [
       { id: 'projects', path: '/memory/projects', labelKey: 'nav.memory.projects', minRole: 'user' },
+      // v1.32.5 — the rules the AI follows for this person: their iron rules and the team
+      // standards they can read (/api/memory/type/iron_rule, /type/team_standard).
+      { id: 'rules', path: '/memory/rules', labelKey: 'nav.memory.rules', minRole: 'user' },
     ],
   },
   {
@@ -114,6 +117,8 @@ export const NAV_ENTRIES = [
     path: '/admin',
     labelKey: 'nav.admin',
     tabs: [
+      // v1.32.5 — add/edit/delete people and their passwords (the old 使用者管理).
+      { id: 'users', path: '/admin/users', labelKey: 'nav.admin.users', minRole: 'admin' },
       // Its data comes from adminAuth routes, so admin+.
       { id: 'machines', path: '/admin/machines', labelKey: 'nav.admin.machines', minRole: 'admin' },
       // Both super_admin: /api/broadcast/admin and /api/admin/work-log are superAdminAuth.
@@ -125,8 +130,7 @@ export const NAV_ENTRIES = [
 
 /**
  * The twenty paths the console had before v1.32.0, each pointing at the tab that took it
- * over. Three of them (`/team/usage`, `/team/stats`, `/team/tasks`) kept their address and
- * are not here.
+ * over. Two of them (`/team/stats`, `/team/tasks`) kept their address and are not here.
  * App.jsx renders a redirect for every key.
  */
 export const OLD_PATHS = {
@@ -142,7 +146,8 @@ export const OLD_PATHS = {
   '/preference/profile': '/settings/profile',
   '/preference/security': '/settings/security',
   '/preference/vault': '/settings/vault',
-  '/admin/team': '/team/members',
+  '/admin/team': '/admin/users',
+  '/team/usage': '/team/members',
   '/admin/bugs': '/inbox/bugs',
   '/system/config': '/admin/machines',
   '/system/broadcast': '/admin/broadcast',

@@ -93,11 +93,15 @@ test.describe('who sees what', () => {
     await expect(page).toHaveURL(/\/dashboard\/usage\/mine$/);
     await expect(tab(page, '用量與規矩', '全隊')).toHaveCount(0);
 
-    // 團隊: a member reaches 觀察 and 週報 but not 成員, 統計 or 全隊任務卡.
+    // 團隊: a member reaches 成員 (v1.32.5), 觀察 and 週報 but not 統計 or 全隊任務卡.
     await page.goto(url('/dashboard/team'));
-    await expect(page).toHaveURL(/\/dashboard\/team\/observe$/);
-    await expect(tab(page, '團隊', '成員')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/dashboard\/team\/members$/);
+    for (const label of ['成員', '觀察', '週報']) {
+      await expect(tab(page, '團隊', label)).toHaveCount(1);
+    }
     await expect(tab(page, '團隊', '統計')).toHaveCount(0);
+    // And the admin table is not what a member gets: no coverage block, no ranking.
+    await expect(page.getByText('OwnMind 看得到嗎')).toBeVisible();
   });
 
   test('an admin sees 管理 with 每台電腦的回報 but not 公告 or 工作紀錄', async ({ page }) => {
@@ -108,10 +112,12 @@ test.describe('who sees what', () => {
     // This is the case per-entry permission could not express: one entry holding tabs an
     // admin may use next to tabs only a super_admin may.
     await page.goto(url('/dashboard/admin'));
-    await expect(page).toHaveURL(/\/dashboard\/admin\/machines$/);
-    // A single visible tab renders no tab strip; the page heading says where we are.
-    await expect(page.getByRole('navigation', { name: '管理' })).toHaveCount(0);
-    await expect(page.getByText('公告', { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/dashboard\/admin\/users$/);
+    for (const label of ['使用者', '每台電腦的回報']) {
+      await expect(tab(page, '管理', label)).toHaveCount(1);
+    }
+    await expect(tab(page, '管理', '公告')).toHaveCount(0);
+    await expect(tab(page, '管理', '工作紀錄')).toHaveCount(0);
 
     await page.goto(url('/dashboard/team'));
     await expect(page).toHaveURL(/\/dashboard\/team\/members$/);
@@ -123,7 +129,7 @@ test.describe('who sees what', () => {
 
     expect(await visibleEntries(page)).toEqual(ENTRIES_ADMIN);
     await page.goto(url('/dashboard/admin'));
-    for (const label of ['每台電腦的回報', '公告', '工作紀錄']) {
+    for (const label of ['使用者', '每台電腦的回報', '公告', '工作紀錄']) {
       await expect(tab(page, '管理', label)).toHaveCount(1);
     }
     await page.goto(url('/dashboard/inbox'));
@@ -140,7 +146,7 @@ test.describe('who sees what', () => {
 test.describe('route guards', () => {
   test('a typed admin URL sends a member back to a page they may see', async ({ page }) => {
     await login(page, ACCOUNTS.user);
-    await page.goto(url('/dashboard/team/members'));
+    await page.goto(url('/dashboard/admin/users'));
     await expect(page).toHaveURL(/\/dashboard\/home$/);
   });
 
@@ -148,8 +154,8 @@ test.describe('route guards', () => {
     // The readiness gate: deciding while the identity is still in flight would bounce a
     // legitimate admin, because an unresolved session looks exactly like a role-less one.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/members'));
-    await expect(page).toHaveURL(/\/dashboard\/team\/members$/);
+    await page.goto(url('/dashboard/admin/users'));
+    await expect(page).toHaveURL(/\/dashboard\/admin\/users$/);
     await expect(pageHeading(page, '使用者管理')).toBeVisible();
   });
 
@@ -191,8 +197,14 @@ test.describe('v1.32.0 — every old address still works', () => {
     await expect(page).toHaveURL(/\/dashboard\/admin\/machines$/);
     await page.goto(url('/dashboard/admin/bugs'));
     await expect(page).toHaveURL(/\/dashboard\/inbox\/bugs$/);
-    await page.goto(url('/dashboard/team/usage'));
-    await expect(page).toHaveURL(/\/dashboard\/team\/usage$/);
+    // v1.32.5 — the old 團隊用量 address lands on 團隊 › 成員, which holds its table now;
+    // the old 使用者管理 address lands on 管理 › 使用者.
+    const oldTeamUsage = '/dashboard/team/usage';
+    await page.goto(url(oldTeamUsage));
+    await expect(page).toHaveURL(/\/dashboard\/team\/members$/);
+    const oldAdminTeam = '/dashboard/admin/team';
+    await page.goto(url(oldAdminTeam));
+    await expect(page).toHaveURL(/\/dashboard\/admin\/users$/);
   });
 });
 
@@ -435,7 +447,7 @@ test.describe('v1.26.59 週報月報', () => {
 test.describe('v1.26.49 team management page', () => {
   test('admin sees the users table with expected columns and the add-user button', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/members'));
+    await page.goto(url('/dashboard/admin/users'));
     await expect(pageHeading(page, '使用者管理')).toBeVisible();
 
     // Column headers surface the two new columns (密碼狀態, 用量資料) that the legacy tab lacked.
@@ -449,7 +461,7 @@ test.describe('v1.26.49 team management page', () => {
 
   test('users with no usage rows render 尚無資料, not zero', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/members'));
+    await page.goto(url('/dashboard/admin/users'));
     // The harness seeds three accounts and no usage: every row should read as unmeasured.
     await expect(page.getByText('尚無資料').first()).toBeVisible();
   });
@@ -552,8 +564,10 @@ test.describe('v1.26.58 team usage', () => {
 
   test('members with no usage data are marked, not shown as zero', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/usage'));
-    await expect(pageHeading(page, '團隊用量')).toBeVisible();
+    await page.goto(url('/dashboard/team/members'));
+    // v1.32.5: the table lives under 團隊 › 成員, whose title is the entry heading in the top
+    // bar, not inside main; the coverage panel is the first heading the page itself renders.
+    await expect(pageHeading(page, '這份排行涵蓋多少人')).toBeVisible();
 
     const header = page.getByRole('row').first();
     for (const col of ['成員', '最近活動', '對話場次', '最常做的專案', '鐵律遵守率',
@@ -575,7 +589,7 @@ test.describe('v1.26.58 team usage', () => {
     // as missing. The admin has one logged conversation, so their row must show
     // it rather than joining the members with nothing.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/usage'));
+    await page.goto(url('/dashboard/team/members'));
     const row = page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name });
     await expect(row.getByText('e2e-project')).toBeVisible();
   });
@@ -584,8 +598,10 @@ test.describe('v1.26.58 team usage', () => {
     // Requirement 8. The endpoint still answers with cost_usd; nothing here may
     // render it, and the legacy sort-by-cost option is gone with it.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/usage'));
-    await expect(pageHeading(page, '團隊用量')).toBeVisible();
+    await page.goto(url('/dashboard/team/members'));
+    // v1.32.5: the table lives under 團隊 › 成員, whose title is the entry heading in the top
+    // bar, not inside main; the coverage panel is the first heading the page itself renders.
+    await expect(pageHeading(page, '這份排行涵蓋多少人')).toBeVisible();
 
     // `USD` deliberately not in the pattern: it matches member names and emails
     // as readily as it matches a currency, and a spec that fails because someone
@@ -600,7 +616,7 @@ test.describe('v1.26.58 team usage', () => {
 
   test('the coverage panel states its denominator and says who is missing', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/usage'));
+    await page.goto(url('/dashboard/team/members'));
     await expect(page.getByText(`全隊 ${SEEDED_USER_COUNT} 人`)).toBeVisible();
     // None of them measured, which is well under the four-fifths mark.
     await expect(page.getByText(/只涵蓋 0%/)).toBeVisible();
@@ -610,7 +626,7 @@ test.describe('v1.26.58 team usage', () => {
 
   test('clicking a member opens the drill-down against the same window', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/usage'));
+    await page.goto(url('/dashboard/team/members'));
     await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
 
     await expect(page.getByText(`成員明細：${ACCOUNTS.admin.name}`)).toBeVisible();
@@ -629,7 +645,7 @@ test.describe('v1.26.58 team usage', () => {
     // the dates are reversed, so there is still a row to click; the drill-down
     // then mounted with `loading` true and returned early without clearing it.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/usage'));
+    await page.goto(url('/dashboard/team/members'));
     await page.locator('#team-from').fill('2026-08-10');
     await page.locator('#team-to').fill('2026-08-01');
     await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
@@ -643,7 +659,7 @@ test.describe('v1.26.58 team usage', () => {
     // heading switches immediately while the cards below still hold the previous
     // member, so one person's numbers appear under another person's name.
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/team/usage'));
+    await page.goto(url('/dashboard/team/members'));
 
     await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
     await expect(page.getByText(`成員明細：${ACCOUNTS.admin.name}`)).toBeVisible();
@@ -703,7 +719,9 @@ test.describe('the pages ported from /me/', () => {
     await login(page, ACCOUNTS.admin);
     await page.goto(url('/dashboard/portal/pitfalls'));
 
-    await expect(pageHeading(page, /踩坑紀錄/)).toBeVisible();
+    // v1.32.4: the old address lands on 用量與規矩 › 規矩遵守, where the three sections are
+    // embedded under the tab's own heading.
+    await expect(page).toHaveURL(new RegExp('/dashboard/usage/rules$'));
 
     // The harness seeds one six-turn session with no compliance array, so all three
     // sections render and the third has a row. Asserting the all-clear state instead would
@@ -729,7 +747,8 @@ test.describe('the pages ported from /me/', () => {
 
   test('the custom date range queries the server with start and end', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/home'));
+    // v1.32.4: the range bar moved with the report to 用量與規矩 › 我的對話; /home is the overview.
+    await page.goto(url('/dashboard/usage/mine'));
 
     await page.getByRole('button', { name: '自訂區間' }).click();
     // Filling only one date must not fire a request: the effect depends on the computed
@@ -751,7 +770,7 @@ test.describe('the pages ported from /me/', () => {
 
   test('a reversed custom range is refused rather than silently returning nothing', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/home'));
+    await page.goto(url('/dashboard/usage/mine'));
     await page.getByRole('button', { name: '自訂區間' }).click();
     await page.locator('input[type=date]').first().fill('2026-07-15');
     await page.locator('input[type=date]').nth(1).fill('2026-07-01');

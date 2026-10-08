@@ -97,12 +97,13 @@ describe('the shared range loader', () => {
 });
 
 describe('the wiring', () => {
-  it('用量與規矩 has four tabs, 團隊 keeps the ranking at its old address', () => {
+  it('用量與規矩 has four tabs; the old 團隊用量 address lands on 團隊 › 成員', () => {
     const paths = allNavItems().map((i) => i.path);
-    for (const p of ['/usage/mine', '/usage/rules', '/usage/projects', '/usage/team', '/team/usage']) {
+    for (const p of ['/usage/mine', '/usage/rules', '/usage/projects', '/usage/team']) {
       assert.ok(paths.includes(p), `${p} is not a route`);
     }
-    assert.ok(!('/team/usage' in OLD_PATHS), '/team/usage is a page again, not a redirect');
+    // v1.32.4 kept /team/usage as its own tab; v1.32.5 folded that table into 成員.
+    assert.equal(OLD_PATHS['/team/usage'], '/team/members');
   });
 
   it('each tab is its own page module and the old tabbed usage page is gone', () => {
@@ -129,7 +130,7 @@ describe('the wiring', () => {
     for (const loc of ['zh', 'en', 'ja']) {
       const d = JSON.parse(read(`client/src/i18n/${loc}.json`));
       for (const k of keys) assert.ok(d[k], `${loc}.json has no ${k}`);
-      for (const k of ['nav.usage.projects', 'nav.team.usage']) assert.ok(d[k], `${loc}.json has no ${k}`);
+      assert.ok(d['nav.usage.projects'], `${loc}.json has no nav.usage.projects`);
     }
   });
 });
