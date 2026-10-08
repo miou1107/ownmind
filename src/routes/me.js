@@ -22,6 +22,7 @@ import { loginResponseFor, firstPasswordRefusal } from '../utils/first-password.
 import { writeAuditLog } from '../utils/audit-log.js';
 import { createSession, revokeSession, revokeUserSessions } from '../utils/web-session.js';
 import { scopePitfallRows } from '../utils/pitfalls-scope.js';
+import { canonicalHostOf } from './usage/admin-clients.js';
 
 // v1.26.32: personal rule codes are no longer hardcoded. The compliance loop
 // keys on the neutral event constant; the legacy IR-006 literal below is kept
@@ -351,14 +352,22 @@ router.get('/report', async (req, res) => {
     // v1.26.73 — collector_heartbeat is one row per (user, tool, machine) now, so a
     // person with two computers has two rows per tool. The version somebody is
     // effectively on is the one their most recently active machine reports.
+    // v1.32.4 — plus the host each one posts to (Phase 0's column), so the member's own
+    // page can say which of their computers still talks to a retired server (#152).
     const myVersionsQ = await query(`
       SELECT DISTINCT ON (tool)
-             tool, scanner_version AS version, last_reported_at, machine
+             tool, scanner_version AS version, last_reported_at, machine, api_host
       FROM collector_heartbeat
       WHERE user_id = $1
       ORDER BY tool, last_reported_at DESC`,
       [me.id]
     );
+    const canonicalHost = canonicalHostOf(process.env.CANONICAL_URL || '');
+    const myVersions = myVersionsQ.rows.map((r) => ({
+      ...r,
+      api_host: r.api_host ?? null,
+      on_old_host: Boolean(canonicalHost && r.api_host && r.api_host !== canonicalHost),
+    }));
 
     // v1.17.34: normalize project names via LOWER(TRIM(...)) so
     // 'ownmind' / 'OwnMind' merge into the same row.
@@ -908,7 +917,7 @@ router.get('/report', async (req, res) => {
         sessions: parseInt(myStats.sessions, 10) || 0,
         events: parseInt(myStats.events, 10) || 0,
         last_activity: myStats.last_activity,
-        versions: myVersionsQ.rows,
+        versions: myVersions,
         projects: myProjectsQ.rows,
         compliance: myComplianceQ.rows.map(r => ({
           rule_code: r.rule_code,

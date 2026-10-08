@@ -25,7 +25,8 @@ const KIND_TONE = {
   orphan_session: 'border-slate-200 bg-slate-50 text-slate-700',
 };
 
-export default function PitfallsPage() {
+// v1.32.4 — `embedded`: rendered inside 用量與規矩 › 規矩遵守, which has its own heading.
+export default function PitfallsPage({ embedded = false } = {}) {
   const t = useT();
   const { locale } = useLocale();
 
@@ -59,10 +60,14 @@ export default function PitfallsPage() {
 
   return (
     <div className="max-w-5xl">
-      <h1 className="text-2xl font-bold text-sage-700">{t('pitfalls.title')}</h1>
-      <p className="text-slate-500 mt-1 text-sm">{t('pitfalls.subtitle')}</p>
+      {!embedded && (
+        <>
+          <h1 className="text-2xl font-bold text-sage-700">{t('pitfalls.title')}</h1>
+          <p className="text-slate-500 mt-1 text-sm">{t('pitfalls.subtitle')}</p>
+        </>
+      )}
 
-      <div className="mt-4 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+      <div className={`${embedded ? '' : 'mt-4 '}inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm`}>
         {WINDOWS.map((w) => (
           <button
             key={w}

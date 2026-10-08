@@ -13,7 +13,10 @@ import HomePage from './pages/Home/HomePage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
 import VaultPage from './pages/Preference/VaultPage';
-import UsagePage from './pages/Portal/UsagePage';
+import UsageMinePage from './pages/Usage/UsageMinePage';
+import RulesPage from './pages/Usage/RulesPage';
+import UsageProjectsPage from './pages/Usage/UsageProjectsPage';
+import UsageTeamPage from './pages/Usage/UsageTeamPage';
 import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
 import HandoffsPage from './pages/Portal/HandoffsPage';
 import LessonsPage from './pages/Portal/LessonsPage';
@@ -21,7 +24,6 @@ import TasksPage from './pages/Portal/TasksPage';
 import TeamTasksPage from './pages/Team/TeamTasksPage';
 import ReportsPage from './pages/Portal/ReportsPage';
 import NarrativePage from './pages/Portal/NarrativePage';
-import PitfallsPage from './pages/Portal/PitfallsPage';
 import PeriodicReportsPage from './pages/Portal/PeriodicReportsPage';
 import TeamPage from './pages/Admin/TeamPage';
 import BugReportsPage from './pages/Admin/BugReportsPage';
@@ -40,10 +42,12 @@ const REAL_PAGES = {
   '/inbox/tasks': <TasksPage />,
   '/inbox/reports': <ReportsPage />,
   '/inbox/bugs': <BugReportsPage />,
-  '/usage/mine': <UsagePage />,
-  '/usage/rules': <PitfallsPage />,
-  '/usage/team': <TeamUsagePage />,
+  '/usage/mine': <UsageMinePage />,
+  '/usage/rules': <RulesPage />,
+  '/usage/projects': <UsageProjectsPage />,
+  '/usage/team': <UsageTeamPage />,
   '/team/members': <TeamPage />,
+  '/team/usage': <TeamUsagePage />,
   '/team/observe': <NarrativePage />,
   '/team/reports': <PeriodicReportsPage />,
   '/team/stats': <StatsPage />,

@@ -68,7 +68,8 @@ export const NAV_ENTRIES = [
     tabs: [
       { id: 'mine', path: '/usage/mine', labelKey: 'nav.usage.mine', minRole: 'user' },
       { id: 'rules', path: '/usage/rules', labelKey: 'nav.usage.rules', minRole: 'user' },
-      // Backs onto adminAuth routes: /api/usage/team-stats and /api/usage/admin/team-overview.
+      { id: 'projects', path: '/usage/projects', labelKey: 'nav.usage.projects', minRole: 'user' },
+      // The team half of /api/me/report is admin-only (its SQL is not scoped to the caller).
       { id: 'team', path: '/usage/team', labelKey: 'nav.usage.team', minRole: 'admin' },
     ],
   },
@@ -79,6 +80,9 @@ export const NAV_ENTRIES = [
     tabs: [
       // User CRUD lives here until Phase 5 splits the member list from the admin tools.
       { id: 'members', path: '/team/members', labelKey: 'nav.team.members', minRole: 'admin' },
+      // v1.32.4 — the per-member ranking with coverage. Phase 5 folds it into 成員; until
+      // then it keeps the address it always had, so this is a tab and not a redirect.
+      { id: 'usage', path: '/team/usage', labelKey: 'nav.team.usage', minRole: 'admin' },
       { id: 'observe', path: '/team/observe', labelKey: 'nav.team.observe', minRole: 'user' },
       // Personal by nature: GET /api/session/report filters WHERE user_id = $1.
       { id: 'reports', path: '/team/reports', labelKey: 'nav.team.reports', minRole: 'user' },
@@ -121,7 +125,8 @@ export const NAV_ENTRIES = [
 
 /**
  * The twenty paths the console had before v1.32.0, each pointing at the tab that took it
- * over. Two of them (`/team/stats`, `/team/tasks`) kept their address and are not here.
+ * over. Three of them (`/team/usage`, `/team/stats`, `/team/tasks`) kept their address and
+ * are not here.
  * App.jsx renders a redirect for every key.
  */
 export const OLD_PATHS = {
@@ -134,7 +139,6 @@ export const OLD_PATHS = {
   '/portal/narrative': '/team/observe',
   '/portal/pitfalls': '/usage/rules',
   '/portal/periodic-reports': '/team/reports',
-  '/team/usage': '/usage/team',
   '/preference/profile': '/settings/profile',
   '/preference/security': '/settings/security',
   '/preference/vault': '/settings/vault',
