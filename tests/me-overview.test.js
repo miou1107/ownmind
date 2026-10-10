@@ -3,9 +3,10 @@
 // v1.32.2 built the page from queries the console already runs; the home redesign turned it
 // into the two things the owner opens it for: is the AI keeping the rules, and how is the
 // team using it. The claims worth a test:
-//   - the rules card names the three rules missed most, by title, and compares with the
+//   - 「我的 AI 守規矩」 names the three rules missed most, by title, and compares with the
 //     period before; a number the server does not have is 「沒有資料」, never 0 or 100%;
-//   - the team table is admin-only, uses the card's formula, and puts problems first;
+//   - 「團隊的 AI 守規矩」 is admin-only: everyone's checks pooled under the same formula,
+//     the team's three most-forgotten rules, and the per-person table with problems first;
 //   - 要你決定的事 lists only what moved in the last 7 days, at most five, one sentence each,
 //     and says how many it left off (it hides, it never deletes);
 //   - the footer is green only when it should be, and the copy avoids the words members
@@ -23,7 +24,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 const { buildOverview, complianceRate, parseRange, createOverviewRouter, RECENT_DECISION_DAYS } =
   await import('../src/routes/me-overview.js');
-const { headlineVm, rulesVm, teamVm, decisionsVm, footerVm, periodWords, numberOrNoData, MAX_DECISIONS } =
+const { headlineVm, rulesVm, teamRulesVm, teamVm, decisionsVm, footerVm, periodWords, numberOrNoData, MAX_DECISIONS } =
   await import('../client/src/pages/Home/overview-vm.js');
 
 const zh = JSON.parse(fs.readFileSync(path.join(repoRoot, 'client/src/i18n/zh.json'), 'utf8'));
@@ -61,6 +62,15 @@ const baseAnswers = () => [
     { user_id: 2, name: 'Eric', last_active_at: '2026-10-07T02:00:00Z', sessions: 12, comply: 6, skip: 2, violate: 2 },
     { user_id: 3, name: 'Michelle', last_active_at: '2026-09-10T02:00:00Z', sessions: 0, comply: 0, skip: 0, violate: 0 },
     { user_id: 4, name: 'Judy', last_active_at: '2026-10-06T02:00:00Z', sessions: 9, comply: 50, skip: 0, violate: 0 },
+  ]],
+  // the whole team pooled, two windows: this week 161 comply, 13 missed; last week 198 / 2
+  ['every member pooled', [
+    { rule_code: 'IR-007', current: true, comply: 90, skip: 1, violate: 6 },
+    { rule_code: 'IR-004', current: true, comply: 60, skip: 0, violate: 3 },
+    { rule_code: 'IR-001', current: true, comply: 11, skip: 2, violate: 0 },
+    { rule_code: null, current: true, comply: 0, skip: 0, violate: 1 },
+    { rule_code: 'IR-007', current: false, comply: 100, skip: 0, violate: 0 },
+    { rule_code: 'IR-004', current: false, comply: 98, skip: 2, violate: 0 },
   ]],
   ['AS n FROM handoffs', [{ n: 67 }]],
   ['AS n FROM session_lessons', [{ n: 52 }]],
@@ -153,7 +163,57 @@ describe('buildOverview — AI 守規矩', () => {
   });
 });
 
-describe('buildOverview — 同事用得怎樣', () => {
+describe('buildOverview — 團隊的 AI 守規矩', () => {
+  it('a member gets no team numbers, and the pooled query is not run', async () => {
+    const { o, calls } = await build(user);
+    assert.equal(o.team_rules, null);
+    assert.ok(!calls.some((c) => c.sql.includes('every member pooled')));
+  });
+
+  it('an admin gets everyone\'s checks pooled, this period and the one before', async () => {
+    const { o, calls } = await build(adminUser);
+    const T = o.team_rules;
+    assert.equal(T.comply, 161);
+    assert.equal(T.missed, 13);
+    assert.equal(T.total, 174);
+    assert.ok(Math.abs(T.rate - 161 / 174) < 1e-9);
+    assert.ok(Math.abs(T.previous_rate - 198 / 200) < 1e-9);
+    assert.equal(T.unreported, undefined, 'the team card has no unreported footnote');
+    const sql = calls.find((c) => c.sql.includes('every member pooled')).sql;
+    assert.doesNotMatch(sql, /user_id/, 'pooled over every member, not scoped to the caller');
+    assert.match(sql, /NOT LIKE 'system_%'/);
+    assert.match(sql, /INTERVAL '14 days'/, 'two windows of the range');
+  });
+
+  it('names the team\'s three most-forgotten rules, by title; the caller\'s own card is unchanged', async () => {
+    const { o } = await build(adminUser);
+    assert.deepEqual(o.team_rules.top_missed.map((r) => [r.code, r.title, r.missed]), [
+      ['IR-007', '回我話要用白話中文', 7],
+      ['IR-004', '開工先同步遠端', 3],
+      ['IR-001', null, 2],
+    ]);
+    assert.deepEqual(o.rules.top_missed.map((r) => [r.code, r.missed]),
+      [['IR-007', 5], ['IR-004', 4], ['IR-009', 2]]);
+  });
+
+  it('looks titles up once for both cards, by every code', async () => {
+    const { calls } = await build(adminUser);
+    const q = calls.filter((c) => c.sql.includes('FROM memories'));
+    assert.equal(q.length, 1);
+    assert.deepEqual([...q[0].params[0]].sort(), ['IR-001', 'IR-004', 'IR-007', 'IR-009']);
+  });
+
+  it('nothing reported by anyone: no team rate, no made-up number', async () => {
+    const a = baseAnswers();
+    a[a.findIndex(([k]) => k === 'every member pooled')] = ['every member pooled', EMPTY];
+    const { o } = await build(adminUser, a);
+    assert.equal(o.team_rules.rate, null);
+    assert.equal(o.team_rules.previous_rate, null);
+    assert.deepEqual(o.team_rules.top_missed, []);
+  });
+});
+
+describe('buildOverview — 每個人用得怎樣', () => {
   it('a member gets no team, and the team query is not run', async () => {
     const { o, calls } = await build(user);
     assert.equal(o.team, null);
@@ -345,6 +405,14 @@ const overview = (over = {}) => ({
   ...over,
 });
 
+const teamRules = {
+  rate: 0.9, previous_rate: 0.95, comply: 180, missed: 20, total: 200,
+  top_missed: [
+    { code: 'IR-007', title: '回我話要用白話中文', missed: 12 },
+    { code: 'IR-001', title: null, missed: 5 },
+  ],
+};
+
 const team = [
   { user_id: 1, name: 'Vin', is_me: true, sessions: 40, rate: 0.95, last_active_at: '2026-10-08T02:00:00Z', inactive_14d: false },
   { user_id: 2, name: 'Eric', is_me: false, sessions: 12, rate: 0.6, last_active_at: '2026-10-07T02:00:00Z', inactive_14d: false },
@@ -366,6 +434,16 @@ describe('headlineVm — one sentence about the period', () => {
     const h = headlineVm(overview({ team }), t);
     assert.equal(h.title, '這週有 3 件事要你看');
     assert.equal(h.detail, 'AI 守規矩比上週差；Michelle 兩週沒用了；Eric 常忘規矩');
+  });
+
+  it('an admin reads the team\'s numbers, not their own', () => {
+    // Own rate fell (95 < 100) but the team's did not: nothing about rules.
+    const same = headlineVm(overview({ team, team_rules: { ...teamRules, previous_rate: 0.9 } }), t);
+    assert.doesNotMatch(same.detail, /守規矩/);
+    // The team's fell: the sentence says whose.
+    const worse = headlineVm(overview({ team, team_rules: teamRules }), t);
+    assert.match(worse.detail, /^團隊的 AI 守規矩比上週差；/);
+    assert.doesNotMatch(worse.detail, /；AI 守規矩比/);
   });
 
   it('one or two things read as "mostly normal"', () => {
@@ -446,6 +524,35 @@ describe('rulesVm — the card', () => {
     assert.equal(rulesVm(null, t).value, '沒有資料');
     assert.equal(numberOrNoData(undefined, t), '沒有資料');
     assert.equal(numberOrNoData(0, t), '0', 'a real zero is a number');
+  });
+});
+
+describe('teamRulesVm — the team card', () => {
+  it('a member has no team card', () => {
+    assert.equal(teamRulesVm(overview(), t), null);
+    assert.equal(teamRulesVm(overview({ team_rules: null }), t), null);
+  });
+
+  it('big number, last week, badge, the sentence without "AI", the team\'s rules', () => {
+    const r = teamRulesVm(overview({ team, team_rules: teamRules }), t);
+    assert.equal(r.value, '90%');
+    assert.equal(r.compare, '上週是 95%');
+    assert.deepEqual(r.badge, { kind: 'worse', text: '比上週差' });
+    assert.equal(r.sentence, '200 次裡有 20 次沒照規矩做');
+    assert.deepEqual(r.top.map((x) => [x.title, x.text]), [
+      ['回我話要用白話中文', '忘了 12 次'],
+      ['沒有標題的規矩 IR-001', '忘了 5 次'],
+    ]);
+    assert.equal(r.footnote, null, 'unreported sessions are the owner\'s own footnote');
+  });
+
+  it('no misses, and no rate, say so in the team\'s words', () => {
+    const all = teamRulesVm(overview({ team_rules: { rate: 1, previous_rate: 1, total: 30, missed: 0, top_missed: [] } }), t);
+    assert.equal(all.sentence, '30 次都有照規矩做，你不用做什麼');
+    assert.equal(all.empty, '每一條大家的 AI 都有照做。');
+    const none = teamRulesVm(overview({ team_rules: { rate: null } }), t);
+    assert.equal(none.value, '沒有資料');
+    assert.match(none.sentence, /團隊的 AI 沒有回報/);
   });
 });
 

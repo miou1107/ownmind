@@ -3,8 +3,9 @@
  *
  * 總覽, as data. Takes GET /api/me/overview and produces what the page shows, top to bottom:
  *   1. one headline sentence about the period, naming the things worth a look;
- *   2. 「AI 守規矩」: the rate, the previous period, the three rules missed most;
- *   3. 「同事用得怎樣」 (admin): one row per teammate with a plain verdict;
+ *   2. 「我的 AI 守規矩」: the rate, the previous period, the three rules missed most;
+ *   3. 「團隊的 AI 守規矩」 (admin): the same over everyone's checks pooled, then one row
+ *      per teammate with a plain verdict;
  *   4. 「要你決定的事」: at most five recent items, one sentence each;
  *   5. a small footer line: memory and computers, red or yellow only when something is off.
  * Pure, so the sentences are testable without rendering.
@@ -49,7 +50,21 @@ export function numberOrNoData(v, t) {
   return isNum(v) ? String(v) : t('home.no_data');
 }
 
-// ── 2. AI 守規矩 ─────────────────────────────────────────────
+// ── 2. 我的 AI 守規矩 / 團隊的 AI 守規矩 ─────────────────────
+
+/** Which dictionary keys each card's own sentences come from; the rest is shared. */
+const MINE_KEYS = {
+  none: 'home.rules.none',
+  sentence: 'home.rules.sentence',
+  all: 'home.rules.sentence.all',
+  topEmpty: 'home.rules.top.empty',
+};
+const TEAM_KEYS = {
+  none: 'home.team.none',
+  sentence: 'home.team.sentence',
+  all: 'home.team.sentence.all',
+  topEmpty: 'home.team.top.empty',
+};
 
 /**
  * {
@@ -59,9 +74,8 @@ export function numberOrNoData(v, t) {
  *   sentence, top: [{ code, title, text }], empty: string | null, footnote: string | null
  * }
  */
-export function rulesVm(overview, t) {
-  const R = overview?.rules ?? {};
-  const { prev } = periodWords(overview?.range_days, t);
+function complianceVm(R, days, t, keys) {
+  const { prev } = periodWords(days, t);
   const pct = pctOf(R.rate);
   const prevPct = pctOf(R.previous_rate);
   const unreported = isNum(R.unreported) && R.unreported > 0
@@ -74,7 +88,7 @@ export function rulesVm(overview, t) {
       value: t('home.no_data'),
       compare: '',
       badge: null,
-      sentence: t('home.rules.none'),
+      sentence: t(keys.none),
       top: [],
       empty: null,
       footnote: unreported,
@@ -90,8 +104,8 @@ export function rulesVm(overview, t) {
   const total = isNum(R.total) ? R.total : 0;
   const missed = isNum(R.missed) ? R.missed : 0;
   const sentence = missed === 0
-    ? fill(t, 'home.rules.sentence.all', { total })
-    : fill(t, 'home.rules.sentence', { total, missed });
+    ? fill(t, keys.all, { total })
+    : fill(t, keys.sentence, { total, missed });
 
   const top = (R.top_missed ?? [])
     .filter((r) => isNum(r?.missed) && r.missed > 0)
@@ -111,12 +125,24 @@ export function rulesVm(overview, t) {
     badge,
     sentence,
     top,
-    empty: top.length === 0 ? t('home.rules.top.empty') : null,
+    empty: top.length === 0 ? t(keys.topEmpty) : null,
     footnote: unreported,
   };
 }
 
-// ── 3. 同事用得怎樣 ───────────────────────────────────────────
+/** The caller's own AI. */
+export function rulesVm(overview, t) {
+  return complianceVm(overview?.rules ?? {}, overview?.range_days, t, MINE_KEYS);
+}
+
+/** Everyone's AI pooled. null when the caller does not see the team. */
+export function teamRulesVm(overview, t) {
+  const R = overview?.team_rules;
+  if (!R || typeof R !== 'object') return null;
+  return complianceVm(R, overview?.range_days, t, TEAM_KEYS);
+}
+
+// ── 3. 每個人（the table inside the team card）───────────────
 
 const TONE_ORDER = { danger: 0, warning: 1, success: 2, muted: 3 };
 
@@ -301,10 +327,13 @@ export function headlineVm(overview, t) {
   const { cur, prev } = periodWords(overview?.range_days, t);
   const concerns = [];
 
-  const pct = pctOf(overview?.rules?.rate);
-  const prevPct = pctOf(overview?.rules?.previous_rate);
+  // An admin reads the team's numbers here; a member their own.
+  const teamRules = overview?.team_rules;
+  const R = teamRules && typeof teamRules === 'object' ? teamRules : (overview?.rules ?? {});
+  const pct = pctOf(R.rate);
+  const prevPct = pctOf(R.previous_rate);
   if (pct !== null && prevPct !== null && pct < prevPct) {
-    concerns.push(fill(t, 'home.headline.rules_worse', { prev }));
+    concerns.push(fill(t, R === teamRules ? 'home.headline.team_rules_worse' : 'home.headline.rules_worse', { prev }));
   }
 
   const team = Array.isArray(overview?.team) ? overview.team.filter((p) => !p.is_me) : [];

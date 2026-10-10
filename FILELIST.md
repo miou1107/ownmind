@@ -506,7 +506,7 @@ src/routes/activity.js                — memoryLookup 與 autoEmitObservedTrigg
 src/routes/me.js                      — /pitfalls 三個區塊回傳前經 scopePitfallRows；五個備援查詢加 AND user_id = 紀錄主人，
                                        比對規則改成模板字串裡正確的寫法，並限制最多 9 位數
 src/routes/me-narrative.js            — / 與 /insights 回傳和交給 AI 前先經 hideOthersRuleTitles
-src/routes/me-overview.js                   — GET /api/me/overview（v1.32.2，首頁改版重寫）：AI 守規矩（比例、前一段、最常忘的三條規矩）、同事用得怎樣（管理員）、近 7 天要你決定的事、記憶與電腦兩個燈；只組既有數字，不呼叫模型
+src/routes/me-overview.js                   — GET /api/me/overview（v1.32.2，首頁改版重寫）：我的 AI 守規矩（比例、前一段、最常忘的三條規矩）、團隊的 AI 守規矩（管理員：全隊加起來的比例、前一段、團隊最常忘的三條）、每個人用得怎樣（管理員）、近 7 天要你決定的事、記憶與電腦兩個燈；只組既有數字，不呼叫模型
 client/src/i18n/zh.json, en.json, ja.json — 踩坑紀錄頁副標題照實改
 package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
                                      — 版號 1.30.42
@@ -5516,7 +5516,7 @@ tests/auto-update-shared.test.js                — 用注入的行程執行器�
                                                    Windows 用 npm.cmd + shell、每個步驟失敗
                                                    都要回報 step 並放掉鎖、失敗不蓋當日戳記
 tests/collector-api-host.test.js            — v1.32.0：回報帶 api_host（只有主機名、不帶金鑰）、伺服器收下／不收怪值／沒帶不動舊值、管理清單標 on_old_host、後台分組帶主機、自檢第一行印主機
-tests/me-overview.test.js                   — 首頁改版：最常忘的三條規矩與標題、同事表只給管理員且問題排前面、要你決定的事只列近 7 天最多五件且只讀不刪、燈不裝綠、沒有資料不顯示 0、文案不出現行話、三語字串與佔位符齊
+tests/me-overview.test.js                   — 首頁改版：最常忘的三條規矩與標題、團隊的 AI 守規矩只給管理員且是全隊加起來算、同事表只給管理員且問題排前面、要你決定的事只列近 7 天最多五件且只讀不刪、燈不裝綠、沒有資料不顯示 0、文案不出現行話、三語字串與佔位符齊
 tests/overview-numbers.test.js — v1.32.8: the overview counts a conversation once, uses the real pending count, and never calls an MCP function name a tool (trimmed to what the home redesign kept)
 tests/me-inbox-count.test.js                — v1.32.3：成員不算錯誤回報、總數相加、沒答案不顯示 0、四個頁面處理完都通知左欄、徽章字串三語齊
 tests/usage-rules-vm.test.js                — v1.32.4：比例算法不算 observed、長條最差優先、沒資料不顯示 0／100%、區間查詢字串、四個分頁與 /team/usage 的接線、versions 帶 api_host
@@ -6320,8 +6320,8 @@ src/routes/me.js                     — 登入改問 first-password 政策；�
 src/app.js                           — authLimiter 掛上 /api/me/first-password
 client/src/pages/login-outcome.js    — 第四種結果 first_password，排在 api_key 檢查之前
 client/src/pages/LoginPage.jsx       — 第三種模式，沿用既有 mode 狀態的形狀
-client/src/pages/Home/HomePage.jsx                 — 總覽（首頁改版）：一句話總結、AI 守規矩、同事用得怎樣（管理員）、要你決定的事、底下一行記憶與電腦；吃 /api/me/overview
-client/src/pages/Home/overview-vm.js              — 總覽的純資料層：一句話總結、守規矩卡、同事的一句話評語與排序、要你決定的事的句子、底下的燈；沒有資料就顯示「沒有資料」
+client/src/pages/Home/HomePage.jsx                 — 總覽（首頁改版）：一句話總結、我的 AI 守規矩、團隊的 AI 守規矩＋每個人用得怎樣（管理員）、要你決定的事、底下一行記憶與電腦；吃 /api/me/overview
+client/src/pages/Home/overview-vm.js              — 總覽的純資料層：一句話總結（管理員用全隊的數字）、我的／團隊的守規矩卡、同事的一句話評語與排序、要你決定的事的句子、底下的燈；沒有資料就顯示「沒有資料」
 client/src/i18n/{zh,en,ja}.json      — 5 個新 key
 CHANGELOG.md, FILELIST.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.63
 openspec/BACKLOG.md                  — 第 1 條出去，換成「管理員重設那條路 + 要不要輪換 api_key」

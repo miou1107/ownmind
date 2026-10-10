@@ -21,6 +21,9 @@
  *   },
  *   rules: { rate | null, previous_rate | null, comply, missed, total, unreported,
  *            top_missed: [{ code, title | null, missed }] }       (at most 3, worst first)
+ *   team_rules: { rate | null, previous_rate | null, comply, missed, total,
+ *                 top_missed: [{ code, title | null, missed }] } | null   (admin+ only:
+ *                 every member's checks pooled, the caller's included; same formula)
  *   team: [{ user_id, name, is_me, sessions, rate | null, comply, missed,
  *            last_active_at | null, inactive_14d }] | null       (admin+ only)
  *   decisions: { recent_days, handoffs: [{ project, count, latest_at }],
@@ -113,7 +116,7 @@ const IS_AI_TOOL = "(tool NOT LIKE 'ownmind\\_%' AND tool NOT IN ('scanner', 'se
 /** Decisions untouched for longer than this are left off the home page (still in the inbox). */
 export const RECENT_DECISION_DAYS = 7;
 
-/** How many rules the 「AI 守規矩」 card names. */
+/** How many rules each 守規矩 card names. */
 const TOP_RULES = 3;
 
 /** A teammate with no activity at all for this long is "not using it". */
@@ -138,7 +141,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
 
   const [
     inits, heartbeats, staleTools, compliance, orphans,
-    team, handoffs, lessons, tasks, bugs, recentCounts, counts,
+    team, teamCompliance, handoffs, lessons, tasks, bugs, recentCounts, counts,
   ] = await Promise.all([
     // 記憶: did the AI load memory recently? (same source as the self-check)
     query(
@@ -233,6 +236,23 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
           ORDER BY u.id`,
       )
       : Promise.resolve(null),
+    // 團隊的 AI 守規矩 (admin+): every member's checks pooled, this range and the one
+    // before, per rule — the card above, over the whole team. Same filters, no user scope.
+    admin
+      ? query(
+        `SELECT details->>'rule_code' AS rule_code,
+                (ts >= NOW() - INTERVAL '${days}') AS current,
+                COUNT(*) FILTER (WHERE details->>'action' = 'comply'
+                                   AND COALESCE(details->>'source', '') NOT LIKE 'system_%')::int AS comply,
+                COUNT(*) FILTER (WHERE details->>'action' = 'skip'
+                                   AND COALESCE(details->>'source', '') NOT LIKE 'system_%')::int AS skip,
+                COUNT(*) FILTER (WHERE details->>'action' = 'violate')::int AS violate
+           FROM activity_logs -- every member pooled
+          WHERE event = 'iron_rule_compliance'
+            AND ts >= NOW() - INTERVAL '${twice}'
+          GROUP BY rule_code, current`,
+      )
+      : Promise.resolve(null),
     // 要你決定的事 — only what moved in the last week. Older items stay in the inbox; the
     // home page just stops listing them. Nothing is deleted or changed here.
     query(
@@ -306,47 +326,26 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
     stale_tools: stale,
   };
 
-  // ── AI 守規矩 ──
-  const cur = (compliance.rows ?? []).filter((r) => isTrue(r.current));
-  const prev = (compliance.rows ?? []).filter((r) => !isTrue(r.current));
-  const comply = cur.reduce((n, r) => n + int(r.comply), 0);
-  const missed = cur.reduce((n, r) => n + int(r.skip) + int(r.violate), 0);
+  // ── 我的 AI 守規矩 / 團隊的 AI 守規矩 ──
+  const mine = summarizeCompliance(compliance.rows);
+  const teamRules = teamCompliance ? summarizeCompliance(teamCompliance.rows) : null;
 
-  // A miss reported without a rule code still counts against the rate, but cannot be named.
-  const byCode = new Map();
-  for (const r of cur) {
-    if (!r.rule_code) continue;
-    byCode.set(r.rule_code, (byCode.get(r.rule_code) ?? 0) + int(r.skip) + int(r.violate));
-  }
-  const topMissed = [...byCode.entries()]
-    .filter(([, n]) => n > 0)
-    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
-    .slice(0, TOP_RULES)
-    .map(([code, n]) => ({ code, title: null, missed: n }));
-
-  if (topMissed.length) {
+  const codes = [...new Set([...mine.top_missed, ...(teamRules?.top_missed ?? [])].map((r) => r.code))];
+  if (codes.length) {
     // Codes are per owner (IR-XXX can be two people's different rules), so the caller's own
-    // rule wins, then an active one, then the newest.
+    // rule wins, then an active one, then the newest. One lookup for both cards.
     const titles = await query(
       `SELECT DISTINCT ON (code) code, title
          FROM memories
         WHERE type IN ('iron_rule', 'team_standard') AND code = ANY($1::text[])
         ORDER BY code, (user_id = $2) DESC, (status = 'active') DESC, id DESC`,
-      [topMissed.map((r) => r.code), uid],
+      [codes, uid],
     );
     const titleOf = new Map((titles.rows ?? []).map((r) => [r.code, r.title]));
-    for (const r of topMissed) r.title = titleOf.get(r.code) ?? null;
+    for (const r of [...mine.top_missed, ...(teamRules?.top_missed ?? [])]) r.title = titleOf.get(r.code) ?? null;
   }
 
-  const rules = {
-    rate: complianceRate(cur),
-    previous_rate: complianceRate(prev),
-    comply,
-    missed,
-    total: comply + missed,
-    unreported: int(orphans.rows[0]?.orphan_count),
-    top_missed: topMissed,
-  };
+  const rules = { ...mine, unreported: int(orphans.rows[0]?.orphan_count) };
 
   // ── 同事用得怎樣 ──
   const nowMs = (now ?? new Date()).getTime();
@@ -399,8 +398,41 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
     range_days: rangeDays,
     lights: { memory, reporting },
     rules,
+    team_rules: teamRules,
     team: teamRows,
     decisions,
+  };
+}
+
+/**
+ * Rate, previous rate, counts and the rules missed most, from the per-rule rows of one
+ * compliance query (two windows, `current` true or false). Titles are filled in later.
+ */
+function summarizeCompliance(rows) {
+  const cur = (rows ?? []).filter((r) => isTrue(r.current));
+  const prev = (rows ?? []).filter((r) => !isTrue(r.current));
+  const comply = cur.reduce((n, r) => n + int(r.comply), 0);
+  const missed = cur.reduce((n, r) => n + int(r.skip) + int(r.violate), 0);
+
+  // A miss reported without a rule code still counts against the rate, but cannot be named.
+  const byCode = new Map();
+  for (const r of cur) {
+    if (!r.rule_code) continue;
+    byCode.set(r.rule_code, (byCode.get(r.rule_code) ?? 0) + int(r.skip) + int(r.violate));
+  }
+  const topMissed = [...byCode.entries()]
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+    .slice(0, TOP_RULES)
+    .map(([code, n]) => ({ code, title: null, missed: n }));
+
+  return {
+    rate: complianceRate(cur),
+    previous_rate: complianceRate(prev),
+    comply,
+    missed,
+    total: comply + missed,
+    top_missed: topMissed,
   };
 }
 

@@ -4,10 +4,11 @@ import { ArrowRight, AlertTriangle, Circle, CircleCheck, CircleX } from 'lucide-
 import { useT } from '../../i18n/LocaleContext';
 import { useSession } from '../../session/SessionContext';
 import { apiGet } from '../../api';
-import { headlineVm, rulesVm, teamVm, decisionsVm, footerVm } from './overview-vm.js';
+import { headlineVm, rulesVm, teamRulesVm, teamVm, decisionsVm, footerVm } from './overview-vm.js';
 
-// 總覽：一句話講這段時間怎麼樣、AI 守規矩、同事用得怎樣（管理員）、要你決定的事、底下一行
-// 記憶跟電腦的狀態。一支 API（/api/me/overview）餵整頁，句子都在 overview-vm.js 組好。
+// 總覽: one sentence about the period, 我的 AI 守規矩, 團隊的 AI 守規矩 with the per-person
+// table (admin), 要你決定的事, and a footer line for memory and computers. One API
+// (/api/me/overview) feeds the page; every sentence is composed in overview-vm.js.
 
 const RANGES = [7, 14, 30];
 
@@ -30,6 +31,44 @@ const FOOTER = {
   bad: { Icon: CircleX, cls: 'text-rose-600' },
   none: { Icon: Circle, cls: 'text-slate-400' },
 };
+
+/** The rate, the period before, the badge, one sentence and the rules missed most. */
+function RateBlock({ vm, topLabel }) {
+  return (
+    <div className={`p-4 grid gap-4 ${vm.hasData ? 'md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]' : ''}`}>
+      <div>
+        <p className={`font-bold text-slate-900 tabular-nums ${vm.hasData ? 'text-4xl' : 'text-lg'}`}>{vm.value}</p>
+        {vm.compare && <p className="text-xs text-slate-500 mt-1">{vm.compare}</p>}
+        {vm.badge && (
+          <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-semibold ring-1 ${BADGE[vm.badge.kind]}`}>
+            {vm.badge.text}
+          </span>
+        )}
+        <p className="text-sm text-slate-700 mt-2">{vm.sentence}</p>
+      </div>
+      {vm.hasData && (
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-slate-500 mb-2">{topLabel}</p>
+          {vm.top.length === 0 ? (
+            <p className="text-sm text-slate-600">{vm.empty}</p>
+          ) : (
+            <ol className="divide-y divide-slate-100 border border-slate-100 rounded-xl">
+              {vm.top.map((r, i) => (
+                <li key={r.code ?? i} className="flex items-start justify-between gap-3 px-3 py-2">
+                  <span className="text-sm text-slate-800 min-w-0 break-words">
+                    <span className="text-slate-400 tabular-nums mr-2">{i + 1}</span>{r.title}
+                  </span>
+                  <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">{r.text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+      {vm.footnote && <p className="md:col-span-2 text-xs text-slate-400">{vm.footnote}</p>}
+    </div>
+  );
+}
 
 function Card({ title, link, children }) {
   return (
@@ -68,6 +107,7 @@ export default function HomePage() {
   const waiting = loading && !data;
   const headline = headlineVm(data, t);
   const rules = rulesVm(data, t);
+  const teamRules = teamRulesVm(data, t);
   const team = teamVm(data, t);
   const decisions = decisionsVm(data, t);
   const footer = footerVm(data, t);
@@ -107,80 +147,52 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* AI 守規矩 */}
+      {/* 我的 AI 守規矩 */}
       <Card title={t('home.rules.title')} link={{ to: '/usage/rules', label: t('home.rules.more') }}>
         {waiting ? (
           <p className="px-4 py-6 text-sm text-slate-500">{t('common.loading')}</p>
         ) : (
-          <div className={`p-4 grid gap-4 ${rules.hasData ? 'md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]' : ''}`}>
-            <div>
-              {team && <p className="text-xs text-slate-500 mb-1">{t('home.rules.scope')}</p>}
-              <p className={`font-bold text-slate-900 tabular-nums ${rules.hasData ? 'text-4xl' : 'text-lg'}`}>{rules.value}</p>
-              {rules.compare && <p className="text-xs text-slate-500 mt-1">{rules.compare}</p>}
-              {rules.badge && (
-                <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-semibold ring-1 ${BADGE[rules.badge.kind]}`}>
-                  {rules.badge.text}
-                </span>
-              )}
-              <p className="text-sm text-slate-700 mt-2">{rules.sentence}</p>
-            </div>
-            {rules.hasData && (
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-500 mb-2">{t('home.rules.top')}</p>
-                {rules.top.length === 0 ? (
-                  <p className="text-sm text-slate-600">{rules.empty}</p>
-                ) : (
-                  <ol className="divide-y divide-slate-100 border border-slate-100 rounded-xl">
-                    {rules.top.map((r, i) => (
-                      <li key={r.code ?? i} className="flex items-start justify-between gap-3 px-3 py-2">
-                        <span className="text-sm text-slate-800 min-w-0 break-words">
-                          <span className="text-slate-400 tabular-nums mr-2">{i + 1}</span>{r.title}
-                        </span>
-                        <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">{r.text}</span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-            )}
-            {rules.footnote && <p className="md:col-span-2 text-xs text-slate-400">{rules.footnote}</p>}
-          </div>
+          <RateBlock vm={rules} topLabel={t('home.rules.top')} />
         )}
       </Card>
 
-      {/* 同事用得怎樣（管理員） */}
+      {/* 團隊的 AI 守規矩（管理員）: everyone pooled, then one row per person */}
       {team && (
         <Card title={t('home.team.title')} link={{ to: '/team/members', label: t('home.team.more') }}>
-          {team.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-slate-500 text-center">{t('home.team.empty')}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-slate-500">
-                    <th scope="col" className="px-3 sm:px-4 py-2 font-semibold whitespace-nowrap">{t('home.team.col.who')}</th>
-                    <th scope="col" className="px-3 sm:px-4 py-2 font-semibold whitespace-nowrap text-right">{t('home.team.col.rules')}</th>
-                    <th scope="col" className="px-3 sm:px-4 py-2 font-semibold whitespace-nowrap text-right">{t('home.team.col.sessions')}</th>
-                    <th scope="col" className="hidden sm:table-cell px-4 py-2 font-semibold whitespace-nowrap">{t('home.team.col.verdict')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {team.map((row) => (
-                    <tr key={row.id}>
-                      <td className="px-3 sm:px-4 py-2 font-medium text-slate-900">
-                        <span className="whitespace-nowrap">{row.name}</span>
-                        {/* On a phone the verdict sits under the name instead of in its own column. */}
-                        <span className={`sm:hidden block text-xs mt-0.5 ${VERDICT[row.tone]}`}>{row.verdict}</span>
-                      </td>
-                      <td className="px-3 sm:px-4 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">{row.rate}</td>
-                      <td className="px-3 sm:px-4 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">{row.sessions}</td>
-                      <td className={`hidden sm:table-cell px-4 py-2 font-medium whitespace-nowrap ${VERDICT[row.tone]}`}>{row.verdict}</td>
+          {teamRules && <RateBlock vm={teamRules} topLabel={t('home.team.top')} />}
+          <div className="border-t border-slate-100">
+            <p className="px-4 pt-3 pb-1 text-xs font-semibold text-slate-500">{t('home.team.people')}</p>
+            {team.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-slate-500 text-center">{t('home.team.empty')}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500">
+                      <th scope="col" className="px-3 sm:px-4 py-2 font-semibold whitespace-nowrap">{t('home.team.col.who')}</th>
+                      <th scope="col" className="px-3 sm:px-4 py-2 font-semibold whitespace-nowrap text-right">{t('home.team.col.rules')}</th>
+                      <th scope="col" className="px-3 sm:px-4 py-2 font-semibold whitespace-nowrap text-right">{t('home.team.col.sessions')}</th>
+                      <th scope="col" className="hidden sm:table-cell px-4 py-2 font-semibold whitespace-nowrap">{t('home.team.col.verdict')}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {team.map((row) => (
+                      <tr key={row.id}>
+                        <td className="px-3 sm:px-4 py-2 font-medium text-slate-900">
+                          <span className="whitespace-nowrap">{row.name}</span>
+                          {/* On a phone the verdict sits under the name instead of in its own column. */}
+                          <span className={`sm:hidden block text-xs mt-0.5 ${VERDICT[row.tone]}`}>{row.verdict}</span>
+                        </td>
+                        <td className="px-3 sm:px-4 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">{row.rate}</td>
+                        <td className="px-3 sm:px-4 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">{row.sessions}</td>
+                        <td className={`hidden sm:table-cell px-4 py-2 font-medium whitespace-nowrap ${VERDICT[row.tone]}`}>{row.verdict}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </Card>
       )}
 
