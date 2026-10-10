@@ -1,138 +1,47 @@
 /**
  * client/src/pages/Home/overview-vm.js
  *
- * v1.32.2 — the 總覽 page, as data. Takes GET /api/me/overview and produces what the page
- * shows: three lights with one sentence each, the 等你處理 rows, four tiles with one
- * comparison sentence each. Pure, so the sentences are testable without rendering.
+ * 總覽, as data. Takes GET /api/me/overview and produces what the page shows, top to bottom:
+ *   1. one headline sentence about the period, naming the things worth a look;
+ *   2. 「AI 守規矩」: the rate, the previous period, the three rules missed most;
+ *   3. 「同事用得怎樣」 (admin): one row per teammate with a plain verdict;
+ *   4. 「要你決定的事」: at most five recent items, one sentence each;
+ *   5. a small footer line: memory and computers, red or yellow only when something is off.
+ * Pure, so the sentences are testable without rendering.
  *
- * Two rules from the prototype, enforced here rather than in JSX:
- *   - every status says what the reader should do, or that nothing is needed;
- *   - a number the server does not have renders as 「沒有資料」, never as 0.
+ * Rules kept here rather than in JSX:
+ *   - a number the server does not have renders as 「沒有資料」, never as 0 or 100%;
+ *   - every sentence says what the reader should do, or that nothing is needed.
  */
 
 const STATES = new Set(['good', 'warn', 'bad', 'none']);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const pctOf = (rate) => (isNum(rate) ? Math.round(rate * 100) : null);
+
+/** Below this a teammate "often forgets the rules". */
+export const LOW_RATE = 0.8;
+/** At or above this a teammate can be called out as doing well. */
+export const GOOD_RATE = 0.9;
+/** How many decisions the home page lists. */
+export const MAX_DECISIONS = 5;
 
 export function lightState(raw) {
   return STATES.has(raw) ? raw : 'none';
 }
 
-/** `t` is the dictionary function; `n(key, vars)` fills {placeholders}. */
+/** `t` is the dictionary function; fill() puts values into its {placeholders}. */
 function fill(t, key, vars = {}) {
   let s = t(key);
   for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
   return s;
 }
 
-/**
- * The three lights. Each: { id, state, title, text, action: { label, to } | null }.
- */
-export function lightsVm(overview, t, { role } = {}) {
-  const L = overview?.lights ?? {};
-  const out = [];
-
-  // 記憶主機 — did the AI load memory recently?
-  const mem = L.memory ?? {};
-  const memState = lightState(mem.state);
-  out.push({
-    id: 'memory',
-    state: memState,
-    title: t('home.light.memory'),
-    text: memState === 'good' ? t('home.light.memory.good')
-      : memState === 'warn' ? t('home.light.memory.warn')
-        : t('home.light.memory.none'),
-    action: memState === 'good' ? null : { label: t('home.light.memory.action'), to: '/usage/mine' },
-  });
-
-  // 用量回報 — is every one of my computers reporting, and to this server?
-  const rep = L.reporting ?? {};
-  const repState = lightState(rep.state);
-  const oldHosts = (rep.machines ?? []).filter((m) => m.on_old_host).map((m) => m.machine);
-  const stale = rep.stale_tools ?? [];
-  let repText;
-  if (repState === 'bad') repText = fill(t, 'home.light.reporting.bad', { machines: oldHosts.join('、') });
-  else if (repState === 'warn') repText = fill(t, 'home.light.reporting.warn', { tools: stale.join('、') });
-  else if (repState === 'good') repText = t('home.light.reporting.good');
-  else repText = t('home.light.reporting.none');
-  out.push({
-    id: 'reporting',
-    state: repState,
-    title: t('home.light.reporting'),
-    text: repText,
-    action: repState === 'good' ? null : { label: t('home.light.reporting.action'), to: '/usage/mine' },
-  });
-
-  // 規矩檢查 — were the checks reported back?
-  const rules = L.rules ?? {};
-  const rulesState = lightState(rules.state);
-  let rulesText;
-  if (rulesState === 'none') rulesText = fill(t, 'home.light.rules.none', { days: overview?.range_days ?? 7 });
-  else if (rulesState === 'warn') rulesText = fill(t, 'home.light.rules.warn', { days: overview?.range_days ?? 7, n: rules.unverified ?? 0 });
-  else rulesText = fill(t, 'home.light.rules.good', { days: overview?.range_days ?? 7 });
-  out.push({
-    id: 'rules',
-    state: rulesState,
-    title: t('home.light.rules'),
-    text: rulesText,
-    action: rulesState === 'warn' ? { label: t('home.light.rules.action'), to: '/usage/rules' } : null,
-  });
-
-  void role;
-  return out;
-}
-
-/**
- * 等你處理 rows: { id, text, detail, to, action }. Empty when nothing waits.
- */
-export function pendingVm(overview, t) {
-  const P = overview?.pending ?? {};
-  // v1.32.8 — the lists are capped previews; the server's counts say how many really wait.
-  const C = P.counts ?? {};
-  const n = (key, list) => (isNum(C[key]) ? C[key] : list.length);
-  const rows = [];
-  const handoffs = P.handoffs ?? [];
-  if (n('handoffs', handoffs)) {
-    rows.push({
-      id: 'handoffs',
-      text: fill(t, 'home.pending.handoffs', { n: n('handoffs', handoffs) }),
-      detail: handoffs.map((h) => h.from_tool
-        ? fill(t, 'home.pending.handoff_item', { project: h.project ?? '—', tool: h.from_tool, machine: h.from_machine ?? '—' })
-        : (h.project ?? '—')).join('、'),
-      to: '/inbox/handoffs',
-      action: t('home.pending.handoffs.action'),
-    });
-  }
-  const lessons = P.lessons ?? [];
-  if (n('lessons', lessons)) {
-    rows.push({
-      id: 'lessons',
-      text: fill(t, 'home.pending.lessons', { n: n('lessons', lessons) }),
-      detail: [...new Set(lessons.map((l) => l.project).filter(Boolean))].join('、'),
-      to: '/inbox/lessons',
-      action: t('home.pending.lessons.action'),
-    });
-  }
-  const tasks = P.tasks ?? [];
-  if (n('tasks', tasks)) {
-    rows.push({
-      id: 'tasks',
-      text: fill(t, 'home.pending.tasks', { n: n('tasks', tasks) }),
-      detail: tasks.map((x) => x.title).join('、'),
-      to: '/inbox/tasks',
-      action: t('home.pending.tasks.action'),
-    });
-  }
-  const bugs = P.bugs;   // null for a member: not theirs to handle
-  if (Array.isArray(bugs) && n('bugs', bugs)) {
-    rows.push({
-      id: 'bugs',
-      text: fill(t, 'home.pending.bugs', { n: n('bugs', bugs) }),
-      detail: bugs.map((b) => (b.reporter_name ? `${b.reporter_name}：${b.title}` : b.title)).join('、'),
-      to: '/inbox/bugs',
-      action: t('home.pending.bugs.action'),
-    });
-  }
-  return rows;
+/** 「這週／上週」 for 7 days, 「這 N 天／前 N 天」 otherwise. */
+export function periodWords(days, t) {
+  const n = isNum(days) ? days : 7;
+  return n === 7
+    ? { cur: t('home.period.this_week'), prev: t('home.period.last_week') }
+    : { cur: fill(t, 'home.period.this_days', { n }), prev: fill(t, 'home.period.prev_days', { n }) };
 }
 
 /** 「沒有資料」 when the server has no value; otherwise the number as a string. */
@@ -140,101 +49,283 @@ export function numberOrNoData(v, t) {
   return isNum(v) ? String(v) : t('home.no_data');
 }
 
+// ── 2. AI 守規矩 ─────────────────────────────────────────────
+
 /**
- * The four tiles: { id, label, value, unit, note, tone }. `tone` is up/down/flat/none.
+ * {
+ *   value: '95%' | 沒有資料, hasData,
+ *   compare: '上週是 100%' | '上週沒有資料可比',
+ *   badge: { kind: better|worse|same, text } | null,
+ *   sentence, top: [{ code, title, text }], empty: string | null, footnote: string | null
+ * }
  */
-export function tilesVm(overview, t, { role } = {}) {
-  const T = overview?.tiles ?? {};
-  const days = overview?.range_days ?? 7;
+export function rulesVm(overview, t) {
+  const R = overview?.rules ?? {};
+  const { prev } = periodWords(overview?.range_days, t);
+  const pct = pctOf(R.rate);
+  const prevPct = pctOf(R.previous_rate);
+  const unreported = isNum(R.unreported) && R.unreported > 0
+    ? fill(t, 'home.rules.unreported', { n: R.unreported })
+    : null;
+
+  if (pct === null) {
+    return {
+      hasData: false,
+      value: t('home.no_data'),
+      compare: '',
+      badge: null,
+      sentence: t('home.rules.none'),
+      top: [],
+      empty: null,
+      footnote: unreported,
+    };
+  }
+
+  const diff = prevPct === null ? null : pct - prevPct;
+  const badge = diff === null ? null
+    : diff > 0 ? { kind: 'better', text: fill(t, 'home.rules.badge.better', { prev }) }
+      : diff < 0 ? { kind: 'worse', text: fill(t, 'home.rules.badge.worse', { prev }) }
+        : { kind: 'same', text: fill(t, 'home.rules.badge.same', { prev }) };
+
+  const total = isNum(R.total) ? R.total : 0;
+  const missed = isNum(R.missed) ? R.missed : 0;
+  const sentence = missed === 0
+    ? fill(t, 'home.rules.sentence.all', { total })
+    : fill(t, 'home.rules.sentence', { total, missed });
+
+  const top = (R.top_missed ?? [])
+    .filter((r) => isNum(r?.missed) && r.missed > 0)
+    .slice(0, 3)
+    .map((r) => ({
+      code: r.code ?? null,
+      title: r.title || fill(t, 'home.rules.untitled', { code: r.code ?? '' }),
+      text: fill(t, 'home.rules.missed_times', { n: r.missed }),
+    }));
+
+  return {
+    hasData: true,
+    value: `${pct}%`,
+    compare: prevPct === null
+      ? fill(t, 'home.rules.compare.none', { prev })
+      : fill(t, 'home.rules.compare', { prev, pct: prevPct }),
+    badge,
+    sentence,
+    top,
+    empty: top.length === 0 ? t('home.rules.top.empty') : null,
+    footnote: unreported,
+  };
+}
+
+// ── 3. 同事用得怎樣 ───────────────────────────────────────────
+
+const TONE_ORDER = { danger: 0, warning: 1, success: 2, muted: 3 };
+
+/**
+ * One row per teammate, problems first: { id, name, rate, sessions, verdict, tone }.
+ * `tone` is success | warning | danger | muted. null when the caller does not see the team.
+ */
+export function teamVm(overview, t) {
+  const T = overview?.team;
+  if (!Array.isArray(T)) return null;
+  const { cur } = periodWords(overview?.range_days, t);
+
+  // Who to praise: the most conversations, and the best rate among the rest. Only people
+  // who are doing well get a compliment, and only one each.
+  const active = T.filter((p) => !p.inactive_14d && isNum(p.sessions) && p.sessions > 0);
+  const topUser = [...active].sort((a, b) => b.sessions - a.sessions)[0];
+  const mostUsedId = topUser && isNum(topUser.rate) && topUser.rate >= GOOD_RATE ? topUser.user_id : null;
+  const best = active
+    .filter((p) => p.user_id !== mostUsedId && isNum(p.rate) && p.rate >= GOOD_RATE)
+    .sort((a, b) => b.rate - a.rate || b.sessions - a.sessions)[0];
+  const bestId = best ? best.user_id : null;
+
+  const rows = T.map((p) => {
+    const sessions = isNum(p.sessions) ? p.sessions : 0;
+    let verdict; let tone;
+    if (p.inactive_14d) {
+      verdict = p.last_active_at ? t('home.team.verdict.inactive') : t('home.team.verdict.never');
+      tone = 'danger';
+    } else if (isNum(p.rate) && p.rate < LOW_RATE) {
+      verdict = t('home.team.verdict.forgets');
+      tone = 'warning';
+    } else if (p.user_id === mostUsedId) {
+      verdict = t('home.team.verdict.most_used');
+      tone = 'success';
+    } else if (p.user_id === bestId) {
+      verdict = t('home.team.verdict.best');
+      tone = 'success';
+    } else if (sessions === 0) {
+      verdict = fill(t, 'home.team.verdict.idle', { period: cur });
+      tone = 'muted';
+    } else if (!isNum(p.rate)) {
+      verdict = t('home.team.verdict.no_score');
+      tone = 'muted';
+    } else {
+      verdict = t('home.team.verdict.ok');
+      tone = 'muted';
+    }
+    return {
+      id: p.user_id,
+      name: p.is_me ? fill(t, 'home.team.me', { name: p.name }) : p.name,
+      rawName: p.name,
+      isMe: Boolean(p.is_me),
+      rate: isNum(p.rate) ? `${pctOf(p.rate)}%` : t('home.no_data'),
+      sessions: fill(t, 'home.team.sessions', { n: sessions }),
+      sessionCount: sessions,
+      verdict,
+      tone,
+    };
+  });
+
+  return rows.sort((a, b) => TONE_ORDER[a.tone] - TONE_ORDER[b.tone]
+    || b.sessionCount - a.sessionCount
+    || String(a.rawName).localeCompare(String(b.rawName)));
+}
+
+// ── 4. 要你決定的事 ───────────────────────────────────────────
+
+/**
+ * { count, items: [{ id, text, to }], more: string | null, note, empty }
+ * `count` is every recent decision; `items` is the newest MAX_DECISIONS of them.
+ */
+export function decisionsVm(overview, t) {
+  const D = overview?.decisions ?? {};
+  const days = isNum(D.recent_days) ? D.recent_days : 7;
+  const all = [];
+
+  const lessons = D.lessons ?? {};
+  if (isNum(lessons.count) && lessons.count > 0) {
+    all.push({
+      id: 'lessons',
+      text: fill(t, 'home.decide.lessons', { n: lessons.count }),
+      to: '/inbox/lessons',
+      ts: lessons.latest_at,
+    });
+  }
+  for (const b of D.bugs ?? []) {
+    all.push({
+      id: `bug-${b.id}`,
+      text: b.reporter_name
+        ? fill(t, 'home.decide.bug', { name: b.reporter_name, title: b.title })
+        : fill(t, 'home.decide.bug.anon', { title: b.title }),
+      to: '/inbox/bugs',
+      ts: b.updated_at,
+    });
+  }
+  for (const h of D.handoffs ?? []) {
+    const n = isNum(h.count) ? h.count : 1;
+    all.push({
+      id: `handoff-${h.project ?? ''}`,
+      text: !h.project ? fill(t, 'home.decide.handoff.no_project', { n })
+        : n === 1 ? fill(t, 'home.decide.handoff', { project: h.project })
+          : fill(t, 'home.decide.handoffs', { project: h.project, n }),
+      to: '/inbox/handoffs',
+      ts: h.latest_at,
+    });
+  }
+  for (const x of D.tasks ?? []) {
+    all.push({
+      id: `task-${x.id}`,
+      text: fill(t, 'home.decide.task', { title: x.title }),
+      to: '/inbox/tasks',
+      ts: x.done_at,
+    });
+  }
+
+  // Tasks and bugs beyond the five the server listed still count.
+  const extraTasks = Math.max(0, (isNum(D.tasks_count) ? D.tasks_count : 0) - (D.tasks ?? []).length);
+  const extraBugs = Math.max(0, (isNum(D.bugs_count) ? D.bugs_count : 0) - (D.bugs ?? []).length);
+  const count = all.length + extraTasks + extraBugs;
+
+  const time = (v) => { const n = new Date(v ?? 0).getTime(); return Number.isFinite(n) ? n : 0; };
+  const items = all
+    .sort((a, b) => time(b.ts) - time(a.ts))
+    .slice(0, MAX_DECISIONS)
+    .map(({ id, text, to }) => ({ id, text, to }));
+
+  const left = count - items.length;
+  const hidden = isNum(D.hidden) ? D.hidden : 0;
+  return {
+    count,
+    items,
+    more: left > 0 ? fill(t, 'home.decide.more', { n: left }) : null,
+    note: hidden > 0
+      ? fill(t, 'home.decide.hidden', { n: hidden, days })
+      : fill(t, 'home.decide.hidden.none', { days }),
+    empty: fill(t, 'home.decide.empty', { days }),
+  };
+}
+
+// ── 5. footer ───────────────────────────────────────────────
+
+/** Two short items: { id, state, text, action: { label, to } | null }. */
+export function footerVm(overview, t) {
+  const L = overview?.lights ?? {};
   const out = [];
 
-  const s = T.sessions ?? {};
-  if (isNum(s.current)) {
-    const diff = isNum(s.previous) ? s.current - s.previous : null;
-    out.push({
-      id: 'sessions',
-      label: t('home.tile.sessions'),
-      value: String(s.current),
-      unit: t('home.unit.sessions'),
-      note: diff === null ? t('home.no_previous')
-        : diff === 0 ? fill(t, 'home.tile.sessions.same', { days })
-          : fill(t, diff > 0 ? 'home.tile.sessions.more' : 'home.tile.sessions.less', { days, n: Math.abs(diff) }),
-      tone: diff === null || diff === 0 ? 'flat' : diff > 0 ? 'up' : 'down',
-    });
-  } else {
-    out.push({ id: 'sessions', label: t('home.tile.sessions'), value: t('home.no_data'), unit: '', note: t('home.tile.sessions.none'), tone: 'none' });
-  }
+  const memState = lightState(L.memory?.state);
+  out.push({
+    id: 'memory',
+    state: memState,
+    text: memState === 'good' ? t('home.footer.memory.good')
+      : memState === 'warn' ? t('home.light.memory.warn')
+        : t('home.light.memory.none'),
+    action: memState === 'good' ? null : { label: t('home.light.memory.action'), to: '/usage/mine' },
+  });
 
-  const c = T.compliance ?? {};
-  if (isNum(c.rate)) {
-    const pct = Math.round(c.rate * 100);
-    const prev = isNum(c.previous_rate) ? Math.round(c.previous_rate * 100) : null;
-    const d = prev === null ? null : pct - prev;
-    const worst = c.worst_rule?.title ? fill(t, 'home.tile.compliance.worst', { rule: c.worst_rule.title }) : '';
-    out.push({
-      id: 'compliance',
-      label: t('home.tile.compliance'),
-      value: `${pct}%`,
-      unit: '',
-      note: [
-        d === null ? t('home.no_previous')
-          : d === 0 ? fill(t, 'home.tile.compliance.same', { days })
-            : fill(t, d > 0 ? 'home.tile.compliance.higher' : 'home.tile.compliance.lower', { days, n: Math.abs(d) }),
-        worst,
-      ].filter(Boolean).join('，'),
-      tone: d === null || d === 0 ? 'flat' : d > 0 ? 'up' : 'down',
-    });
-  } else {
-    out.push({ id: 'compliance', label: t('home.tile.compliance'), value: t('home.no_data'), unit: '', note: t('home.tile.compliance.none'), tone: 'none' });
-  }
-
-  const p = T.top_project;
-  if (p?.project) {
-    out.push({
-      id: 'project',
-      label: t('home.tile.project'),
-      value: p.project,
-      unit: '',
-      note: fill(t, 'home.tile.project.note', { sessions: p.sessions ?? 0, handoffs: p.handoffs ?? 0 }),
-      tone: 'flat',
-      small: true,
-    });
-  } else {
-    out.push({ id: 'project', label: t('home.tile.project'), value: t('home.no_data'), unit: '', note: fill(t, 'home.tile.project.none', { days }), tone: 'none' });
-  }
-
-  const isAdmin = role === 'admin' || role === 'super_admin';
-  const tv = T.team_visible;
-  if (isAdmin && tv && isNum(tv.visible) && isNum(tv.total)) {
-    const missing = tv.invisible_names ?? [];
-    out.push({
-      id: 'team',
-      label: t('home.tile.team'),
-      value: `${tv.visible}／${tv.total}`,
-      unit: t('home.unit.people'),
-      note: missing.length ? fill(t, 'home.tile.team.missing', { names: missing.join('、') }) : t('home.tile.team.all'),
-      tone: missing.length ? 'down' : 'flat',
-    });
-  } else {
-    const la = T.last_activity;
-    out.push(la?.ts ? {
-      id: 'last',
-      label: t('home.tile.last'),
-      value: la.ts,                       // the page formats the time
-      unit: '',
-      note: [la.tool, la.project].filter(Boolean).join('，') || t('home.tile.last.no_detail'),
-      tone: 'flat',
-      small: true,
-      isTime: true,
-    } : { id: 'last', label: t('home.tile.last'), value: t('home.no_data'), unit: '', note: t('home.tile.last.none'), tone: 'none' });
-  }
+  const rep = L.reporting ?? {};
+  const repState = lightState(rep.state);
+  const oldHosts = (rep.machines ?? []).filter((m) => m.on_old_host).map((m) => m.machine);
+  let repText;
+  if (repState === 'bad') repText = fill(t, 'home.light.reporting.bad', { machines: oldHosts.join('、') });
+  else if (repState === 'warn') repText = fill(t, 'home.light.reporting.warn', { tools: (rep.stale_tools ?? []).join('、') });
+  else if (repState === 'good') repText = t('home.footer.reporting.good');
+  else repText = t('home.light.reporting.none');
+  out.push({
+    id: 'reporting',
+    state: repState,
+    text: repText,
+    action: repState === 'good' ? null : { label: t('home.light.reporting.action'), to: '/usage/mine' },
+  });
 
   return out;
 }
 
-/** Daily rows for DailyChart: `[{ date, count }]`, chronological, from the server's list. */
-export function dailyVm(overview) {
-  const d = overview?.daily;
-  if (!Array.isArray(d)) return [];
-  return d.map((r) => ({ date: String(r.date ?? ''), count: Number(r.count) || 0 }));
+// ── 1. headline ─────────────────────────────────────────────
+
+/**
+ * { title, detail }. The things worth a look, named in one line: compliance falling,
+ * teammates who stopped or often forget, a computer or memory not working.
+ */
+export function headlineVm(overview, t) {
+  const { cur, prev } = periodWords(overview?.range_days, t);
+  const concerns = [];
+
+  const pct = pctOf(overview?.rules?.rate);
+  const prevPct = pctOf(overview?.rules?.previous_rate);
+  if (pct !== null && prevPct !== null && pct < prevPct) {
+    concerns.push(fill(t, 'home.headline.rules_worse', { prev }));
+  }
+
+  const team = Array.isArray(overview?.team) ? overview.team.filter((p) => !p.is_me) : [];
+  const gone = team.filter((p) => p.inactive_14d && p.last_active_at).map((p) => p.name);
+  if (gone.length) concerns.push(fill(t, 'home.headline.inactive', { names: gone.join('、') }));
+  const never = team.filter((p) => p.inactive_14d && !p.last_active_at).map((p) => p.name);
+  if (never.length) concerns.push(fill(t, 'home.headline.never', { names: never.join('、') }));
+  const forget = team.filter((p) => !p.inactive_14d && isNum(p.rate) && p.rate < LOW_RATE).map((p) => p.name);
+  if (forget.length) concerns.push(fill(t, 'home.headline.forgets', { names: forget.join('、') }));
+
+  const L = overview?.lights ?? {};
+  if (lightState(L.memory?.state) === 'warn') concerns.push(t('home.headline.memory'));
+  const rep = lightState(L.reporting?.state);
+  if (rep === 'bad' || rep === 'warn') concerns.push(t('home.headline.reporting'));
+
+  const n = concerns.length;
+  // Nothing wrong because nothing arrived is not "all normal": the lights would be grey.
+  const nothingYet = n === 0 && pct === null && lightState(L.memory?.state) === 'none';
+  if (nothingYet) return { title: fill(t, 'home.headline.no_data', { period: cur }), detail: '', count: 0 };
+  const title = n === 0 ? fill(t, 'home.headline.ok', { period: cur })
+    : n <= 2 ? fill(t, 'home.headline.mostly_ok', { period: cur, n })
+      : fill(t, 'home.headline.many', { period: cur, n });
+  return { title, detail: n ? concerns.join('；') : '', count: n };
 }

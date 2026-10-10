@@ -2,12 +2,14 @@
  * GET /api/me/overview?range=7|14|30  (any signed-in member)
  *
  * v1.32.2 — the data behind 總覽 (openspec v1.32.0-console-rebuild, Phase 2).
+ * Home redesign — the page answers two questions the owner opens it for: is the AI keeping
+ * the rules, and how is the team using it. The four stat tiles and the daily chart are gone
+ * (用量與規矩 still has usage); the inbox preview became a short list of recent decisions.
  *
- * One request, composed only from queries the console already runs elsewhere: the
- * per-user report (/api/me/report), the self-check (/api/usage/self-check), the inbox
- * lists (/api/handoff/pending, /api/session/lessons, /api/tasks?mine=true, the bug list)
- * and the admin client list's host check. Nothing here is a new measurement; the page's
- * rule is "no number the server does not have", and this file is where that is kept.
+ * Composed only from tables the console already reads: activity_logs (init and
+ * iron_rule_compliance events, as /api/me/report and the old tiles counted them),
+ * session_logs (the unreported-session check), memories (rule titles), the inbox tables,
+ * and collector_heartbeat. No LLM call, no new measurement.
  *
  * Response:
  * {
@@ -15,23 +17,24 @@
  *   lights: {
  *     memory:    { state, last_init_at, inits_24h, inits_7d },
  *     reporting: { state, machines: [{ machine, api_host, on_old_host, last_reported_at }],
- *                  stale_tools: [tool] },
- *     rules:     { state, checks, unverified }
+ *                  stale_tools: [tool] }
  *   },
- *   pending: { counts: { handoffs, lessons, tasks, bugs | null, total },
- *              handoffs: [...], lessons: [...], tasks: [...], bugs: [...] | null },   (lists are capped previews)
- *   tiles: {
- *     sessions:    { current, previous },
- *     compliance:  { rate | null, previous_rate | null, worst_rule | null },
- *     top_project: { project, sessions, handoffs } | null,
- *     last_activity: { ts, tool, project } | null,
- *     team_visible: { visible, total, invisible_names } | null   (admin+ only)
- *   },
- *   daily: [{ date, count }]   one row per day of the range, oldest first, zero-filled
+ *   rules: { rate | null, previous_rate | null, comply, missed, total, unreported,
+ *            top_missed: [{ code, title | null, missed }] }       (at most 3, worst first)
+ *   team: [{ user_id, name, is_me, sessions, rate | null, comply, missed,
+ *            last_active_at | null, inactive_14d }] | null       (admin+ only)
+ *   decisions: { recent_days, handoffs: [{ project, count, latest_at }],
+ *                lessons: { count, latest_at | null },
+ *                tasks: [{ id, title, project, done_at }], tasks_count,
+ *                bugs: [{ id, title, reporter_name, updated_at }] | null, bugs_count | null,
+ *                hidden }   (hidden = still waiting but untouched for more than recent_days)
  * }
  *
  * `state` is one of good | warn | bad | none. `none` means "the server has nothing to
  * say", which the page shows as such rather than as green.
+ *
+ * "missed" is skip + violate: the times the AI did not do what the rule says. The rate is
+ * comply ÷ (comply + skip + violate), the formula 用量與規矩 › 規矩遵守 shows.
  */
 
 import { Router } from 'express';
@@ -97,7 +100,6 @@ const int = (v) => Number.parseInt(v, 10) || 0;
  * One conversation, once (v1.32.8). The hook puts Claude Code's session id on its init
  * event; a row without one is its own conversation, as every row was before.
  */
-const SESSION_KEY = "COALESCE(details->>'session_id', id::text)";
 const SESSION_KEY_A = "COALESCE(a.details->>'session_id', a.id::text)";
 
 /**
@@ -108,6 +110,17 @@ const SESSION_KEY_A = "COALESCE(a.details->>'session_id', a.id::text)";
  */
 const IS_AI_TOOL = "(tool NOT LIKE 'ownmind\\_%' AND tool NOT IN ('scanner', 'server'))";
 
+/** Decisions untouched for longer than this are left off the home page (still in the inbox). */
+export const RECENT_DECISION_DAYS = 7;
+
+/** How many rules the 「AI 守規矩」 card names. */
+const TOP_RULES = 3;
+
+/** A teammate with no activity at all for this long is "not using it". */
+const INACTIVE_DAYS = 14;
+
+const isTrue = (v) => v === true || v === 't';
+
 /**
  * Everything the page needs, from the database. Exported so the composition is testable
  * with a fake `query`.
@@ -117,13 +130,17 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
   const admin = isAtLeast(user.role, 'admin');
   const days = `${rangeDays} days`;
   const twice = `${rangeDays * 2} days`;
+  const recent = `${RECENT_DECISION_DAYS} days`;
+  const recentBugsSql = admin
+    ? `(SELECT COUNT(*) FROM bug_reports
+         WHERE status = 'new' AND updated_at >= NOW() - INTERVAL '${recent}')::int`
+    : 'NULL::int';
 
   const [
     inits, heartbeats, staleTools, compliance, orphans,
-    sessions, topProject, lastActivity, daily,
-    handoffs, lessons, tasks, bugs, teamVisible, counts,
+    team, handoffs, lessons, tasks, bugs, recentCounts, counts,
   ] = await Promise.all([
-    // 記憶主機: did the AI load memory recently? (same source as the self-check)
+    // 記憶: did the AI load memory recently? (same source as the self-check)
     query(
       `SELECT MAX(ts) AS last_init_at,
               COUNT(*) FILTER (WHERE ts >= NOW() - INTERVAL '24 hours')::int AS inits_24h,
@@ -132,7 +149,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
         WHERE user_id = $1 AND event = 'init'`,
       [uid],
     ),
-    // 用量回報: my computers, with the host each one posts to (Phase 0's column).
+    // 每台電腦: my computers, with the host each one posts to (Phase 0's column).
     query(
       `SELECT machine, MAX(api_host) AS api_host, MAX(last_reported_at) AS last_reported_at
          FROM collector_heartbeat
@@ -160,7 +177,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
         ORDER BY a.tool`,
       [uid],
     ),
-    // 規矩: this range and the one before, per rule (me.js myComplianceQ, two windows).
+    // AI 守規矩: this range and the one before, per rule (me.js myComplianceQ, two windows).
     query(
       `SELECT details->>'rule_code' AS rule_code,
               (ts >= NOW() - INTERVAL '${days}') AS current,
@@ -168,17 +185,15 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
                                  AND COALESCE(details->>'source', '') NOT LIKE 'system_%')::int AS comply,
               COUNT(*) FILTER (WHERE details->>'action' = 'skip'
                                  AND COALESCE(details->>'source', '') NOT LIKE 'system_%')::int AS skip,
-              COUNT(*) FILTER (WHERE details->>'action' = 'violate')::int AS violate,
-              COUNT(*) FILTER (WHERE details->>'action' = 'observed_trigger'
-                                 OR (COALESCE(details->>'source', '') LIKE 'system_%'
-                                     AND details->>'action' = 'comply'))::int AS observed
+              COUNT(*) FILTER (WHERE details->>'action' = 'violate')::int AS violate
          FROM activity_logs
         WHERE user_id = $1 AND event = 'iron_rule_compliance'
           AND ts >= NOW() - INTERVAL '${twice}'
         GROUP BY rule_code, current`,
       [uid],
     ),
-    // Sessions long enough to have triggered something, with no compliance report (me.js #2).
+    // Sessions long enough to have triggered something, with no compliance report (me.js #2):
+    // the card's footnote, "AI 沒交成績".
     query(
       `SELECT COUNT(*)::int AS orphan_count
          FROM session_logs
@@ -189,112 +204,82 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
           AND COALESCE((details->>'duration_turns')::int, 0) >= 5`,
       [uid, COMPLIANCE_ARRAY_SINCE],
     ),
-    // 你的 AI 對話: this range vs the one before.
-    //
-    // v1.32.8 — one conversation, counted once. The SessionStart hook fires on startup,
-    // resume, clear AND compact (all four matchers, on purpose — see
-    // scripts/install-helpers/session-hook-command.cjs), so a long conversation that was
-    // compacted three times used to read as four. Measured 2026-10-08 on the owner's account:
-    // 215 "conversations" in 7 days, 204 of them on one day. From v1.32.8 the hook sends the
-    // session id with the init event; rows that carry one collapse per conversation, older
-    // rows (and other clients) still count once each.
-    query(
-      `SELECT COUNT(DISTINCT ${SESSION_KEY}) FILTER (WHERE ts >= NOW() - INTERVAL '${days}')::int AS current,
-              COUNT(DISTINCT ${SESSION_KEY}) FILTER (WHERE ts <  NOW() - INTERVAL '${days}')::int AS previous
-         FROM activity_logs
-        WHERE user_id = $1 AND event = 'init' AND ts >= NOW() - INTERVAL '${twice}'`,
-      [uid],
-    ),
-    // 你最常做的專案 (me.js myProjectsQ, first row) with its pending handoffs.
-    query(
-      `WITH p AS (
-         SELECT LOWER(TRIM(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', ''))) AS project_key,
-                MIN(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', '')) AS project,
-                COUNT(*)::int AS sessions,
-                SUM(COALESCE((details->>'duration_turns')::int, 0))::int AS turns
-           FROM session_logs
-          WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '${days}'
-            AND details->>'project' IS NOT NULL AND TRIM(details->>'project') != ''
-          GROUP BY project_key
-          ORDER BY sessions DESC, turns DESC NULLS LAST
-          LIMIT 1
-       )
-       SELECT p.project, p.sessions, p.turns,
-              (SELECT COUNT(*)::int FROM handoffs h
-                WHERE h.user_id = $1 AND h.status = 'pending'
-                  AND LOWER(TRIM(h.project)) = p.project_key) AS handoffs
-         FROM p`,
-      [uid],
-    ),
-    // 最後一次活動.
-    query(
-      `SELECT ts, tool, details->>'project' AS project
-         FROM activity_logs
-        WHERE user_id = $1 AND (tool IS NULL OR ${IS_AI_TOOL})
-        ORDER BY ts DESC
-        LIMIT 1`,
-      [uid],
-    ),
-    // 每天開幾場對話, zero-filled by the server so the chart never guesses at gaps.
-    query(
-      `WITH d AS (
-         SELECT generate_series(
-                  (NOW() AT TIME ZONE 'Asia/Taipei')::date - ($2::int - 1),
-                  (NOW() AT TIME ZONE 'Asia/Taipei')::date, '1 day')::date AS day
-       )
-       SELECT to_char(d.day, 'YYYY-MM-DD') AS date,
-              COUNT(DISTINCT ${SESSION_KEY_A})::int AS count
-         FROM d
-         LEFT JOIN activity_logs a
-           ON a.user_id = $1 AND a.event = 'init'
-          AND (a.ts AT TIME ZONE 'Asia/Taipei')::date = d.day
-        GROUP BY d.day
-        ORDER BY d.day`,
-      [uid, rangeDays],
-    ),
-    // 等你處理 — the same rows the inbox tabs list, trimmed to what a sentence needs.
-    query(
-      `SELECT id, project, from_tool, from_machine, created_at
-         FROM handoffs WHERE user_id = $1 AND status = 'pending'
-        ORDER BY created_at DESC LIMIT 20`,
-      [uid],
-    ),
-    query(
-      `SELECT id, project FROM session_lessons
-        WHERE user_id = $1 AND status = 'new'
-        ORDER BY created_at DESC LIMIT 50`,
-      [uid],
-    ),
-    query(
-      `SELECT id, title, project FROM tasks
-        WHERE user_id = $1 AND status = 'done'
-        ORDER BY created_at DESC LIMIT 20`,
-      [uid],
-    ),
+    // 同事用得怎樣 (admin+, as /api/usage/team-overview is): per person, conversations in
+    // the range (counted once per session id, v1.32.8), the same compliance formula as the
+    // card above, and the last time anything of theirs arrived.
     admin
       ? query(
-        `SELECT b.id, b.title, u.name AS reporter_name
-           FROM bug_reports b LEFT JOIN users u ON u.id = b.user_id
-          WHERE b.status = 'new'
-          ORDER BY b.created_at DESC LIMIT 20`,
-      )
-      : Promise.resolve(null),
-    // 看得到幾位同事 (admin): who has any activity in 14 days (me.js team_blindspot).
-    admin
-      ? query(
-        `SELECT u.name,
-                EXISTS (SELECT 1 FROM activity_logs a
-                         WHERE a.user_id = u.id AND a.ts >= NOW() - INTERVAL '14 days') AS visible
+        `SELECT u.id AS user_id, u.name,
+                (SELECT MAX(a.ts) FROM activity_logs a WHERE a.user_id = u.id) AS last_active_at,
+                (SELECT COUNT(DISTINCT ${SESSION_KEY_A})
+                   FROM activity_logs a
+                  WHERE a.user_id = u.id AND a.event = 'init'
+                    AND a.ts >= NOW() - INTERVAL '${days}')::int AS sessions,
+                COALESCE(c.comply, 0)::int AS comply,
+                COALESCE(c.skip, 0)::int AS skip,
+                COALESCE(c.violate, 0)::int AS violate
            FROM users u
+           LEFT JOIN (
+             SELECT user_id,
+                    COUNT(*) FILTER (WHERE details->>'action' = 'comply'
+                                       AND COALESCE(details->>'source', '') NOT LIKE 'system_%') AS comply,
+                    COUNT(*) FILTER (WHERE details->>'action' = 'skip'
+                                       AND COALESCE(details->>'source', '') NOT LIKE 'system_%') AS skip,
+                    COUNT(*) FILTER (WHERE details->>'action' = 'violate') AS violate
+               FROM activity_logs
+              WHERE event = 'iron_rule_compliance' AND ts >= NOW() - INTERVAL '${days}'
+              GROUP BY user_id
+           ) c ON c.user_id = u.id
           ORDER BY u.id`,
       )
       : Promise.resolve(null),
-    // v1.32.8 — the sentence says how many wait; the lists above are capped previews (the
-    // owner had 67 handoffs pending and the page said 20).
+    // 要你決定的事 — only what moved in the last week. Older items stay in the inbox; the
+    // home page just stops listing them. Nothing is deleted or changed here.
+    query(
+      `SELECT MIN(project) AS project, COUNT(*)::int AS count, MAX(created_at) AS latest_at
+         FROM handoffs
+        WHERE user_id = $1 AND status = 'pending'
+          AND created_at >= NOW() - INTERVAL '${recent}'
+        GROUP BY LOWER(TRIM(COALESCE(project, '')))
+        ORDER BY latest_at DESC`,
+      [uid],
+    ),
+    query(
+      `SELECT COUNT(*)::int AS count, MAX(created_at) AS latest_at
+         FROM session_lessons
+        WHERE user_id = $1 AND status = 'new'
+          AND created_at >= NOW() - INTERVAL '${recent}'`,
+      [uid],
+    ),
+    query(
+      `SELECT id, title, project, COALESCE(done_at, updated_at, created_at) AS done_at
+         FROM tasks
+        WHERE user_id = $1 AND status = 'done'
+          AND COALESCE(done_at, updated_at, created_at) >= NOW() - INTERVAL '${recent}'
+        ORDER BY 4 DESC LIMIT 5`,
+      [uid],
+    ),
+    admin
+      ? query(
+        `SELECT b.id, b.title, u.name AS reporter_name, b.updated_at
+           FROM bug_reports b LEFT JOIN users u ON u.id = b.user_id
+          WHERE b.status = 'new' AND b.updated_at >= NOW() - INTERVAL '${recent}'
+          ORDER BY b.updated_at DESC LIMIT 5`,
+      )
+      : Promise.resolve(null),
+    // How many recent tasks and bugs there are beyond the five listed.
+    query(
+      `SELECT (SELECT COUNT(*) FROM tasks
+                WHERE user_id = $1 AND status = 'done'
+                  AND COALESCE(done_at, updated_at, created_at) >= NOW() - INTERVAL '${recent}')::int AS recent_tasks,
+              ${recentBugsSql} AS recent_bugs`,
+      [uid],
+    ),
+    // Everything still waiting, recent or not: the difference is what the page leaves off.
     buildPendingCount({ query, user }),
   ]);
 
-  // ── lights ──
+  // ── lights (the footer line) ──
   const ini = inits.rows[0] ?? {};
   const inits24 = int(ini.inits_24h);
   const inits7 = int(ini.inits_7d);
@@ -321,71 +306,101 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
     stale_tools: stale,
   };
 
-  const cur = (compliance.rows ?? []).filter((r) => r.current === true || r.current === 't');
-  const prev = (compliance.rows ?? []).filter((r) => !(r.current === true || r.current === 't'));
-  const checks = cur.reduce((n, r) => n + int(r.comply) + int(r.skip) + int(r.violate) + int(r.observed), 0);
-  const unverified = int(orphans.rows[0]?.orphan_count);
-  const rules = {
-    state: checks === 0 ? 'none' : unverified > 0 ? 'warn' : 'good',
-    checks,
-    unverified,
-  };
+  // ── AI 守規矩 ──
+  const cur = (compliance.rows ?? []).filter((r) => isTrue(r.current));
+  const prev = (compliance.rows ?? []).filter((r) => !isTrue(r.current));
+  const comply = cur.reduce((n, r) => n + int(r.comply), 0);
+  const missed = cur.reduce((n, r) => n + int(r.skip) + int(r.violate), 0);
 
-  // ── tiles ──
-  const s = sessions.rows[0] ?? {};
-  const rate = complianceRate(cur);
-  const previousRate = complianceRate(prev);
-  const worst = cur
-    .filter((r) => int(r.violate) > 0 && r.rule_code)
-    .sort((a, b) => int(b.violate) - int(a.violate))[0];
-  const tp = topProject.rows[0];
-  const la = lastActivity.rows[0];
-  const tv = teamVisible?.rows ?? null;
-
-  const tiles = {
-    sessions: { current: int(s.current), previous: int(s.previous) },
-    compliance: {
-      rate,
-      previous_rate: previousRate,
-      worst_rule: worst ? { code: worst.rule_code, violate: int(worst.violate) } : null,
-    },
-    top_project: tp ? { project: tp.project, sessions: int(tp.sessions), turns: int(tp.turns), handoffs: int(tp.handoffs) } : null,
-    last_activity: la ? { ts: toIso(la.ts), tool: la.tool ?? null, project: la.project ?? null } : null,
-    team_visible: tv
-      ? {
-        visible: tv.filter((r) => r.visible === true || r.visible === 't').length,
-        total: tv.length,
-        invisible_names: tv.filter((r) => !(r.visible === true || r.visible === 't')).map((r) => r.name),
-      }
-      : null,
-  };
-
-  // The worst rule's title, when the page wants to name it: resolved from memories by
-  // code, in one more small query, only when there is one to name.
-  if (tiles.compliance.worst_rule) {
-    const titleQ = await query(
-      `SELECT title FROM memories WHERE type = 'iron_rule' AND code = $1 LIMIT 1`,
-      [tiles.compliance.worst_rule.code],
-    );
-    tiles.compliance.worst_rule.title = titleQ.rows[0]?.title ?? null;
+  // A miss reported without a rule code still counts against the rate, but cannot be named.
+  const byCode = new Map();
+  for (const r of cur) {
+    if (!r.rule_code) continue;
+    byCode.set(r.rule_code, (byCode.get(r.rule_code) ?? 0) + int(r.skip) + int(r.violate));
   }
+  const topMissed = [...byCode.entries()]
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+    .slice(0, TOP_RULES)
+    .map(([code, n]) => ({ code, title: null, missed: n }));
+
+  if (topMissed.length) {
+    // Codes are per owner (IR-XXX can be two people's different rules), so the caller's own
+    // rule wins, then an active one, then the newest.
+    const titles = await query(
+      `SELECT DISTINCT ON (code) code, title
+         FROM memories
+        WHERE type IN ('iron_rule', 'team_standard') AND code = ANY($1::text[])
+        ORDER BY code, (user_id = $2) DESC, (status = 'active') DESC, id DESC`,
+      [topMissed.map((r) => r.code), uid],
+    );
+    const titleOf = new Map((titles.rows ?? []).map((r) => [r.code, r.title]));
+    for (const r of topMissed) r.title = titleOf.get(r.code) ?? null;
+  }
+
+  const rules = {
+    rate: complianceRate(cur),
+    previous_rate: complianceRate(prev),
+    comply,
+    missed,
+    total: comply + missed,
+    unreported: int(orphans.rows[0]?.orphan_count),
+    top_missed: topMissed,
+  };
+
+  // ── 同事用得怎樣 ──
+  const nowMs = (now ?? new Date()).getTime();
+  const teamRows = team
+    ? (team.rows ?? []).map((r) => {
+      const c = int(r.comply);
+      const m = int(r.skip) + int(r.violate);
+      const last = toIso(r.last_active_at);
+      return {
+        user_id: r.user_id,
+        name: r.name ?? '',
+        is_me: r.user_id === uid,
+        sessions: int(r.sessions),
+        rate: c + m === 0 ? null : c / (c + m),
+        comply: c,
+        missed: m,
+        last_active_at: last,
+        inactive_14d: !last || nowMs - new Date(last).getTime() > INACTIVE_DAYS * 86400000,
+      };
+    })
+    : null;
+
+  // ── 要你決定的事 ──
+  const handoffGroups = (handoffs.rows ?? []).map((h) => ({
+    project: h.project ?? null, count: int(h.count), latest_at: toIso(h.latest_at),
+  }));
+  const ls = lessons.rows[0] ?? {};
+  const rc = recentCounts.rows[0] ?? {};
+  const recentHandoffs = handoffGroups.reduce((n, h) => n + h.count, 0);
+  const recentLessons = int(ls.count);
+  const taskList = tasks.rows ?? [];
+  const recentTasks = Math.max(int(rc.recent_tasks), taskList.length);
+  const bugList = bugs ? (bugs.rows ?? []) : null;
+  const recentBugs = bugList ? Math.max(int(rc.recent_bugs), bugList.length) : 0;
+  const decisions = {
+    recent_days: RECENT_DECISION_DAYS,
+    handoffs: handoffGroups,
+    lessons: { count: recentLessons, latest_at: toIso(ls.latest_at) },
+    tasks: taskList.map((x) => ({ id: x.id, title: x.title, project: x.project ?? null, done_at: toIso(x.done_at) })),
+    tasks_count: recentTasks,
+    bugs: bugList
+      ? bugList.map((b) => ({ id: b.id, title: b.title, reporter_name: b.reporter_name ?? null, updated_at: toIso(b.updated_at) }))
+      : null,
+    bugs_count: bugList ? recentBugs : null,
+    hidden: Math.max(0, counts.total - (recentHandoffs + recentLessons + recentTasks + recentBugs)),
+  };
 
   return {
     generated_at: (now ?? new Date()).toISOString(),
     range_days: rangeDays,
-    lights: { memory, reporting, rules },
-    pending: {
-      counts,
-      handoffs: (handoffs.rows ?? []).map((h) => ({
-        id: h.id, project: h.project, from_tool: h.from_tool ?? null,
-        from_machine: h.from_machine ?? null, created_at: toIso(h.created_at),
-      })),
-      lessons: (lessons.rows ?? []).map((l) => ({ id: l.id, project: l.project ?? null })),
-      tasks: (tasks.rows ?? []).map((x) => ({ id: x.id, title: x.title, project: x.project })),
-      bugs: bugs ? (bugs.rows ?? []).map((b) => ({ id: b.id, title: b.title, reporter_name: b.reporter_name ?? null })) : null,
-    },
-    tiles,
-    daily: (daily.rows ?? []).map((r) => ({ date: r.date, count: int(r.count) })),
+    lights: { memory, reporting },
+    rules,
+    team: teamRows,
+    decisions,
   };
 }
 
