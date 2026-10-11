@@ -70,7 +70,7 @@ describe('v1.26.96 — every shebang file is pinned to LF', () => {
     //
     // `text=auto` is load-bearing. `* eol=lf` on its own sets `text` unconditionally, which
     // switches off binary sniffing — measured on a file containing 0x0D 0x0A: 13 bytes in,
-    // 11 out. This repository has two binary files today, one of them CHANGELOG.md.
+    // 11 out. This repository has two binary files today, one of them docs/changelog/v1.0-v1.19.md.
     const attrs = fs.readFileSync(path.join(repoRoot, '.gitattributes'), 'utf8');
     assert.match(attrs, /^\*\s+text=auto\s+eol=lf\s*$/m,
       'the global `* text=auto eol=lf` rule is gone — a per-file list will miss the next file');
@@ -94,8 +94,9 @@ describe('v1.26.96 — every shebang file is pinned to LF', () => {
     const eol = execFileSync('git', ['ls-files', '--eol'], { cwd: repoRoot, encoding: 'utf8' })
       .trim().split('\n');
     const binary = eol.filter((l) => /^i\/-text/.test(l.trim())).map((l) => l.split('\t')[1]);
-    assert.ok(binary.includes('CHANGELOG.md'),
-      'CHANGELOG.md carries literal NUL bytes and must stay out of conversion');
+    // The NUL bytes sat in CHANGELOG.md until v1.30 and older moved to docs/changelog/.
+    assert.ok(binary.includes('docs/changelog/v1.0-v1.19.md'),
+      'docs/changelog/v1.0-v1.19.md carries literal NUL bytes and must stay out of conversion');
   });
 
   it('Windows-native formats keep CRLF', () => {

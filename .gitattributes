@@ -9,8 +9,8 @@
 # `text` unconditionally, which switches OFF git's binary sniffing — measured on a file
 # containing 0x0D 0x0A: 13 bytes in, 11 bytes out, corrupted. With `text=auto`, git detects
 # binary content and leaves it alone. This repository has two such files today, one of them
-# CHANGELOG.md, which carries four literal NUL bytes from an old entry about handling NUL
-# bytes.
+# docs/changelog/v1.0-v1.19.md (split out of CHANGELOG.md), which carries four literal NUL
+# bytes from an old entry about handling NUL bytes.
 #
 # Why it matters at all: a CRLF shebang makes the kernel look for an interpreter whose name
 # ends in a carriage return. Git for Windows tolerates it; WSL's sh and busybox do not.
