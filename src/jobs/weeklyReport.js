@@ -101,7 +101,7 @@ export async function runWeeklyReport(targetUserId = null) {
     const usersResult = await query(
       targetUserId
         ? `SELECT id FROM users WHERE id = $1`
-        : `SELECT id FROM users WHERE role IN ('admin', 'user')`,
+        : `SELECT id FROM users WHERE role IN ('admin', 'user') AND deactivated_at IS NULL`,
       targetUserId ? [targetUserId] : []
     );
 
@@ -226,7 +226,7 @@ export async function runMonthlyReport(targetUserId = null) {
     const usersResult = await query(
       targetUserId
         ? `SELECT id FROM users WHERE id = $1`
-        : `SELECT id FROM users WHERE role IN ('admin', 'user')`,
+        : `SELECT id FROM users WHERE role IN ('admin', 'user') AND deactivated_at IS NULL`,
       targetUserId ? [targetUserId] : []
     );
 

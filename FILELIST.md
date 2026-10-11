@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.32.11 修改（帳號可以停用，不用刪除）
+
+新增檔：
+```
+src/routes/admin-account-status.js                      — POST /api/admin/users/:id/deactivate、/reactivate：只有超級管理員，不能停用自己與 1 號帳號；停用時換掉金鑰、結束後台登入
+db/033_user_deactivated.sql                             — users 加 deactivated_at、deactivated_by
+client/src/pages/Admin/DeactivateUserModal.jsx          — 停用前的確認視窗
+tests/account-deactivate.test.js
+```
+
+修改檔：
+```
+src/middleware/auth.js, src/utils/web-session.js        — 停用的帳號用金鑰或既有的後台登入都進不來
+src/routes/me.js                                        — 登入與首次設密碼擋下停用帳號；團隊報告與稽核提醒不列停用帳號
+src/routes/usage/{team-overview,team-stats,admin-clients}.js, src/routes/{me-overview,me-narrative,activity}.js — 團隊名單不列停用帳號
+src/jobs/{install-check-alerts,collector-silence-alerts,weeklyReport}.js — 提醒與週報不寄給、不提停用帳號
+src/routes/admin.js                                     — 使用者清單帶出 deactivated_at
+src/app.js                                              — 掛上 admin-account-status
+client/src/pages/Admin/{TeamPage,RowMenu}.jsx, menu-visibility.js — 停用的那一列變灰、只剩「重新啟用」
+client/src/i18n/{zh,en,ja}.json                         — 停用相關文字
+tests/team-menu-visibility.test.js                      — 選單多了停用與重新啟用
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.10 → 1.32.11
+```
+
 ## v1.32.10 修改（管理員複製安裝指令、複製金鑰時改成再輸入一次密碼）
 
 新增檔：

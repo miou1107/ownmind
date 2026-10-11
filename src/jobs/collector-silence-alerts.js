@@ -89,7 +89,8 @@ const HEARTBEAT_SQL = `
          h.reason
   FROM collector_heartbeat h
   JOIN users u ON u.id = h.user_id
-  WHERE NOT EXISTS (
+  WHERE u.deactivated_at IS NULL
+    AND NOT EXISTS (
           SELECT 1 FROM usage_tracking_exemption e
            WHERE e.user_id = h.user_id
              AND (e.expires_at IS NULL OR e.expires_at > NOW()))

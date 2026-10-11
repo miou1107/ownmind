@@ -44,6 +44,9 @@ const BCRYPT_ROUNDS = 10;
 // Not a claim that this endpoint is timing-safe overall. POST /login above still returns
 // early for an unknown email without hashing anything, and that predates this release.
 // The control on both is the 10-per-15-minutes limiter in src/app.js.
+// A deactivated account (src/routes/admin-account-status.js) logging in with the right password.
+const DEACTIVATED_MESSAGE = '這個帳號已停用，請聯絡管理員';
+
 const DUMMY_HASH = bcrypt.hashSync('ownmind-timing-placeholder', BCRYPT_ROUNDS);
 
 /**
@@ -57,7 +60,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: '請輸入 Email 和密碼' });
     }
     const result = await query(
-      `SELECT id, email, name, role, password_hash, must_change_password
+      `SELECT id, email, name, role, password_hash, must_change_password, deactivated_at
        FROM users WHERE LOWER(email) = LOWER($1)`,
       [email]
     );
@@ -78,6 +81,10 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       return res.status(401).json({ ...LOGIN_REJECTED });
+    }
+    // Said only after the password checks out, so it tells nothing to someone guessing.
+    if (user.deactivated_at) {
+      return res.status(403).json({ error: DEACTIVATED_MESSAGE });
     }
     // v1.26.60: the audit row the retired /api/admin/login used to write. Production had
     // zero of them in sixty days, because everyone was already logging in here instead.
@@ -123,7 +130,7 @@ router.post('/first-password', async (req, res) => {
   try {
     const { email, current_password, new_password } = req.body || {};
     const result = await query(
-      `SELECT id, email, name, role, password_hash, must_change_password
+      `SELECT id, email, name, role, password_hash, must_change_password, deactivated_at
        FROM users WHERE LOWER(email) = LOWER($1)`,
       [String(email ?? '')]
     );
@@ -142,6 +149,7 @@ router.post('/first-password', async (req, res) => {
       user, passwordOk, currentPassword: current_password, newPassword: new_password,
     });
     if (refusal) return res.status(refusal.status).json(refusal.body);
+    if (user.deactivated_at) return res.status(403).json({ error: DEACTIVATED_MESSAGE });
 
     const hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
     await query(
@@ -464,6 +472,7 @@ router.get('/report', async (req, res) => {
       FROM users u
       LEFT JOIN activity_logs al ON al.user_id = u.id
         AND al.ts ${timeFilter}
+      WHERE u.deactivated_at IS NULL
       GROUP BY u.id, u.name, u.email, u.role
       ORDER BY events DESC NULLS LAST`
     );
@@ -557,6 +566,7 @@ router.get('/report', async (req, res) => {
         FROM collector_heartbeat h
         JOIN users u ON u.id = h.user_id
         WHERE h.last_reported_at >= NOW() - INTERVAL '14 days'
+          AND u.deactivated_at IS NULL
         ORDER BY h.user_id, h.tool, h.last_reported_at DESC
       ) v
       ORDER BY v.name, v.tool`
@@ -847,6 +857,7 @@ router.get('/report', async (req, res) => {
           u.must_change_password
         FROM users u
         WHERE u.role = 'user'
+          AND u.deactivated_at IS NULL
           AND u.must_change_password = TRUE
           AND u.created_at < NOW() - INTERVAL '7 days'
       `);
@@ -865,6 +876,7 @@ router.get('/report', async (req, res) => {
         SELECT u.email, u.name
         FROM users u
         WHERE u.role IN ('user', 'admin')
+          AND u.deactivated_at IS NULL
           AND u.created_at < NOW() - INTERVAL '7 days'
           AND NOT EXISTS (
             SELECT 1 FROM activity_logs WHERE user_id = u.id

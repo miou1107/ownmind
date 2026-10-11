@@ -81,7 +81,8 @@ export async function findSessionUser({ query, token, now = Date.now() }) {
       WHERE s.token_hash = $1
         AND s.revoked_at IS NULL
         AND s.expires_at > NOW()
-        AND s.last_seen_at > $2`,
+        AND s.last_seen_at > $2
+        AND u.deactivated_at IS NULL`,
     [tokenHash, new Date(now - IDLE_MS)]
   );
   const row = result.rows[0];

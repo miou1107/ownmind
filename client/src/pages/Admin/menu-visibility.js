@@ -10,7 +10,7 @@
 // Pure function on purpose — testable without a DOM, and the RowMenu component
 // consumes the returned list as its render source of truth.
 
-const ORDER = ['install-prompt', 'rotate-key', 'edit', 'password', 'delete'];
+const ORDER = ['install-prompt', 'rotate-key', 'edit', 'password', 'reactivate', 'deactivate', 'delete'];
 
 const RANK = { user: 0, admin: 1, super_admin: 2 };
 
@@ -34,6 +34,12 @@ export function canRevealKeyOf(actor, row) {
 export function visibleMenuItems(actor, row) {
   const isSelf = actor.id === row.id;
   const actorIsSuper = actor.role === 'super_admin';
+
+  // A deactivated account only offers the way back (src/routes/admin-account-status.js);
+  // everything else would act on an account nobody can use.
+  if (row.deactivated_at) {
+    return actorIsSuper && !isSelf && row.id !== 1 ? ['reactivate'] : [];
+  }
 
   const show = {
     // The prompt carries the row's full API key, so it is offered only where the server
@@ -66,6 +72,10 @@ export function visibleMenuItems(actor, row) {
     // super_admin only; not self; not id=1 (seed super_admin, one recovery path
     // depends on it). Server enforces all three at src/routes/admin.js:281-283.
     delete: actorIsSuper && !isSelf && row.id !== 1,
+
+    // Same three rules as delete; the server enforces them in admin-account-status.js.
+    deactivate: actorIsSuper && !isSelf && row.id !== 1,
+    reactivate: false,
   };
 
   return ORDER.filter((id) => show[id]);
