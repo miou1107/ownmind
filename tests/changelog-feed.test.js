@@ -140,10 +140,20 @@ describe('parseChangelog — ordering and size', () => {
   });
 });
 
+// CHANGELOG.md holds v1.30 onward; everything older was moved to docs/changelog/ when the
+// file passed 1.2 MB. The footer only ever reads the newest 30 entries, so it reads
+// CHANGELOG.md alone. The properties below are about the whole history, so they read the
+// current file followed by the archives, newest first — the order a reader scrolls back in.
+const ARCHIVES = ['v1.26.md', 'v1.20-v1.25.md', 'v1.0-v1.19.md'];
+const currentMarkdown = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8');
+const historyMarkdown = [
+  currentMarkdown,
+  ...ARCHIVES.map((f) => readFileSync(join(repoRoot, 'docs', 'changelog', f), 'utf8')),
+].join('\n');
+
 describe('the real CHANGELOG.md', () => {
-  const entries = parseChangelog(readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8'), {
-    limit: Infinity,
-  });
+  const current = parseChangelog(currentMarkdown, { limit: Infinity });
+  const entries = parseChangelog(historyMarkdown, { limit: Infinity });
 
   it('parses into entries at all', () => {
     assert.ok(entries.length > 250, `only parsed ${entries.length} entries`);
@@ -152,7 +162,19 @@ describe('the real CHANGELOG.md', () => {
   it('leads with the version this build actually is', () => {
     // If the release step ever writes package.json without writing CHANGELOG.md,
     // the footer would show a version the user is not running.
-    assert.equal(entries[0].version, pkgVersion);
+    assert.equal(current[0].version, pkgVersion);
+  });
+
+  it('still fills the footer timeline on its own, without the archives', () => {
+    // The image copies CHANGELOG.md only. If a later split leaves fewer entries than the
+    // footer asks for, the timeline silently gets shorter.
+    assert.ok(current.length >= 30, `CHANGELOG.md has only ${current.length} entries`);
+  });
+
+  it('links every archive file, and every archive file exists', () => {
+    for (const f of ARCHIVES) {
+      assert.ok(currentMarkdown.includes(`docs/changelog/${f}`), `CHANGELOG.md does not link ${f}`);
+    }
   });
 
   it('gives every entry a title, so no row renders as a bare version number', () => {

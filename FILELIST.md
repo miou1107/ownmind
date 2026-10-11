@@ -1,5 +1,21 @@
 # OwnMind 檔案結構
 
+## CHANGELOG 拆檔（不發版）
+
+CHANGELOG.md 長到 1.25 MB，只留 v1.30 以後的版本，更早的照版本系列移到 docs/changelog/，內容一個字都沒改。
+
+新增檔：
+```
+docs/changelog/v1.26.md, docs/changelog/v1.20-v1.25.md, docs/changelog/v1.0-v1.19.md — 從 CHANGELOG.md 移出來的舊版本紀錄
+```
+
+修改檔：
+```
+CHANGELOG.md                                            — 只留 v1.30 以後，開頭加上舊紀錄的連結
+tests/changelog-feed.test.js                            — 檢查整份歷史時改讀 CHANGELOG.md 加三個舊紀錄檔；另檢查頁尾還有 30 版可顯示、三個連結都在
+tests/shebang-eol.test.js, .gitattributes               — 含 NUL 字元的那份檔改名為 docs/changelog/v1.0-v1.19.md
+```
+
 ## v1.32.10 修改（管理員複製安裝指令、複製金鑰時改成再輸入一次密碼）
 
 新增檔：
