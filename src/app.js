@@ -65,6 +65,17 @@ app.use('/api/me/login', authLimiter);
 // unauthenticated by necessity, because login now refuses to issue a key while the
 // account is still on the temporary one.
 app.use('/api/me/first-password', authLimiter);
+// A password check like login, so the same budget of 10 per 15 minutes, but only wrong
+// passwords count: a team re-confirming all morning from one office IP must not lock
+// itself out of logging in.
+app.use('/api/me/confirm-password', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number.isInteger(authRateLimitMax) && authRateLimitMax > 0 ? authRateLimitMax : 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '密碼輸入錯誤太多次，請 15 分鐘後再試' },
+}));
 app.use('/api/admin/setup', authLimiter);
 // v1.19.8 code-review I-1: align with /api/admin/setup to avoid being hit by mistake
 // (during first_run this won't block a user's trial-and-error, because the limit is
@@ -164,6 +175,7 @@ import { createDebugRouter } from './routes/debug.js';
 import setupRoutes from './routes/setup.js';
 import adminPasswordResetRoutes from './routes/admin-password-reset.js';
 import adminApiKeyRoutes from './routes/admin-api-key.js';
+import confirmPasswordRoutes from './routes/me-confirm-password.js';
 import apiKeyRotateRoutes from './routes/api-key-rotate.js';
 import bugReportsRoutes from './routes/bug-reports.js';
 import { createVersionRouter } from './routes/version.js';
@@ -185,6 +197,10 @@ app.use('/api/admin/users', adminPasswordResetRoutes);
 // One user's full API key, for yourself or someone below you (the list carries only a
 // prefix). Mounted before /api/admin for the same reason as the reset above.
 app.use('/api/admin/users', adminApiKeyRoutes);
+
+// Re-type the password instead of logging in again. Ahead of the me router, whose
+// router-level auth would otherwise answer first.
+app.use('/api/me/confirm-password', confirmPasswordRoutes);
 
 // Replace an API key: /api/me/rotate-key (your own) and /api/admin/users/:id/rotate-key
 // (someone below you). Ahead of the admin and me routers, whose router-level auth would

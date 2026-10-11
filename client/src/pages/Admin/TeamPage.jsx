@@ -5,12 +5,14 @@ import { useSession } from '../../session/SessionContext';
 import { apiGet, apiPost } from '../../api';
 import { mergeUsersWithUsage } from './user-merge.js';
 import { buildInstallPrompt, currentApiUrl } from '../../utils/install-prompt.js';
+import { copyPending } from '../../utils/copy-pending.js';
 import RowMenu from './RowMenu.jsx';
 import { canRevealKeyOf } from './menu-visibility.js';
 import AddUserModal from './AddUserModal.jsx';
 import EditUserModal from './EditUserModal.jsx';
 import PasswordModal from './PasswordModal.jsx';
 import DeleteUserModal from './DeleteUserModal.jsx';
+import ConfirmPasswordModal from './ConfirmPasswordModal.jsx';
 
 // 使用者管理 — Stage 2 of the single-console consolidation.
 //
@@ -86,46 +88,98 @@ export default function TeamPage() {
     window.setTimeout(() => setToast(''), 3000);
   };
 
+  // The server answers 403 with reauth_required when this login is older than 15 minutes;
+  // that error opens the password box instead of a toast.
+  const failure = (r, fallbackKey) => {
+    const err = new Error(r.error || t(fallbackKey));
+    err.reauthRequired = Boolean(r.data?.reauth_required);
+    return err;
+  };
+
   // The list carries only a key prefix; the full key is fetched one user at a time, and the
   // server hands it over only for yourself or someone ranked below you.
   const fetchKey = async (row) => {
     const r = await apiGet(`/api/admin/users/${row.id}/api-key`);
-    if (!r.ok || !r.data?.api_key) throw new Error(r.error || t('team.toast.copy_failed'));
+    if (!r.ok || !r.data?.api_key) throw failure(r, 'team.toast.copy_failed');
     return r.data.api_key;
   };
 
-  const handleSelect = async (menuId, row) => {
-    if (menuId === 'install-prompt') {
-      try {
-        const apiKey = await fetchKey(row);
-        const prompt = buildInstallPrompt({ ...row, api_key: apiKey }, currentApiUrl(window.location));
-        await navigator.clipboard.writeText(prompt);
-        showToast(t('team.toast.copied_install'));
-      } catch (err) {
-        showToast(err.message || t('team.toast.copy_failed'));
-      }
-      return;
+  // The text each copy action puts on the clipboard, as a promise that starts once `before`
+  // settles: right away from the menu, or after the password from the password box.
+  const copyValue = (kind, row, before, state) => {
+    const prompt = (apiKey) => buildInstallPrompt({ ...row, api_key: apiKey }, currentApiUrl(window.location));
+    if (kind === 'key') return before.then(() => fetchKey(row));
+    if (kind === 'install-prompt') return before.then(() => fetchKey(row)).then(prompt);
+    // rotate-key: the old key dies on the server the moment this succeeds.
+    return before
+      .then(() => apiPost(`/api/admin/users/${row.id}/rotate-key`))
+      .then((r) => {
+        if (!r.ok || !r.data?.api_key) throw failure(r, 'team.toast.rotate_failed');
+        state.rotated = true;
+        return prompt(r.data.api_key);
+      });
+  };
+
+  const DONE_TOAST = {
+    key: 'team.toast.copied_key',
+    'install-prompt': 'team.toast.copied_install',
+    'rotate-key': 'team.toast.rotated_key',
+  };
+
+  // Once the key has changed, a bare "copy failed" would read as "nothing happened". A
+  // browser refusing the clipboard throws a DOMException in English; the server's own
+  // reasons are plain Errors and are shown as they are.
+  const failToast = (err, state) => {
+    if (state.rotated) return showToast(t('team.toast.rotated_copy_failed'));
+    const fromBrowser = typeof DOMException !== 'undefined' && err instanceof DOMException;
+    showToast(fromBrowser || !err.message ? t('team.toast.copy_failed') : err.message);
+  };
+
+  // Called straight from a click, with no await before copyPending: Safari only allows the
+  // copy inside the click.
+  const runCopy = async (kind, row) => {
+    const state = {};
+    try {
+      await copyPending(copyValue(kind, row, Promise.resolve(), state));
+      showToast(t(DONE_TOAST[kind]));
+    } catch (err) {
+      if (err.reauthRequired) setModal({ type: 'confirm-password', kind, user: row });
+      else failToast(err, state);
     }
+  };
+
+  // The password box's confirm click: confirm the password, then the same copy. A wrong
+  // password rejects with wrongPassword so the box stays open; anything else closes it.
+  const confirmAndCopy = async (password) => {
+    const { kind, user: row } = modal;
+    const state = {};
+    const confirmed = apiPost('/api/me/confirm-password', { password }).then((r) => {
+      if (r.ok) return;
+      // status 0 is the network, not the password; its message is the browser's English.
+      if (r.status === 0) throw new Error(t('team.toast.copy_failed'));
+      const err = new Error(r.error || t('team.toast.copy_failed'));
+      err.wrongPassword = true;
+      throw err;
+    });
+    try {
+      await copyPending(copyValue(kind, row, confirmed, state));
+      setModal(null);
+      showToast(t(DONE_TOAST[kind]));
+    } catch (err) {
+      if (err.wrongPassword) throw err;
+      setModal(null);
+      failToast(err, state);
+    }
+  };
+
+  const handleSelect = (menuId, row) => {
+    if (menuId === 'install-prompt') return runCopy('install-prompt', row);
     if (menuId === 'rotate-key') {
-      // The old key dies on the server the moment this succeeds, so say so before, and hand
-      // the admin the new install prompt right after — it is the only time the key is shown.
+      // Say what replacing does before it happens; the new install prompt is copied right
+      // after — it is the only time the key is shown. v1.31.1: the console is signed in with
+      // a session, not the key, so replacing your own key leaves this browser signed in.
       if (!window.confirm(t('team.confirm.rotate_key', { email: row.email }))) return;
-      const r = await apiPost(`/api/admin/users/${row.id}/rotate-key`);
-      if (!r.ok || !r.data?.api_key) {
-        showToast(r.error || t('team.toast.rotate_failed'));
-        return;
-      }
-      // v1.31.1: the console is signed in with a session, not the key, so replacing your
-      // own key leaves this browser signed in — nothing to swap here.
-      try {
-        const prompt = buildInstallPrompt({ ...row, api_key: r.data.api_key }, currentApiUrl(window.location));
-        await navigator.clipboard.writeText(prompt);
-        showToast(t('team.toast.rotated_key'));
-      } catch {
-        // The key has changed either way; a bare "copy failed" would read as "nothing happened".
-        showToast(t('team.toast.rotated_copy_failed'));
-      }
-      return;
+      return runCopy('rotate-key', row);
     }
     setModal({ type: menuId, user: row });
   };
@@ -188,12 +242,7 @@ export default function TeamPage() {
                       {row.api_key_prefix}…
                       {canRevealKeyOf(actor, row) && (
                         <button
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(await fetchKey(row));
-                              showToast(t('team.toast.copied_key'));
-                            } catch { showToast(t('team.toast.copy_failed')); }
-                          }}
+                          onClick={() => runCopy('key', row)}
                           aria-label={t('common.copy')}
                           className="text-slate-400 hover:text-slate-700"
                         >
@@ -270,6 +319,11 @@ export default function TeamPage() {
         user={modal?.user}
         actorCanEditRole={session.role === 'super_admin' && modal?.user?.id !== session.id}
         onSaved={() => load()}
+      />
+      <ConfirmPasswordModal
+        isOpen={modal?.type === 'confirm-password'}
+        onClose={() => setModal(null)}
+        onConfirm={confirmAndCopy}
       />
       <PasswordModal
         isOpen={modal?.type === 'password'}
