@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## v1.32.10 修改（管理員複製安裝指令、複製金鑰時改成再輸入一次密碼）
+
+新增檔：
+```
+src/routes/me-confirm-password.js                       — POST /api/me/confirm-password：密碼正確就把這次登入的 password_confirmed_at 設成現在，算一次新的登入
+db/032_web_session_password_confirmed.sql               — web_sessions 加 password_confirmed_at 欄位
+client/src/utils/copy-pending.js                        — 在按下按鈕的當下就開始寫剪貼簿，內容等伺服器回來再填（Safari 只准這樣）
+client/src/pages/Admin/ConfirmPasswordModal.jsx         — 登入超過 15 分鐘時，請管理員再輸入一次密碼的小框
+tests/console-confirm-password.test.js, tests/team-copy-pending.test.js
+```
+
+修改檔：
+```
+src/utils/web-session.js                                — 判斷登入時間時取登入與最後一次確認密碼較晚的那一個
+src/app.js                                              — 掛上 confirm-password 與它自己的嘗試次數上限（只算輸錯的）
+client/src/pages/Admin/TeamPage.jsx                     — 三個複製動作共用一條路，被要求重新確認時打開密碼小框
+client/src/i18n/{zh,en,ja}.json                         — 密碼小框的標題、說明、按鈕
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.9 → 1.32.10
+```
+
 ## v1.32.7 修改（收工面板只在整則訊息就是收工時打開）
 
 修改檔：

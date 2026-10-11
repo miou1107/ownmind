@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.32.9** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.32.10** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -40,6 +40,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **Admins can copy an install command or a key without logging out and in again** — when the login is older than 15 minutes, 「複製安裝指令」, 「複製 API Key」 and 「更換金鑰」 open a box asking for the password once more; the right password copies straight away and is not asked again for 15 minutes. Copying now works in Safari too, and a failed copy says why. Server and console update. `v1.32.10`
 - **`/ownmind-week` still said the rules might be stale on a current install** — on 2026-10-04 it printed "自動更新失敗 70 次，規矩可能不是最新版" on a machine updated by hand that morning, while the pane card said 已是最新版. The card, the chart title and `/ownmind-week` now share one sentence: how many versions behind, or 已是最新版. When one of today's update attempts failed at the fetch step (the updater records that step), all three say the update server could not be reached instead of claiming the install is current. Client update only. `v1.31.11`
 - **總覽 answers two questions: is the AI keeping the rules, and how is the team using it** — one headline sentence for the period that names what needs a look; 「我的 AI 守規矩」: your own AI's rule rate against the period before with the three rules it missed most; for admins a second card, 「團隊的 AI 守規矩」: everyone's checks pooled into one rate with the period before and the team's three most-forgotten rules, then a table of each teammate's rule rate, conversations and a one-line verdict, problems first (the headline uses the team's numbers for admins; members see only their own card); at most five recent decisions (untouched for over 7 days they stay in 待你處理 but leave the home page, nothing is deleted); and a small footer for memory and computers. The four stat tiles and the daily chart are gone (用量與規矩 still shows usage). Server and console update. `v1.32.9`
 - **The overview's numbers count what they say** — a conversation is counted once however many times its session-start hook fired (startup, resume, clear and compact all run it; the hook now sends the session id), 「等你處理」 shows the real count rather than the length of a 20-row preview, the reporting light no longer lists MCP function names as silent tools, the top project is the one with the most sessions, and the last activity names the AI tool. Server, console and client update. `v1.32.8`

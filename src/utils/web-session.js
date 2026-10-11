@@ -73,7 +73,9 @@ export async function findSessionUser({ query, token, now = Date.now() }) {
   const tokenHash = hashToken(token);
   const result = await query(
     `SELECT u.id, u.email, u.name, u.role, u.settings, u.created_at,
-            s.id AS session_id, s.created_at AS session_created_at
+            s.id AS session_id,
+            -- A re-typed password counts as a fresh login (POST /api/me/confirm-password).
+            GREATEST(s.created_at, s.password_confirmed_at) AS session_created_at
        FROM web_sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1
