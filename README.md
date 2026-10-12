@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.32.10** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.32.12** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -40,6 +40,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **A machine nobody logs into no longer reports its usage scanner as dead every day** — one of the daily checks reads the schedule the operating system keeps for a logged-in user, so a headless Linux server, WSL or a container got the same "cannot connect" error whatever the timer was doing, and a healthy timer came back as a failure. On 2026-10-12 one Ubuntu server had its timer active and its last run 24 minutes old while that check failed. It now confirms there is a schedule to read before judging, and records itself as skipped when there is none, which stops the alert without claiming a timer nobody could see is healthy; a timer that really has stopped still fails, and still carries the command that starts it again; a machine with no such scheduler at all is now told to register the scanner with whatever it does use. Client update. `v1.32.12`
 - **Admins can copy an install command or a key without logging out and in again** — when the login is older than 15 minutes, 「複製安裝指令」, 「複製 API Key」 and 「更換金鑰」 open a box asking for the password once more; the right password copies straight away and is not asked again for 15 minutes. Copying now works in Safari too, and a failed copy says why. Server and console update. `v1.32.10`
 - **`/ownmind-week` still said the rules might be stale on a current install** — on 2026-10-04 it printed "自動更新失敗 70 次，規矩可能不是最新版" on a machine updated by hand that morning, while the pane card said 已是最新版. The card, the chart title and `/ownmind-week` now share one sentence: how many versions behind, or 已是最新版. When one of today's update attempts failed at the fetch step (the updater records that step), all three say the update server could not be reached instead of claiming the install is current. Client update only. `v1.31.11`
 - **總覽 answers two questions: is the AI keeping the rules, and how is the team using it** — one headline sentence for the period that names what needs a look; 「我的 AI 守規矩」: your own AI's rule rate against the period before with the three rules it missed most; for admins a second card, 「團隊的 AI 守規矩」: everyone's checks pooled into one rate with the period before and the team's three most-forgotten rules, then a table of each teammate's rule rate, conversations and a one-line verdict, problems first (the headline uses the team's numbers for admins; members see only their own card); at most five recent decisions (untouched for over 7 days they stay in 待你處理 but leave the home page, nothing is deleted); and a small footer for memory and computers. The four stat tiles and the daily chart are gone (用量與規矩 still shows usage). Server and console update. `v1.32.9`

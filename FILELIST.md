@@ -16,6 +16,19 @@ tests/changelog-feed.test.js                            — 檢查整份歷史�
 tests/shebang-eol.test.js, .gitattributes               — 含 NUL 字元的那份檔改名為 docs/changelog/v1.0-v1.19.md
 ```
 
+## v1.32.12 修改（沒有人登入的機器不再誤報掃描排程失敗）
+
+新增檔：
+```
+tests/self-check-scheduler-user-bus.test.js             — 用 PATH 上的假 systemctl 跑真的檢查函式，八條：讀不到排程表、整台沒有 systemctl、問到一半逾時三種都是 warn 且各自的說法不同，排程真的停掉時照樣 fail 且寫出狀態，排程正常時 pass 且只花一次呼叫。那個假的 systemctl 是 POSIX shell script，所以 Windows 上這七條標成跳過（那一段程式也只出貨到 Linux）
+```
+
+修改檔：
+```
+scripts/install-helpers/self-check.cjs                  — Linux 那段抽成 checkSchedulerLinux 並匯出（在 Mac 上不會執行到，而這個缺陷只發生在 Linux）；判定失敗前先確認這台機器有沒有排程表可以讀，讀不到標成 warn（只有 fail 會發警告，所以 warn 不吵，又不會謊稱排程正常）；整台沒有 systemctl、以及問不出答案（逾時、spawn 失敗）各有自己的 warn 說法；排程真的停掉時回報 fail，寫出狀態並附上重新啟用的指令
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.10 → 1.32.12（1.32.11 已經由「停用帳號」那一版用掉）
+```
+
 ## v1.32.10 修改（管理員複製安裝指令、複製金鑰時改成再輸入一次密碼）
 
 新增檔：

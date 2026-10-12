@@ -791,6 +791,98 @@ function taskRunFailed(code) {
   return !(n >= 0x41300 && n <= 0x413ff);
 }
 
+const SCHEDULER_TIMER = 'ownmind-usage-scanner.timer';
+const SCHEDULER_FIX =
+  'Re-run install.sh or: systemctl --user enable --now ownmind-usage-scanner.timer';
+const NO_SYSTEMCTL_DETAIL =
+  'skipped: systemctl not found, so nothing on this machine schedules the scanner';
+const NO_SYSTEMCTL_FIX =
+  'Register the scanner with whatever this machine uses instead of systemd (cron, OpenRC, a supervisor)';
+const NO_USER_BUS_DETAIL =
+  'skipped: no systemd user bus reachable from this process (timer state unknown)';
+
+/**
+ * Three answers, not two: the bus is there, the bus is not there, or the probe itself
+ * could not run and we learned nothing.
+ *
+ * `systemctl --user` needs DBUS_SESSION_BUS_ADDRESS / XDG_RUNTIME_DIR, and a process gets
+ * those by being started inside a login session. A cron job, a bare `ssh host cmd`, a
+ * container and WSL have none of them, so every `--user` call there fails with
+ * "Failed to connect to bus" whatever state the timer is really in.
+ *
+ * `ensure-scanner-schedule.sh` has probed for this since v1.26.79, and its comment names
+ * this caller exactly: "A caller without that environment - a cron job, say - would fail
+ * this probe on a machine where the timer works fine". The repair skipped quietly and the
+ * check beside it kept reporting a failure, so the pair disagreed about the same machine.
+ *
+ * 'unknown' exists because `catch {}` around a probe turns every unrelated failure into
+ * "no bus": a five-second timeout against a systemd user manager that has hung, a spawn
+ * refused with EMFILE or EAGAIN, maxBuffer exceeded. Those are not evidence of a missing
+ * bus, and a check that reads them as one goes quiet exactly when something is wrong.
+ * The process ran and exited non-zero -> absent. It never ran, or was killed on the
+ * timeout -> unknown.
+ */
+async function userBusState() {
+  try {
+    await execFileAsync('systemctl', ['--user', 'show-environment'], { timeout: TIMEOUT_MS });
+    return 'present';
+  } catch (e) {
+    if (e?.killed || e?.signal) return 'unknown';
+    return typeof e?.code === 'number' ? 'absent' : 'unknown';
+  }
+}
+
+/**
+ * Linux half of checkScheduler, separate so it can be exercised from any platform - the
+ * same reason the Windows-only helpers below are exported.
+ *
+ * Evidence this exists (2026-10-12, a headless Ubuntu box): the daily report carried
+ * `scheduler` as a failure with the bus error above, while `systemctl --user list-timers`
+ * on that machine showed the timer active, the last run 24 minutes earlier and exit 0, and
+ * the scanner log showed usage reaching the server. The self-check was running inside a
+ * session cron had started. The timer was never the problem.
+ *
+ * So nothing is called a failure until we know we could have seen one. "Cannot tell" is
+ * not "broken", for the same reason `taskRunFailed` refuses to read an unreadable exit
+ * code as a failure: a check that fires when it cannot tell teaches people to ignore it,
+ * and this is the check that exists to notice usage collection dying.
+ *
+ * Cannot-tell reports warn rather than pass. Only `fail` raises an alert
+ * (`src/lib/install-check-alerts.js`), so warn stops the daily false alarm without
+ * claiming a timer nobody looked at is healthy. pass would have claimed exactly that:
+ * `usage_roundtrip` cannot cover for it, because that check runs a scan of its own
+ * before asking the server, so it stays green on a machine whose timer has been dead
+ * for months. Nothing on the client can see a dead schedule without a bus; the server
+ * already receives the heartbeat that can.
+ */
+async function checkSchedulerLinux() {
+  // The probe costs a second process, so a healthy machine never pays for it: an active
+  // timer has already answered the question by the time we would have asked.
+  try {
+    const { stdout } = await execFileAsync('systemctl',
+      ['--user', 'is-active', SCHEDULER_TIMER],
+      { timeout: TIMEOUT_MS });
+    const out = stdout.trim();
+    if (out === 'active') return pass('scheduler', 'systemd timer active');
+    return fail('scheduler', `timer state=${out}`, SCHEDULER_FIX);
+  } catch (e) {
+    // `is-active` exits non-zero for a dead timer, so this is the branch a real failure
+    // arrives in, and its stdout still carries the state word.
+    if (e?.code === 'ENOENT') return warn('scheduler', NO_SYSTEMCTL_DETAIL, NO_SYSTEMCTL_FIX);
+    const bus = await userBusState();
+    if (bus === 'absent') return warn('scheduler', NO_USER_BUS_DETAIL, SCHEDULER_FIX);
+    if (bus === 'unknown') {
+      return warn('scheduler',
+        `skipped: could not ask systemd about the timer (${sanitizePath(e?.message)})`,
+        SCHEDULER_FIX);
+    }
+    const state = String(e?.stdout || '').trim();
+    return fail('scheduler',
+      state ? `timer state=${state}` : `systemctl failed: ${sanitizePath(e?.message)}`,
+      SCHEDULER_FIX);
+  }
+}
+
 async function checkScheduler() {
   if (PLATFORM === 'darwin') {
     try {
@@ -805,18 +897,7 @@ async function checkScheduler() {
     }
   }
   if (PLATFORM === 'linux') {
-    try {
-      const { stdout } = await execFileAsync('systemctl',
-        ['--user', 'is-active', 'ownmind-usage-scanner.timer'],
-        { timeout: TIMEOUT_MS });
-      const out = stdout.trim();
-      if (out === 'active') return pass('scheduler', 'systemd timer active');
-      return fail('scheduler', `timer state=${out}`,
-        'Re-run install.sh or: systemctl --user enable --now ownmind-usage-scanner.timer');
-    } catch (e) {
-      return fail('scheduler', `systemctl failed: ${sanitizePath(e?.message)}`,
-        'Check systemd user instance');
-    }
+    return checkSchedulerLinux();
   }
   if (PLATFORM === 'win32') {
     // v1.17.66: passing a shell flag used to wrap the command in cmd.exe, which would eat
@@ -1728,6 +1809,10 @@ module.exports = {
   // v1.26.117 — registered is not started.
   checkMcpLaunches, MCP_PREFLIGHT_TIMEOUT_MS,
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
+  // v1.32.12 — the Linux branch, exported for the same reason as the Windows ones below:
+  // the machines where a missing user bus turns a healthy timer into a daily false alarm
+  // are not the machines this test suite usually runs on.
+  checkSchedulerLinux, userBusState, NO_USER_BUS_DETAIL, NO_SYSTEMCTL_DETAIL,
   // v1.26.162 — state=Ready said the task exists; nothing read what its last run returned.
   taskRunFailed,
   // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
