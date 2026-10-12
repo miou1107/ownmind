@@ -20,7 +20,7 @@ tests/shebang-eol.test.js, .gitattributes               — 含 NUL 字元的那
 
 新增檔：
 ```
-tests/self-check-scheduler-user-bus.test.js             — 用 PATH 上的假 systemctl 跑真的檢查函式，八條：讀不到排程表、整台沒有 systemctl、問到一半逾時三種都是 warn 且各自的說法不同，排程真的停掉時照樣 fail 且寫出狀態，排程正常時 pass 且只花一次呼叫
+tests/self-check-scheduler-user-bus.test.js             — 用 PATH 上的假 systemctl 跑真的檢查函式，八條：讀不到排程表、整台沒有 systemctl、問到一半逾時三種都是 warn 且各自的說法不同，排程真的停掉時照樣 fail 且寫出狀態，排程正常時 pass 且只花一次呼叫。那個假的 systemctl 是 POSIX shell script，所以 Windows 上這七條標成跳過（那一段程式也只出貨到 Linux）
 ```
 
 修改檔：

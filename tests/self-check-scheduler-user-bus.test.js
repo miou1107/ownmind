@@ -43,6 +43,13 @@ const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const selfCheck = require(path.join(repoRoot, 'scripts/install-helpers/self-check.cjs'));
 
+// The stub is a POSIX shell script and the branch under test only ever runs on Linux, so
+// Windows cannot exercise it. Skipped rather than quietly passing: the Windows runner has
+// no `systemctl` and no `/bin/sh`, and a green line there would be claiming otherwise.
+const posix = process.platform === 'win32'
+  ? { skip: 'needs a POSIX shell for the systemctl stub; this branch only runs on Linux' }
+  : {};
+
 let sandbox;
 let state;
 let binWithSystemctl;
@@ -120,7 +127,7 @@ describe('v1.32.12 — checkSchedulerLinux when it cannot see the timer', () => 
       'checkSchedulerLinux must be exported; the Linux branch is unreachable on a Mac otherwise');
   });
 
-  it('no user bus: warn, not fail and not pass', async () => {
+  it('no user bus: warn, not fail and not pass', posix, async () => {
     const r = await selfCheck.checkSchedulerLinux();
     assert.equal(r.name, 'scheduler');
     assert.equal(r.status, 'warn',
@@ -129,13 +136,13 @@ describe('v1.32.12 — checkSchedulerLinux when it cannot see the timer', () => 
       'the detail has to be the shared constant, so a log line cannot claim a check that never ran');
   });
 
-  it('no user bus: the check actually asked whether a bus was there', async () => {
+  it('no user bus: the check actually asked whether a bus was there', posix, async () => {
     await selfCheck.checkSchedulerLinux();
     assert.match(calls(), /show-environment/,
       'the skip must be decided by probing for the bus, not by matching the error text');
   });
 
-  it('no systemctl at all: warn, and says nothing is scheduling the scanner', async () => {
+  it('no systemctl at all: warn, and says nothing is scheduling the scanner', posix, async () => {
     process.env.PATH = binWithout;
     const r = await selfCheck.checkSchedulerLinux();
     assert.equal(r.status, 'warn');
@@ -145,7 +152,7 @@ describe('v1.32.12 — checkSchedulerLinux when it cannot see the timer', () => 
       'telling a machine without systemctl to run systemctl is not a repair');
   });
 
-  it('the bus probe times out: warn, and says the question went unanswered', async () => {
+  it('the bus probe times out: warn, and says the question went unanswered', posix, async () => {
     setHang();
     const r = await selfCheck.checkSchedulerLinux();
     assert.equal(r.status, 'warn');
@@ -154,7 +161,7 @@ describe('v1.32.12 — checkSchedulerLinux when it cannot see the timer', () => 
     assert.notEqual(r.detail, selfCheck.NO_USER_BUS_DETAIL);
   });
 
-  it('bus is there and the timer is dead: fails, and names the state', async () => {
+  it('bus is there and the timer is dead: fails, and names the state', posix, async () => {
     setBus();
     const r = await selfCheck.checkSchedulerLinux();
     assert.equal(r.status, 'fail',
@@ -165,7 +172,7 @@ describe('v1.32.12 — checkSchedulerLinux when it cannot see the timer', () => 
       'a failure has to carry the command that repairs it');
   });
 
-  it('bus is there and the timer is active: passes', async () => {
+  it('bus is there and the timer is active: passes', posix, async () => {
     setBus();
     setActive();
     const r = await selfCheck.checkSchedulerLinux();
@@ -174,7 +181,7 @@ describe('v1.32.12 — checkSchedulerLinux when it cannot see the timer', () => 
       'a timer that really is active must not be reported as skipped');
   });
 
-  it('the happy path costs one systemctl call', async () => {
+  it('the happy path costs one systemctl call', posix, async () => {
     setBus();
     setActive();
     await selfCheck.checkSchedulerLinux();
