@@ -91,7 +91,7 @@ export default async function auth(req, res, next, deps = {}) {
     }
 
     const result = await query(
-      'SELECT id, email, name, role, settings, created_at FROM users WHERE api_key = $1',
+      'SELECT id, email, name, role, settings, created_at FROM users WHERE api_key = $1 AND deactivated_at IS NULL',
       [apiKey]
     );
 
