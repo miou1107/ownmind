@@ -140,8 +140,11 @@ const headId = async ($: any, cwd: string) => (await sh($, ['git', 'rev-parse', 
 // git cannot find (another repo, pruned) would make every comparison against it come back empty.
 const startCommit = async ($: any, cwd: string, b: WrapupBaseline) =>
   b.head && (await sh($, ['git', 'rev-parse', '--verify', '--quiet', `${b.head}^{commit}`], cwd)).trim() ? b.head : ''
+// The worktrees `git worktree add` made. The list always starts with the main working tree, which
+// is the project itself: a folder the session ran `git init` in had no list at the start, and
+// counting its main tree told the user to delete the project (issue #186).
 const worktrees = async ($: any, cwd: string) =>
-  lines(await sh($, ['git', 'worktree', 'list', '--porcelain'], cwd)).filter(l => l.startsWith('worktree ')).map(l => l.slice(9))
+  lines(await sh($, ['git', 'worktree', 'list', '--porcelain'], cwd)).filter(l => l.startsWith('worktree ')).map(l => l.slice(9)).slice(1)
 
 // What the machine and the checkout look like when the session starts. Every check compares
 // against it, so only what this session added or changed counts: other windows work in the same
