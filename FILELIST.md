@@ -1,13 +1,14 @@
 # OwnMind 檔案結構
 
-## 收工面板不把專案資料夾本身算成 worktree（issue #186，尚未發布）
+## v1.32.14 修改（收工面板不把專案資料夾本身算成 worktree；修補四個套件漏洞）
 
 修改檔：
 ```
 mods/wrapup-check/hooks/register.tsx                    — worktrees() 略過 git worktree list --porcelain 的第一筆（專案資料夾本身），基準和收工檢查都只比對 git worktree add 開出來的資料夾
 mods/wrapup-check/hooks/pane.test.tsx                   — 新增一條（共 20 條）：不是 git 專案的資料夾記完基準後 git init，測試環境殘留維持綠色；之後用 git worktree add 開的資料夾照樣列出來
 openspec/changes/v1.31.4-wrapup-check-mod/spec.md       — 測試環境殘留加上兩個情境：對話途中 git init、對話途中 git worktree add
-README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md      — 加上這次修正，版號等發版時再補
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.13 → 1.32.14
+package-lock.json, mcp/package.json, mcp/package-lock.json, client/package-lock.json — 套件安全更新（PR #172）：proxy-addr 2.0.8、@modelcontextprotocol/sdk 1.31.0、source-map-js 1.2.2
 ```
 
 ## v1.32.13 修改（帳號可以停用，不用刪除）
