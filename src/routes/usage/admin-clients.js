@@ -95,6 +95,7 @@ export async function loadClients({ query, serverVersion, now, canonicalHost = n
             h.api_host
        FROM users u
        LEFT JOIN collector_heartbeat h ON h.user_id = u.id
+      WHERE u.deactivated_at IS NULL
       ORDER BY u.id, h.tool NULLS LAST, h.machine NULLS LAST`
   );
 

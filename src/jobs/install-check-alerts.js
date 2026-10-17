@@ -43,6 +43,7 @@ const LATEST_REPORTS_SQL = `
   FROM install_check_logs l
   JOIN users u ON u.id = l.user_id
   WHERE l.machine IS NOT NULL
+    AND u.deactivated_at IS NULL
     AND jsonb_typeof(l.full_log->'checks') = 'array'
     AND jsonb_array_length(l.full_log->'checks') > 0
   ORDER BY l.user_id, l.machine, l.id DESC

@@ -12,7 +12,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { visibleMenuItems } from '../client/src/pages/Admin/menu-visibility.js';
 
-const ITEMS = ['install-prompt', 'rotate-key', 'edit', 'password', 'delete'];
+const ITEMS = ['install-prompt', 'rotate-key', 'edit', 'password', 'reactivate', 'deactivate', 'delete'];
 
 // Fixed cast for readability. Actor is who's clicking; row is whose menu is being opened.
 const SUPER = { id: 1, role: 'super_admin' };
@@ -125,10 +125,10 @@ describe('visibleMenuItems — delete (item 4) visibility', () => {
 });
 
 describe('visibleMenuItems — combined scenarios from spec', () => {
-  it('super_admin viewing another admin: all five visible', () => {
+  it('super_admin viewing another admin: every item for an active account', () => {
     assert.deepEqual(
       visibleMenuItems(SUPER, ADMIN),
-      ['install-prompt', 'rotate-key', 'edit', 'password', 'delete'],
+      ['install-prompt', 'rotate-key', 'edit', 'password', 'deactivate', 'delete'],
     );
   });
 
@@ -144,5 +144,20 @@ describe('visibleMenuItems — combined scenarios from spec', () => {
       visibleMenuItems(ADMIN, SUPER),
       ['edit'],
     );
+  });
+});
+
+describe('visibleMenuItems — deactivated accounts', () => {
+  const GONE = { id: 6, role: 'user', deactivated_at: '2026-10-11T00:00:00Z' };
+  it('a super_admin sees only the way back', () => {
+    assert.deepEqual(visibleMenuItems(SUPER, GONE), ['reactivate']);
+  });
+  it('anyone else sees nothing to do', () => {
+    assert.deepEqual(visibleMenuItems(ADMIN, GONE), []);
+  });
+  it('deactivate follows the delete rules', () => {
+    assert.equal(visibleMenuItems(SUPER, SUPER).includes('deactivate'), false);
+    assert.equal(visibleMenuItems(ADMIN, MEMBER).includes('deactivate'), false);
+    assert.ok(visibleMenuItems(SUPER, MEMBER).includes('deactivate'));
   });
 });

@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.32.13 修改（帳號可以停用，不用刪除）
+
+新增檔：
+```
+src/routes/admin-account-status.js                      — POST /api/admin/users/:id/deactivate、/reactivate：只有超級管理員，不能停用自己與 1 號帳號；停用時換掉金鑰、結束後台登入
+db/033_user_deactivated.sql                             — users 加 deactivated_at、deactivated_by
+client/src/pages/Admin/DeactivateUserModal.jsx          — 停用前的確認視窗
+tests/account-deactivate.test.js
+```
+
+修改檔：
+```
+src/middleware/auth.js, src/utils/web-session.js        — 停用的帳號用金鑰或既有的後台登入都進不來
+src/routes/me.js                                        — 登入與首次設密碼擋下停用帳號；團隊報告與稽核提醒不列停用帳號
+src/routes/usage/{team-overview,team-stats,admin-clients}.js, src/routes/{me-overview,me-narrative,activity}.js — 團隊名單不列停用帳號
+src/jobs/{install-check-alerts,collector-silence-alerts,weeklyReport}.js — 提醒與週報不寄給、不提停用帳號
+src/routes/admin.js                                     — 使用者清單帶出 deactivated_at
+src/app.js                                              — 掛上 admin-account-status
+client/src/pages/Admin/{TeamPage,RowMenu}.jsx, menu-visibility.js — 停用的那一列變灰、只剩「重新啟用」
+client/src/i18n/{zh,en,ja}.json                         — 停用相關文字
+tests/team-menu-visibility.test.js                      — 選單多了停用與重新啟用
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.12 → 1.32.13（原本編 1.32.11，1.32.12 先發了，所以改號）
+```
+
 ## CHANGELOG 拆檔（不發版）
 
 CHANGELOG.md 長到 1.25 MB，只留 v1.30 以後的版本，更早的照版本系列移到 docs/changelog/，內容一個字都沒改。
@@ -26,7 +50,7 @@ tests/self-check-scheduler-user-bus.test.js             — 用 PATH 上的假 s
 修改檔：
 ```
 scripts/install-helpers/self-check.cjs                  — Linux 那段抽成 checkSchedulerLinux 並匯出（在 Mac 上不會執行到，而這個缺陷只發生在 Linux）；判定失敗前先確認這台機器有沒有排程表可以讀，讀不到標成 warn（只有 fail 會發警告，所以 warn 不吵，又不會謊稱排程正常）；整台沒有 systemctl、以及問不出答案（逾時、spawn 失敗）各有自己的 warn 說法；排程真的停掉時回報 fail，寫出狀態並附上重新啟用的指令
-package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.10 → 1.32.12（1.32.11 已經由「停用帳號」那一版用掉）
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.10 → 1.32.12（1.32.11 原本留給「停用帳號」，那一版後來改成 1.32.13）
 ```
 
 ## v1.32.10 修改（管理員複製安裝指令、複製金鑰時改成再輸入一次密碼）

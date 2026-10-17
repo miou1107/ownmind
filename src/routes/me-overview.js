@@ -233,6 +233,7 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
               WHERE event = 'iron_rule_compliance' AND ts >= NOW() - INTERVAL '${days}'
               GROUP BY user_id
            ) c ON c.user_id = u.id
+          WHERE u.deactivated_at IS NULL
           ORDER BY u.id`,
       )
       : Promise.resolve(null),

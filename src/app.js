@@ -175,6 +175,7 @@ import { createDebugRouter } from './routes/debug.js';
 import setupRoutes from './routes/setup.js';
 import adminPasswordResetRoutes from './routes/admin-password-reset.js';
 import adminApiKeyRoutes from './routes/admin-api-key.js';
+import accountStatusRoutes from './routes/admin-account-status.js';
 import confirmPasswordRoutes from './routes/me-confirm-password.js';
 import apiKeyRotateRoutes from './routes/api-key-rotate.js';
 import bugReportsRoutes from './routes/bug-reports.js';
@@ -197,6 +198,10 @@ app.use('/api/admin/users', adminPasswordResetRoutes);
 // One user's full API key, for yourself or someone below you (the list carries only a
 // prefix). Mounted before /api/admin for the same reason as the reset above.
 app.use('/api/admin/users', adminApiKeyRoutes);
+
+// Turn an account off or back on without deleting it. Mounted before /api/admin for the
+// same reason as the two above.
+app.use('/api/admin/users', accountStatusRoutes);
 
 // Re-type the password instead of logging in again. Ahead of the me router, whose
 // router-level auth would otherwise answer first.

@@ -618,7 +618,7 @@ router.get('/stats/all', adminAuth, async (req, res) => {
           (SELECT MAX(ts) FROM token_events WHERE user_id = u.id),
           (SELECT MAX(created_at) FROM session_logs WHERE user_id = u.id)
         ) as last_active
-      FROM users u ORDER BY last_active DESC NULLS LAST
+      FROM users u WHERE u.deactivated_at IS NULL ORDER BY last_active DESC NULLS LAST
     `, [fromDate]);
 
     // Per-user tool/model distribution.
