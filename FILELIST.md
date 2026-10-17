@@ -1,5 +1,15 @@
 # OwnMind 檔案結構
 
+## 收工面板不把專案資料夾本身算成 worktree（issue #186，尚未發布）
+
+修改檔：
+```
+mods/wrapup-check/hooks/register.tsx                    — worktrees() 略過 git worktree list --porcelain 的第一筆（專案資料夾本身），基準和收工檢查都只比對 git worktree add 開出來的資料夾
+mods/wrapup-check/hooks/pane.test.tsx                   — 新增一條（共 20 條）：不是 git 專案的資料夾記完基準後 git init，測試環境殘留維持綠色；之後用 git worktree add 開的資料夾照樣列出來
+openspec/changes/v1.31.4-wrapup-check-mod/spec.md       — 測試環境殘留加上兩個情境：對話途中 git init、對話途中 git worktree add
+README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md      — 加上這次修正，版號等發版時再補
+```
+
 ## CHANGELOG 拆檔（不發版）
 
 CHANGELOG.md 長到 1.25 MB，只留 v1.30 以後的版本，更早的照版本系列移到 docs/changelog/，內容一個字都沒改。
@@ -105,17 +115,19 @@ mods/wrapup-check/hooks/register.tsx
                                        終端機一列一項、點名稱展開），並把文字版
                                        塞進 prompt 的 context 給 AI 回話用；殘留那一項跟
                                        session 開始時的快照比，別的專案 docker compose 起的
-                                       container 和 OwnMind 回話檢查的 agy 不算；註冊
+                                       container 和 OwnMind 回話檢查的 agy 不算，worktree 只算
+                                       git worktree add 開出來的（專案資料夾本身不算）；註冊
                                        mcp__wrapup-check__resolve：AI 處理完一格黃的就呼叫它，
                                        那一格變綠並顯示 AI 寫的一句話，紅的會被退回；
                                        再打一次收工就從頭算
 mods/wrapup-check/hooks/pane.test.tsx
-                                     — 19 條：打收工會跑六項、開面板、把結果交給 AI；沒有
+                                     — 20 條：打收工會跑六項、開面板、把結果交給 AI；沒有
                                        關鍵字什麼都不做；乾淨的 repo 六格都是綠的；黃的處理完
                                        變綠、紅的退回、再收工從頭算；agy 的 port 不算殘留；
                                        清單在 AI 回話完成前後的字、子代理結束不算；回話途中打收工、被擋下的收工不會卡在處理中；
                                        標題列寫進行中或幾點完成；六項全綠而且 AI 回完話才出現結尾橫幅；
-                                       別的視窗留下的分支、stash、檔案、port 不算這個視窗的（v1.31.9）
+                                       別的視窗留下的分支、stash、檔案、port 不算這個視窗的（v1.31.9）；
+                                       對話途中 git init 的資料夾不算殘留，git worktree add 開的照樣算（#186）
 mods/wrapup-check/types/index.d.ts   — 面板資料的型別
 mods/wrapup-check/tsconfig.json      — 編輯器用的型別設定
 openspec/changes/v1.31.4-wrapup-check-mod/{proposal,spec,tasks}.md

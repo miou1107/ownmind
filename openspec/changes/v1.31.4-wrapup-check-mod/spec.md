@@ -60,6 +60,15 @@ GIVEN a container listed by `docker ps` with a compose working-directory label o
 WHEN the residue check runs
 THEN that container is not reported.
 
+GIVEN the session started in a folder that was not a git checkout, and `git init` ran in it during the session
+WHEN the residue check runs
+THEN the folder itself is not reported as a worktree the session left, and 測試環境殘留 stays green (issue #186).
+
+GIVEN `git worktree add` made a worktree during the session and it is still there
+WHEN the residue check runs
+THEN 測試環境殘留 is red and names that worktree. The main working tree, always the first entry of
+`git worktree list`, is never counted, in the baseline or at wrap-up.
+
 ## The installer helper
 
 GIVEN no ~/.claude/settings.json

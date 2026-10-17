@@ -237,6 +237,24 @@ test('outside a git checkout the four git rows say so instead of showing green',
   expect((r.text.match(/這個資料夾不是 git 專案/g) ?? []).length).toBe(4)
 })
 
+test('a folder the session ran git init in is not a worktree it left; one it added still is (issue #186)', async ($, on) => {
+  // The session starts in a folder that is not a repo yet: every git command answers nothing.
+  const git: Record<string, string> = {}
+  setup(on, git, world())
+  ;(on as any)('ui.open', () => ({ value: { isPlaced: true } }))
+  ;(on as any)('command.run', () => ({ text: '' }))
+  await start($)
+  // git init: the folder itself is now the first entry `git worktree list` prints.
+  Object.assign(git, CLEAN)
+  const r = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
+  expect(r.text).not.toMatch(/worktree 還在/)
+  expect(r.text).toMatch(/已乾淨[\s\S]*- 測試環境殘留：跟 session 開始的時候比，沒有多出[\s\S]*待辦/)
+  // `git worktree add` from the new repo: that one is this session's to clean.
+  git['git worktree list --porcelain'] = `worktree ${CWD}\nHEAD aaa\nbranch refs/heads/main\n\nworktree /w/idaytour-try\nHEAD bbb\nbranch refs/heads/try\n\n`
+  const again = await ($ as any).command.run({ command: 'wrapup', args: '', origin: { kind: 'composer' } })
+  expect(again.text).toMatch(/這個 session 建的 worktree 還在：idaytour-try$/m)
+})
+
 test('a container of another project (compose working dir elsewhere) is not residue; a failed subagent is not owed', async ($, on) => {
   const w = world()
   setup(on, CLEAN, w)
