@@ -142,6 +142,7 @@ async function collectSections({ query, range }) {
       ) AS measured
     FROM users u
     LEFT JOIN activity_logs a ON a.user_id = u.id AND a.ts ${tfTs}
+    WHERE u.deactivated_at IS NULL
     GROUP BY u.id, u.name, u.role
     ORDER BY events DESC NULLS LAST
   `)).rows;

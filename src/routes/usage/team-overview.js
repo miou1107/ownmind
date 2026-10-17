@@ -140,7 +140,7 @@ export function createTeamOverviewRouter(deps = {}) {
                          ORDER BY sl.created_at DESC) AS sessions_json
           FROM users u
           JOIN session_logs sl ON sl.user_id = u.id
-         WHERE sl.created_at >= $1 AND sl.created_at <= $2
+         WHERE u.deactivated_at IS NULL AND sl.created_at >= $1 AND sl.created_at <= $2
          GROUP BY u.id, u.name
          ORDER BY last_active_at DESC NULLS LAST`;
       const result = await query(sql, [from.toISOString(), to.toISOString()]);

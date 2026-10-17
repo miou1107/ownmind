@@ -7,12 +7,13 @@ import { mergeUsersWithUsage } from './user-merge.js';
 import { buildInstallPrompt, currentApiUrl } from '../../utils/install-prompt.js';
 import { copyPending } from '../../utils/copy-pending.js';
 import RowMenu from './RowMenu.jsx';
-import { canRevealKeyOf } from './menu-visibility.js';
+import { canRevealKeyOf, visibleMenuItems } from './menu-visibility.js';
 import AddUserModal from './AddUserModal.jsx';
 import EditUserModal from './EditUserModal.jsx';
 import PasswordModal from './PasswordModal.jsx';
 import DeleteUserModal from './DeleteUserModal.jsx';
 import ConfirmPasswordModal from './ConfirmPasswordModal.jsx';
+import DeactivateUserModal from './DeactivateUserModal.jsx';
 
 // 使用者管理 — Stage 2 of the single-console consolidation.
 //
@@ -74,7 +75,7 @@ export default function TeamPage() {
   const rows = useMemo(() => mergeUsersWithUsage(users, stats), [users, stats]);
 
   const adminCount = useMemo(
-    () => users.filter((u) => u.role === 'admin' || u.role === 'super_admin').length,
+    () => users.filter((u) => !u.deactivated_at && (u.role === 'admin' || u.role === 'super_admin')).length,
     [users],
   );
 
@@ -172,8 +173,15 @@ export default function TeamPage() {
     }
   };
 
+  const reactivate = async (row) => {
+    const r = await apiPost(`/api/admin/users/${row.id}/reactivate`);
+    showToast(r.ok ? t('team.toast.reactivated', { email: row.email }) : (r.status === 0 || !r.error ? t('team.toast.reactivate_failed') : r.error));
+    if (r.ok) load();
+  };
+
   const handleSelect = (menuId, row) => {
     if (menuId === 'install-prompt') return runCopy('install-prompt', row);
+    if (menuId === 'reactivate') return reactivate(row);
     if (menuId === 'rotate-key') {
       // Say what replacing does before it happens; the new install prompt is copied right
       // after — it is the only time the key is shown. v1.31.1: the console is signed in with
@@ -232,15 +240,22 @@ export default function TeamPage() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-slate-100">
+                <tr key={row.id} className={`border-t border-slate-100 ${row.deactivated_at ? 'bg-slate-50' : ''}`}>
                   <td className="px-3 py-3">
-                    <div className="font-medium text-slate-900 break-all">{row.email}</div>
+                    <div className={`font-medium break-all ${row.deactivated_at ? 'text-slate-400' : 'text-slate-900'}`}>
+                      {row.email}
+                      {row.deactivated_at && (
+                        <span className="ml-2 px-2 py-0.5 rounded text-xs font-normal bg-slate-200 text-slate-600">
+                          {t('team.badge.deactivated')}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-500">{row.name || '—'}</div>
                   </td>
                   <td className="px-3 py-3 font-mono text-xs text-slate-500">
                     <span className="inline-flex items-center gap-1">
                       {row.api_key_prefix}…
-                      {canRevealKeyOf(actor, row) && (
+                      {canRevealKeyOf(actor, row) && !row.deactivated_at && (
                         <button
                           onClick={() => runCopy('key', row)}
                           aria-label={t('common.copy')}
@@ -264,7 +279,9 @@ export default function TeamPage() {
                     )}
                   </td>
                   <td className="px-3 py-3 text-xs">
-                    {row.usage.measured ? (
+                    {row.deactivated_at ? (
+                      <span className="text-slate-400">{t('team.usage.deactivated')}</span>
+                    ) : row.usage.measured ? (
                       <>
                         <div className="tabular-nums text-slate-700">
                           {row.usage.total_tokens.toLocaleString()} tokens
@@ -278,6 +295,7 @@ export default function TeamPage() {
                     )}
                   </td>
                   <td className="px-3 py-3 text-right relative">
+                    {visibleMenuItems(actor, row).length > 0 && (
                     <button
                       onClick={() => setMenuOpenFor(menuOpenFor === row.id ? null : row.id)}
                       aria-label={t('common.actions')}
@@ -285,6 +303,7 @@ export default function TeamPage() {
                     >
                       <MoreHorizontal size={16} />
                     </button>
+                    )}
                     {menuOpenFor === row.id && (
                       <RowMenu
                         actor={actor}
@@ -319,6 +338,12 @@ export default function TeamPage() {
         user={modal?.user}
         actorCanEditRole={session.role === 'super_admin' && modal?.user?.id !== session.id}
         onSaved={() => load()}
+      />
+      <DeactivateUserModal
+        isOpen={modal?.type === 'deactivate'}
+        onClose={() => setModal(null)}
+        user={modal?.user}
+        onDone={(u) => { showToast(t('team.toast.deactivated', { email: u.email })); load(); }}
       />
       <ConfirmPasswordModal
         isOpen={modal?.type === 'confirm-password'}

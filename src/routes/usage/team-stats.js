@@ -143,6 +143,7 @@ async function loadUsersAggregate({ query }, from, to) {
        FROM users u
        LEFT JOIN token_usage_daily d
          ON d.user_id = u.id AND d.date >= $1 AND d.date <= $2
+      WHERE u.deactivated_at IS NULL
       GROUP BY u.id, u.name, u.email`,
     [from, to]
   );

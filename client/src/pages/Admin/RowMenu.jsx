@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Terminal, RefreshCw, Edit3, Key, Trash2 } from 'lucide-react';
+import { Terminal, RefreshCw, Edit3, Key, Trash2, UserX, UserCheck } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { visibleMenuItems } from './menu-visibility.js';
 
@@ -13,6 +13,8 @@ const META = {
   'rotate-key':     { icon: RefreshCw, labelKey: 'team.menu.rotate_key', danger: true },
   edit:             { icon: Edit3,    labelKey: 'team.menu.edit' },
   password:         { icon: Key,      labelKey: 'team.menu.password' },
+  reactivate:       { icon: UserCheck, labelKey: 'team.menu.reactivate' },
+  deactivate:       { icon: UserX,    labelKey: 'team.menu.deactivate', danger: true },
   delete:           { icon: Trash2,   labelKey: 'team.menu.delete', danger: true },
 };
 
