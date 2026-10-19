@@ -215,6 +215,21 @@ export function evaluateSilence({
     // a tool reporting adapter_error every two hours has been silent for no days at all,
     // and telling somebody it has been quiet since today would read as a bug in the alert.
     const failingTools = stale.filter((t) => t.failing).map((t) => t.tool);
+    // v1.32.15 — what a silence made only of failing tools needs before it is confirmed.
+    //
+    // A failure heartbeat is one run's report, and the alert says "fails every run", so the
+    // job waits for another run after the sighting. The scanner writes every tool's row on
+    // each run, so a healthy row newer than the sighting means it ran again. The failing row
+    // cannot vouch for that: an MCP start refreshes its timestamp and keeps its reason
+    // (src/routes/usage/events.js), and Claude Code's MCP beats exactly the claude-code row.
+    // Another IDE's MCP refreshing a healthy row still counts; nothing in this table tells
+    // that apart from a scanner run.
+    //
+    // A silence with a tool frozen past staleDays stays confirmed by time, as before. Those
+    // rows stopped being written at all, and waiting for a newer healthy row there would
+    // mean waiting for an IDE restart on a desktop that keeps one process open for days.
+    const failingOnly = failingTools.length === stale.length;
+    const lastHealthy = healthy.reduce((newest, t) => (t.at > newest ? t.at : newest), healthy[0].at);
 
     silences.push({
       user_id: machine.user_id,
@@ -222,6 +237,8 @@ export function evaluateSilence({
       machine: machine.machine,
       stale_tools: staleTools,
       last_beat_at: lastBeat.at,
+      // null when time alone confirms this silence; see failingOnly above.
+      rerun_at: failingOnly ? lastHealthy : null,
       // Rounded at the edge rather than inside the renderer, so every reader of
       // this finding sees the same number.
       stale_days: Math.floor(lastBeat.age),

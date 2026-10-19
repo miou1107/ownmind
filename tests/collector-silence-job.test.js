@@ -132,7 +132,13 @@ function makeDb({ beats = BROKEN, admins = [{ id: 1 }], clock = () => NOW } = {}
       if (!row) return { rows: [], rowCount: 0 };
 
       if (sql.includes('SET announced_at = NOW()')) {           // CLAIM_SQL
-        const confirmed = now.getTime() - row.first_seen_at.getTime() >= CONFIRM_MS;
+        // v1.32.15 — $3 (rerun_at), when given, must be after the sighting. NULL means
+        // time alone confirms. `undefined` is not NULL here: a job that stopped passing
+        // the parameter has to show up as a failure, not as the time-only rule.
+        const rerunAt = params[2];
+        const reran = rerunAt === null
+          || (rerunAt !== undefined && new Date(rerunAt).getTime() > row.first_seen_at.getTime());
+        const confirmed = now.getTime() - row.first_seen_at.getTime() >= CONFIRM_MS && reran;
         const dueAgain = row.announced_at !== null
           && now.getTime() - row.announced_at.getTime() >= REANNOUNCE_MS;
         if (row.resolved_at !== null || !confirmed) return { rows: [], rowCount: 0 };
@@ -617,5 +623,120 @@ describe('v1.26.102 — the two timings, pinned to what they are for', () => {
     // assertion above would keep passing if somebody widened it there.
     const src = readFileSync(new URL('../src/jobs/collector-silence-alerts.js', import.meta.url), 'utf8');
     assert.match(src, /NOW\(\) \+ INTERVAL '48 hours'/);
+  });
+});
+
+describe('v1.32.15 — one failed run, then the machine went quiet', () => {
+  /*
+   * Measured on production 2026-10-19. A member's Mac ran the scanner at 19:31 on a Friday.
+   * The claude-code upload timed out ("This operation was aborted"), so that one tool wrote
+   * adapter_error; the other four wrote no_new_activity in the same second. Then the lid
+   * closed for the weekend.
+   *
+   * 04:00 Saturday: first sighting. 04:00 Sunday: the confirmation window had long passed,
+   * the row was still adapter_error, and the admin was told the collector "fails every run".
+   * Nothing had run in between. The window is there so the scanner gets another run before
+   * anybody is told; measuring it in hours since the sighting let a sleeping machine pass
+   * it without running once. Monday 12:52 the next run succeeded.
+   */
+  const TOOLS = ['antigravity', 'claude-code', 'codex', 'cursor', 'opencode'];
+  const FAILED_AT = new Date(NOW.getTime() - 8.5 * HOUR);
+  /** Every tool written by one run at `at`; claude-code reports `claudeReason`. */
+  const oneRun = (at, claudeReason) => TOOLS.map((tool) => ({
+    user_id: 2,
+    user_name: 'member-1',
+    machine: 'MEMBER1-MAC.local',
+    tool,
+    last_reported_at: at,
+    reason: tool === 'claude-code' ? claudeReason : 'no_new_activity',
+  }));
+
+  it('is not announced while nothing has run on the machine since the sighting', async () => {
+    const clock = movableClock();
+    const db = makeDb({ beats: () => oneRun(FAILED_AT, 'adapter_error'), clock });
+
+    const first = await runCollectorSilenceAlerts({ ...db, now: clock });
+    assert.equal(first.seen, 1, 'the fixture no longer reads as a failing collector');
+
+    clock.advance(24 * HOUR);
+    const second = await runCollectorSilenceAlerts({ ...db, now: clock });
+    assert.equal(second.seen, 1, 'a day later the machine should still read as broken');
+    assert.equal(second.announced, 0,
+      'announced a failure that was seen once, on a machine that has not run since');
+    assert.equal(db.broadcasts.size, 0);
+  });
+
+  it('is announced once the machine has run again and the tool failed again', async () => {
+    // The other half. Without it, a rule that never announces a failing tool at all would
+    // pass the test above.
+    const clock = movableClock();
+    let current = () => oneRun(FAILED_AT, 'adapter_error');
+    const db = makeDb({ beats: (now) => current(now), clock });
+    await runCollectorSilenceAlerts({ ...db, now: clock });
+
+    clock.advance(24 * HOUR);
+    current = (now) => oneRun(new Date(now.getTime() - HOUR), 'adapter_error');
+    const out = await runCollectorSilenceAlerts({ ...db, now: clock });
+    assert.equal(out.announced, 1, 'a collector that failed on two runs was not announced');
+  });
+
+  it('leaves no record behind once the next run succeeds', async () => {
+    const clock = movableClock();
+    let current = () => oneRun(FAILED_AT, 'adapter_error');
+    const db = makeDb({ beats: (now) => current(now), clock });
+    await runCollectorSilenceAlerts({ ...db, now: clock });
+    clock.advance(24 * HOUR);
+    await runCollectorSilenceAlerts({ ...db, now: clock });
+
+    clock.advance(24 * HOUR);
+    current = (now) => oneRun(new Date(now.getTime() - HOUR), 'no_new_activity');
+    const out = await runCollectorSilenceAlerts({ ...db, now: clock });
+    assert.equal(out.announced, 0);
+    assert.equal(db.rows.size, 0, 'the sighting outlived the problem');
+  });
+
+  it('is not announced when only an MCP start refreshed the failing row', async () => {
+    // Claude Code's MCP beats the claude-code row on every start, and a reasonless beat keeps
+    // the stored adapter_error. The lid opening at 09:00 and closing before the scanner's next
+    // run is not a second run of the scanner.
+    const clock = movableClock();
+    let current = () => oneRun(FAILED_AT, 'adapter_error');
+    const db = makeDb({ beats: (now) => current(now), clock });
+    await runCollectorSilenceAlerts({ ...db, now: clock });
+
+    clock.advance(24 * HOUR);
+    const mcpStart = new Date(clock().getTime() - 19 * HOUR);
+    current = () => oneRun(FAILED_AT, 'adapter_error').map((row) => (
+      row.tool === 'claude-code' ? { ...row, last_reported_at: mcpStart } : row
+    ));
+    const out = await runCollectorSilenceAlerts({ ...db, now: clock });
+    assert.equal(out.seen, 1);
+    assert.equal(out.announced, 0, 'an MCP start was taken for a second scanner run');
+  });
+
+  it('a tool frozen past STALE_DAYS is still confirmed by time alone', async () => {
+    // The shape this alert was built for, on a desktop that keeps one IDE open for days: the
+    // only fresh row is an MCP beat from before the sighting, and nothing newer arrives.
+    const clock = movableClock();
+    const mcpBeat = new Date(NOW.getTime() - HOUR);
+    const frozen = new Date(NOW.getTime() - 11.2 * DAY);
+    const rows = [
+      { user_id: 2, user_name: 'member-1', machine: 'DESKTOP-1', tool: 'claude-code', last_reported_at: mcpBeat, reason: 'ok' },
+      { user_id: 2, user_name: 'member-1', machine: 'DESKTOP-1', tool: 'cursor', last_reported_at: frozen, reason: 'no_new_activity' },
+      { user_id: 2, user_name: 'member-1', machine: 'DESKTOP-1', tool: 'opencode', last_reported_at: frozen, reason: 'no_new_activity' },
+    ];
+    const db = makeDb({ beats: () => rows, clock });
+    await runCollectorSilenceAlerts({ ...db, now: clock });
+    clock.advance(24 * HOUR);
+    const out = await runCollectorSilenceAlerts({ ...db, now: clock });
+    assert.equal(out.announced, 1, 'a scanner dead for eleven days waited for an IDE restart');
+  });
+
+  it('the claim requires a run after the sighting only when it is given one to check', () => {
+    const source = readFileSync(
+      new URL('../src/jobs/collector-silence-alerts.js', import.meta.url), 'utf8'
+    );
+    const claim = source.slice(source.indexOf('const CLAIM_SQL'), source.indexOf('const RECORD_BROADCAST_SQL'));
+    assert.match(claim, /AND \(\$3::timestamptz IS NULL OR \$3::timestamptz > first_seen_at\)/);
   });
 });

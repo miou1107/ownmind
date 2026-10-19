@@ -883,6 +883,32 @@ async function checkSchedulerLinux() {
   }
 }
 
+/**
+ * What a Windows scheduler query that did not succeed says about the task.
+ *
+ * v1.32.15 - a query that ran out of time has said nothing: CIM_TIMEOUT_MS is the budget
+ * past which the answer is "cannot tell", and checkMcpLaunches maps the same case to warn
+ * for the same reason. Here it was still a fail, and the server announces every fail.
+ * Measured 2026-10-19: a laptop that had passed this check fourteen times in a row timed
+ * out once during an auto-update, the admin was warned, and the scanner that task launches
+ * ran and uploaded three hours later. A query that answered with an error is a real fault
+ * and stays a fail.
+ */
+function schedulerQueryResult(r) {
+  if (r && r.killed) {
+    return warn('scheduler',
+      `skipped: Get-ScheduledTask did not answer within ${CIM_TIMEOUT_MS / 1000}s (${describeSpawnFailure(r)})`,
+      "Not a failure. Re-run when the machine is idle, or check with: Get-ScheduledTask -TaskName 'OwnMind Usage Scanner'");
+  }
+  // v1.26.106 - this reported only r.error, which for a timeout is the literal string
+  // "Command failed: powershell.exe ..." and nothing else: no exit code, no stderr, no
+  // hint that a clock ran out. safeSpawn had already captured killed and signal; the
+  // caller threw them away and then advised "Requires Windows + PowerShell" to a machine
+  // that plainly has both.
+  return fail('scheduler', `Get-ScheduledTask failed: ${describeSpawnFailure(r)}`,
+    'Requires Windows + PowerShell');
+}
+
 async function checkScheduler() {
   if (PLATFORM === 'darwin') {
     try {
@@ -935,17 +961,7 @@ async function checkScheduler() {
         + "$i = $t | Get-ScheduledTaskInfo; "
         + "if ($i) { 'OWNMIND_LASTRESULT=' + $i.LastTaskResult } }"],
       { timeout: CIM_TIMEOUT_MS });
-    if (!r.ok) {
-      // v1.26.106 - this reported only r.error, which for a timeout is the literal string
-      // "Command failed: powershell.exe ..." and nothing else: no exit code, no stderr, no
-      // hint that a clock ran out. safeSpawn had already captured killed and signal; the
-      // caller threw them away and then advised "Requires Windows + PowerShell" to a machine
-      // that plainly has both.
-      return fail('scheduler', `Get-ScheduledTask failed: ${describeSpawnFailure(r)}`,
-        r.killed
-          ? `Query exceeded ${CIM_TIMEOUT_MS}ms. The task may still be healthy - check with: Get-ScheduledTask -TaskName 'OwnMind Usage Scanner'`
-          : 'Requires Windows + PowerShell');
-    }
+    if (!r.ok) return schedulerQueryResult(r);
     const allLines = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const resultLine = allLines.find((l) => l.startsWith('OWNMIND_LASTRESULT='));
     const lastResult = resultLine ? resultLine.split('=')[1] : null;
@@ -1815,6 +1831,8 @@ module.exports = {
   checkSchedulerLinux, userBusState, NO_USER_BUS_DETAIL, NO_SYSTEMCTL_DETAIL,
   // v1.26.162 — state=Ready said the task exists; nothing read what its last run returned.
   taskRunFailed,
+  // v1.32.15 — a timed-out Windows query is "cannot tell", not a broken task.
+  schedulerQueryResult,
   // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
   checkBackgroundCredentials,
   // v1.26.91 — two config files, two different keys, one all-green report.

@@ -137,6 +137,15 @@ const SIGHTING_SQL = `
  *
  * `broadcast_id` is cleared as part of claiming, so a machine being announced
  * again never points at the expired broadcast from its previous break.
+ *
+ * v1.32.15 — `$3` is `rerun_at` from evaluateSilence: for a silence made only of
+ * failing tools, the newest healthy heartbeat on the machine, which has to be later
+ * than the sighting. CONFIRM_HOURS exists so the scanner gets another run before
+ * anybody is told, but hours pass just as well over a laptop with its lid shut:
+ * on 2026-10-18 one upload that timed out on a Friday evening was announced as a
+ * collector that "fails every run", and nothing had run since. With no newer run
+ * there is no second observation, so the sighting waits. `$3` is NULL for a silence
+ * that has a tool frozen past STALE_DAYS, which time alone still confirms.
  */
 const CLAIM_SQL = `
   UPDATE collector_silence_alert_state
@@ -144,6 +153,7 @@ const CLAIM_SQL = `
   WHERE user_id = $1 AND machine = $2
     AND resolved_at IS NULL
     AND first_seen_at <= NOW() - INTERVAL '${CONFIRM_HOURS} hours'
+    AND ($3::timestamptz IS NULL OR $3::timestamptz > first_seen_at)
     AND (announced_at IS NULL
          OR announced_at < NOW() - INTERVAL '${REANNOUNCE_DAYS} days')
   RETURNING user_id, machine
@@ -287,7 +297,9 @@ export async function runCollectorSilenceAlerts({
     const claimed = [];
 
     for (const silence of ordered) {
-      const claim = await client.query(CLAIM_SQL, [silence.user_id, silence.machine]);
+      const claim = await client.query(
+        CLAIM_SQL, [silence.user_id, silence.machine, silence.rerun_at ?? null]
+      );
       if (claim.rowCount > 0) claimed.push(silence);
     }
 
