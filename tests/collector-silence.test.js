@@ -283,3 +283,42 @@ describe('v1.26.102 — rubbish input', () => {
     }
   });
 });
+
+describe('v1.32.15 — rerun_at, what a failing-only silence needs before it is confirmed', () => {
+  const at = (days) => new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000);
+  const row = (tool, days, reason) => ({
+    user_id: 1, user_name: 'x', machine: 'box', tool, last_reported_at: at(days), reason,
+  });
+
+  it('is the newest healthy row, not the failing row an MCP start refreshed', () => {
+    const rows = [
+      row('claude-code', 0.1, 'adapter_error'),   // MCP start: new timestamp, old reason
+      row('codex', 1.3, 'no_new_activity'),
+      row('opencode', 1.3, 'no_new_activity'),
+    ];
+    const [silence] = evaluateSilence({ rows, now: NOW }).silences;
+    assert.ok(silence, 'the fixture no longer reads as a failing collector');
+    assert.deepEqual(silence.rerun_at, at(1.3));
+  });
+
+  it('is null when a tool is frozen past STALE_DAYS, which time alone confirms', () => {
+    const rows = [
+      row('claude-code', 0.2, 'ok'),
+      row('cursor', STALE_DAYS + 4, 'no_new_activity'),
+    ];
+    const [silence] = evaluateSilence({ rows, now: NOW }).silences;
+    assert.ok(silence);
+    assert.equal(silence.rerun_at, null);
+  });
+
+  it('is null when a frozen tool and a failing tool are both in the silence', () => {
+    const rows = [
+      row('claude-code', 0.2, 'adapter_error'),
+      row('codex', 0.2, 'no_new_activity'),
+      row('cursor', STALE_DAYS + 4, 'no_new_activity'),
+    ];
+    const [silence] = evaluateSilence({ rows, now: NOW }).silences;
+    assert.ok(silence);
+    assert.equal(silence.rerun_at, null);
+  });
+});

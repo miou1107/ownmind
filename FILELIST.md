@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## v1.32.15 修改（用量上傳失敗一次後電腦就闔上，後台不會再誤報；Windows 查排程逾時不會再發警告）
+
+新增檔：
+```
+tests/self-check-scheduler-timeout.test.js              — 三條：查排程逾時記成 warn、指令回報錯誤照舊 fail、Windows 那段程式確實交給 schedulerQueryResult 判斷
+```
+
+修改檔：
+```
+src/lib/collector-silence.js                            — 每台有問題的機器多帶一個 rerun_at：只有失敗的工具時，填這台機器最新一筆正常回報的時間（掃描程式每次執行都會寫入）；失敗那一列不算，因為 Claude Code 啟動時會更新它的時間、不改它的狀態；有工具停超過 7 天時填 null，照舊只看時間
+src/jobs/collector-silence-alerts.js                    — 發警告前多一個條件：rerun_at 不是 null 的時候，要晚於第一次看到問題的時間，也就是掃描程式在那之後有再跑過
+scripts/install-helpers/self-check.cjs                  — Windows 查排程沒成功時交給新的 schedulerQueryResult：逾時記成 warn（只有 fail 會發警告），指令回報錯誤照舊 fail
+tests/collector-silence-job.test.js                     — 新增六條：失敗一次後電腦沒再跑過不發警告、再跑過仍失敗就發警告、下次成功就清掉紀錄、只有 Claude Code 啟動不算再跑過、工具停 11 天的電腦照舊只看時間就發警告、發警告的 SQL 帶著這個條件；假資料庫照新條件判斷
+tests/collector-silence.test.js                         — 新增三條：rerun_at 取最新一筆正常回報、不取被 Claude Code 啟動更新過的失敗那一列；有工具停超過 7 天時是 null
+package.json, package-lock.json, README.md, docs/README.{zh-TW,ja}.md, CHANGELOG.md — 版號 1.32.14 → 1.32.15
+```
+
 ## v1.32.14 修改（收工面板不把專案資料夾本身算成 worktree；修補四個套件漏洞）
 
 修改檔：
