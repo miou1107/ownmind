@@ -2,6 +2,14 @@
 
 v1.30 以前的版本收在 docs/changelog 資料夾：[v1.26](docs/changelog/v1.26.md)、[v1.20～v1.25](docs/changelog/v1.20-v1.25.md)、[v1.0～v1.19](docs/changelog/v1.0-v1.19.md)。
 
+## 網站 — 2026-10-21 — OwnMind 有自己的首頁：https://miou1107.github.io/ownmind/
+
+只加網站，不發版：電腦端與伺服器都沒有改。
+
+- **原本**：OwnMind 只有 GitHub 上的 README，要介紹給別人只能丟 repo 連結，對方要從幾百行說明裡自己找「這是什麼、怎麼開始」。
+- **現在**：主線的 docs 資料夾由 GitHub Pages 直接發佈。英文首頁在根目錄，繁體中文在 /zh-tw/，日文在 /ja/，三種語言各自寫，不是翻譯。首頁講這是什麼、跟 CLAUDE.md 差在哪、三道防線怎麼運作、怎麼架伺服器與連上電腦，加五題常見問題。
+- **怎麼改字**：頁面由 docs/site/template.html（版型）加 docs/site/strings.json（三種語言的字串）產生，改完跑 `node scripts/gen-site/gen-site.mjs` 重產。tests/gen-site.test.js 在三種語言的字串不齊、或改了來源沒重產頁面時會紅。頁面上的版號從主線的 package.json 即時讀，發版不用重產網站。
+
 ## v1.32.15 — 用量上傳失敗一次後電腦就闔上，後台不再說這台電腦「每次執行都失敗」；Windows 查排程逾時也不再發警告
 
 用量採集警告的修正要重新部署伺服器才會生效；Windows 自我檢查的修正在電腦端，會自動更新。
