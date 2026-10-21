@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **網站**：https://miou1107.github.io/ownmind/
 
-**目前版本：v1.33.0** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.33.1** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 

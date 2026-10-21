@@ -1,5 +1,18 @@
 # OwnMind 檔案結構
 
+## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
+
+修改檔：
+```
+src/routes/memory-consolidation.js                      — 重複候選先比標題（TITLE_PREFILTER 0.4）再比全文；buildConsolidationCandidates 多 pairs:false 讓排程跳過重複那一項
+src/jobs/memory-consolidation.js                        — 開卡時不算重複，卡片寫「重複的在候選清單裡算」
+src/routes/memory.js                                    — /init 與 /sync-token 的待接手交接只回最新 10 筆
+hooks/lib/render-session-context.js                     — 別專案的交接提醒最多列 3 筆，其餘一行寫數量
+hooks/locales/zh.json, en.json, ja.json                 — 新句「另外還有 N 筆交接在別的專案沒接」
+tests/session-start-render.test.js                      — 九筆交接只列三筆並寫「還有 6 筆」
+README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md, package.json — 版號 v1.33.1
+```
+
 ## v1.33.0 修改（2026-10-21，記憶整理交給 AI，後台只看與撤銷）
 
 新增檔：

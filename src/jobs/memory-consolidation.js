@@ -30,7 +30,7 @@ export const FIRST_CALL_LINE = '先呼叫 ownmind_consolidation_candidates';
 /** The card body: what the server counted, then the two fixed lines the AI starts from. */
 export function cardBody(counts) {
   return [
-    `這個月的記憶整理。候選：重複 ${counts.duplicates.length} 組、已結案 ${counts.concluded.length} 條、`
+    `這個月的記憶整理。候選：重複的在候選清單裡算、已結案 ${counts.concluded.length} 條、`
       + `超過 90 天沒更新 ${counts.stale.length} 條、在等回覆 ${counts.waiting.length} 條、`
       + `教訓 ${counts.lessons.length} 則、本月關掉的卡 ${counts.closed_tasks.length} 張。`,
     SKILL_LINE,
@@ -55,7 +55,7 @@ export async function runMemoryConsolidation({ query = defaultQuery, now = new D
   );
   const created = [];
   for (const { user_id: userId } of users.rows) {
-    const counts = await buildConsolidationCandidates(query, userId);
+    const counts = await buildConsolidationCandidates(query, userId, { pairs: false });
     // Check-then-insert races with another run of this job (start-up plus cron, or two
     // servers); the partial unique index in db/034 decides, and the loser writes nothing.
     // The conflict target must spell the index predicate, so it is built from the same

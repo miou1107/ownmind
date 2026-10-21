@@ -45,6 +45,7 @@
   "verdict.notChecked.badAnswer": "[OwnMind] 🔴 確認から返ってきた内容を OwnMind が読み取れなかったため、その返答は照らし合わせていません。\n  次の返答はあらためて確認します。あなたがすることはありません。",
   "session.missingSkills": "[OwnMind] 🟡 あなたの規則のうち {count} 件は、このパソコンでは AI が守れません。規則が AI に使わせるスキル（パソコンに入れて AI が呼び出す小さな追加機能）がここに入っていないためです。{list}。OwnMind はこのことを AI に伝えました。このパソコンにそのスキルを入れるか、規則を変えるよう AI に頼んでください。",
   "handoff.waitingElsewhere": "{project} の引き継ぎがまだ受け取られていません。そのプロジェクトで会話を始めると AI が引き継ぎます",
+  "handoff.waitingElsewhereMore": "ほかに {count} 件の引き継ぎが別のプロジェクトで待っています。管理画面の引き継ぎページで確認できます",
   "handoff.accepted": "{project} の引き継ぎを受け取りました。取り消したいときは一言ください",
   "handoff.takenByAnotherWindow": "別のウィンドウが {minutes} 分前に受け取りました",
   "consolidation.report": "[OwnMind] {month} の記憶の整理が終わりました：統合 {merged}、アーカイブ {archived}、決定 {decided}。元に戻したいものがあれば一言ください。"

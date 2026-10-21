@@ -470,15 +470,25 @@ router.get('/sync-token', async (req, res) => {
  * took it. Shared by /init and /sync-token. An empty list on a database error: the start
  * must not fail for this.
  */
+/**
+ * How many pending handoffs ride on /init. One person had 69 pending on 2026-10-22; the hook
+ * renders a line per handoff, so the newest few are enough and the console lists the rest.
+ */
+const RECENT_PENDING_HANDOFFS = 10;
+
 async function recentHandoffs(userId) {
   try {
     const hr = await query(
-      `SELECT id, project, from_tool, from_machine, content, status, accepted_by, accepted_at
-         FROM handoffs
-        WHERE user_id = $1
-          AND (status = 'pending'
-               OR (status = 'accepted' AND accepted_at >= NOW() - INTERVAL '30 minutes'))
-        ORDER BY created_at DESC`,
+      `(SELECT id, project, from_tool, from_machine, content, status, accepted_by, accepted_at, created_at
+          FROM handoffs
+         WHERE user_id = $1 AND status = 'pending'
+         ORDER BY created_at DESC
+         LIMIT ${RECENT_PENDING_HANDOFFS})
+       UNION ALL
+       (SELECT id, project, from_tool, from_machine, content, status, accepted_by, accepted_at, created_at
+          FROM handoffs
+         WHERE user_id = $1 AND status = 'accepted' AND accepted_at >= NOW() - INTERVAL '30 minutes')
+       ORDER BY created_at DESC`,
       [userId],
     );
     return hr.rows;

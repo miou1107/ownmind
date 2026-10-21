@@ -278,6 +278,7 @@ describe('renderSessionContext — handoffs (v1.33.0)', () => {
     'handoff.waitingElsewhere': `你有一筆 ${params.project} 的交接還沒接，在那個專案開對話就會接手`,
     'handoff.accepted': `已接手 ${params.project} 的交接，要撤銷跟我說一聲`,
     'handoff.takenByAnotherWindow': `另一個視窗 ${params.minutes} 分鐘前接走`,
+    'handoff.waitingElsewhereMore': `另外還有 ${params.count} 筆交接在別的專案沒接，後台的交接頁看得到`,
   }[key] || key);
   const base = { server_version: '1.33.0' };
   const pending = { id: 12, project: 'nantou-funbus', from_machine: 'mac-studio', content: '查到一半的 KOL 名單\n下一步：對 10 月排程', status: 'pending' };
@@ -290,6 +291,16 @@ describe('renderSessionContext — handoffs (v1.33.0)', () => {
     assert.match(out, /ownmind_handoff_accept\(\{ id: 12, accepted_by: "vin-mbp" \}\)/);
     assert.match(out, /已接手 nantou-funbus 的交接，要撤銷跟我說一聲/);
     assert.doesNotMatch(out, /## Pending handoff/);
+  });
+
+  it('many waiting handoffs name the newest three and count the rest (v1.33.1)', () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ ...pending, id: 100 + i, project: `proj-${i}` }));
+    const out = renderSessionContext({ ...base, handoffs: many }, [], { tip: () => '', t: zh, projectAliases: ['line-summarizer-bot'], machine: 'vin-mbp' });
+    assert.match(out, /- #100 \(proj-0\)/);
+    assert.match(out, /- #102 \(proj-2\)/);
+    assert.doesNotMatch(out, /- #103 \(proj-3\)/);
+    assert.match(out, /and 6 more: .*另外還有 6 筆交接在別的專案沒接，後台的交接頁看得到/);
+    assert.equal((out.match(/的交接還沒接/g) || []).length, 3);
   });
 
   it('a different project gets one reminder line and no content', () => {

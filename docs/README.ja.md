@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **ウェブサイト**：https://miou1107.github.io/ownmind/
 
-**現在のバージョン：v1.33.0** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.33.1** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
