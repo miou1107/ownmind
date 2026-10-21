@@ -3,7 +3,7 @@
 // Why a scratch stack rather than the dev one: the suite creates users with known
 // passwords and three different roles. Doing that in a database that holds real memories
 // would leave test accounts behind, and the project rule is to clean up after testing.
-// A container with no volume disappears entirely when it stops.
+// Removing the container with `-v` takes its anonymous data volume with it, so nothing is left.
 //
 // The API is started as a child process rather than in Docker, so a code change is picked
 // up without an image rebuild. It serves the client build from src/public/dashboard, which
@@ -90,7 +90,7 @@ async function waitFor(label, probe, { tries = 90, gap = 1000 } = {}) {
 
 async function startDatabase(dbPassword) {
   // Remove a leftover from an interrupted run before claiming the name.
-  try { docker(['rm', '-f', DB_CONTAINER], { stdio: 'ignore' }); } catch { /* not there */ }
+  try { docker(['rm', '-f', '-v', DB_CONTAINER], { stdio: 'ignore' }); } catch { /* not there */ }
 
   const port = await freePort();
   docker([
@@ -276,8 +276,9 @@ export async function stopStack(stack) {
     await sleep(300);
     if (!stack.child.exitCode) stack.child.kill('SIGKILL');
   }
-  // --rm plus no volume means stopping the container destroys the data with it.
-  try { docker(['rm', '-f', DB_CONTAINER], { stdio: 'ignore' }); } catch { /* already gone */ }
+  // `-v`, because the image declares a VOLUME for its data directory and `rm -f` skips the
+  // cleanup `--rm` would have done, leaving that volume behind.
+  try { docker(['rm', '-f', '-v', DB_CONTAINER], { stdio: 'ignore' }); } catch { /* already gone */ }
 }
 
 export const CLIENT_BUILD = join(repoRoot, 'src', 'public', 'dashboard', 'index.html');

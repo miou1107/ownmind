@@ -17,7 +17,7 @@ const REAL_DB_SPECIFIER = JSON.stringify(
  *
  * The port comes from this process's pid, and the container is named after the port. A test
  * process that died without its `stop()` leaves a container still publishing that port under
- * a name derived from the DEAD pid, so the `docker rm -f <own name>` at startup cannot match
+ * a name derived from the DEAD pid, so removing its own name at startup cannot match
  * it: the run then fails with `address already in use` and takes the whole leg red. That is
  * what happened to the ubuntu/node 24 leg of run 36527943229 — a dependency bump, nothing
  * near the database, and a rerun of the same commit was green.
@@ -147,7 +147,7 @@ test('a bound port sends the helper to another port instead of failing the leg',
   assert.equal(String(result.port), portOf(runs[runs.length - 1]),
     'the port in the returned handle is the one docker accepted, or a caller connects nowhere');
   assert.match(String(result.name), new RegExp(`${result.port}$`),
-    'the container name follows the port it ended up on, so `docker rm -f <name>` still matches it');
+    'the container name follows the port it ended up on, so removing it by name still matches it');
 });
 
 test('a failure another port cannot fix is reported on the first attempt', { skip: SKIP_ON_WINDOWS }, async () => {
@@ -239,6 +239,8 @@ test('a leftover container of ours on that port is the one removed', { skip: SKI
   assert.ok(!/(^| )-a( |$)/.test(ps),
     'and only running containers: a stopped one holds no port, so removing it just throws '
     + 'away somebody\'s evidence');
-  assert.ok(calls.includes('rm -f ownmind-test-db-99999'),
+  // `-v` takes the container's anonymous data volume with it; real-db-volume-cleanup.test.js
+  // checks that against real docker.
+  assert.ok(calls.includes('rm -f -v ownmind-test-db-99999'),
     'the container docker named is the one that gets removed');
 });

@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## 測試工具修改（2026-10-21，跑測試不會再在 Docker 裡留下沒人用的資料卷）
+
+沒有版號：只動測試工具，使用者看到的東西一個字都沒有變。
+
+新增檔：
+```
+tests/real-db-volume-cleanup.test.js                    — 兩條：stop() 之後、回收舊容器之後，那個容器的資料卷都要已經刪除；直接呼叫 docker，沒有 docker 就跳過；docker 回的錯誤不是 no such volume 就丟出來，不當成已刪除
+```
+
+修改檔：
+```
+tests/helpers/real-db.js                                — 原本分散在四處的刪除容器指令，統一改由 removeContainer() 執行，一律用 docker rm -f -v，刪容器時連資料卷一起刪
+tests/e2e/harness.mjs                                   — 開始前清舊容器、結束時刪容器，兩處都加上 -v；兩行註解原本寫這個容器沒有資料卷，已改正
+tests/real-db-port-retry.test.js                        — 檢查回收舊容器的測試，預期的刪除指令改成 rm -f -v；兩處註解不再寫死 docker rm -f
+CHANGELOG.md
+```
+
 ## 網站（2026-10-21，不發版）
 
 新增檔：
