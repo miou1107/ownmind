@@ -4,7 +4,7 @@
 
 ### Heartbeat
 - The usage scanner's heartbeat carries `api_host`: the host of the address it reports to,
-  lower-cased, without scheme, port, path, query or credentials (`kkvin.com`,
+  lower-cased, without scheme, port, path, query or credentials (`old-host.example.com`,
   `fapa.welcometw.com`). Nothing else from the address is sent.
 - The server accepts `api_host` up to 255 characters matching a host name; anything else
   is ignored (stored value kept), never rejected, so an odd value cannot stop a heartbeat.

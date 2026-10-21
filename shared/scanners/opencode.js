@@ -85,7 +85,7 @@ export function createOpenCodeAdapter({
         if (err.code === 'ENOENT' && !(await exists(dbPath))) {
           // v1.31.14 — no sqlite3 AND no database: the person does not run OpenCode here, so
           // there is nothing sqlite3 would read. Reporting `sqlite_missing` made the self-check
-          // on bot.kkvin.com fail every day for a tool that was never installed (2026-10-04).
+          // on a headless Ubuntu VPS fail every day for a tool that was never installed (2026-10-04).
           reason = NO_INSTALL;
         } else if (err.code === 'ENOENT') {
           reason = SQLITE_MISSING;

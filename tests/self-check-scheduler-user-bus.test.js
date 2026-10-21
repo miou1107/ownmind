@@ -1,7 +1,7 @@
 // v1.32.12 — a self-check that cannot see the timer must not report it as broken, and
 // must not report it as healthy either.
 //
-// Traced from production on 2026-10-12, bot.kkvin.com (Ubuntu 24.04, headless VPS). The
+// Traced from production on 2026-10-12, a headless Ubuntu 24.04 VPS. The
 // daily report carried `scheduler` as a failure:
 //
 //   systemctl failed: Command failed: systemctl --user is-active ownmind-usage-scanner.timer

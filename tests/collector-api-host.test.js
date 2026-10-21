@@ -1,6 +1,6 @@
 // v1.32.0 — which server each machine reports to (issue #152).
 //
-// Two computers posted to the retired host kkvin.com for a week after the move. Every
+// Two computers posted to the retired host for a week after the move. Every
 // row they produced said 1.31.14 and nothing else; finding them meant reading nginx logs
 // on the old host and matching a handoff number against session logs. Now the scanner's
 // heartbeat carries the host part of the address it posts to, the server keeps it, and
@@ -43,7 +43,7 @@ describe('db/031 — the column', () => {
 describe('apiHostOf', () => {
   it('keeps the host and drops scheme, port, path, query and credentials', () => {
     assert.equal(apiHostOf('https://fapa.welcometw.com/ownmind'), 'fapa.welcometw.com');
-    assert.equal(apiHostOf('https://user:secret@kkvin.com:8443/ownmind/?key=abc'), 'kkvin.com');
+    assert.equal(apiHostOf('https://user:secret@old-host.example.com:8443/ownmind/?key=abc'), 'old-host.example.com');
     assert.equal(apiHostOf('http://localhost:3000'), 'localhost');
   });
   it('lower-cases, so the server compares like with like', () => {
@@ -69,16 +69,16 @@ describe('every heartbeat the scanner posts carries api_host', () => {
   it('postBatch adds it from the address it posts to', async () => {
     const { calls, fetchFn } = captureFetch();
     await postBatch(
-      { apiUrl: 'https://kkvin.com/ownmind/', apiKey: 'k', fetchFn },
+      { apiUrl: 'https://old-host.example.com/ownmind/', apiKey: 'k', fetchFn },
       { events: [], heartbeat: { tool: 'claude-code', machine: 'LAPTOP-1' } }
     );
-    assert.equal(calls[0].body.heartbeat.api_host, 'kkvin.com');
+    assert.equal(calls[0].body.heartbeat.api_host, 'old-host.example.com');
     assert.equal(calls[0].body.heartbeat.machine, 'LAPTOP-1');
   });
 
   it('does not touch a payload that has no heartbeat', async () => {
     const { calls, fetchFn } = captureFetch();
-    await postBatch({ apiUrl: 'https://kkvin.com/ownmind', apiKey: 'k', fetchFn },
+    await postBatch({ apiUrl: 'https://old-host.example.com/ownmind', apiKey: 'k', fetchFn },
       { events: [{ x: 1 }] });
     assert.deepEqual(calls[0].body, { events: [{ x: 1 }] });
   });
@@ -95,7 +95,7 @@ describe('every heartbeat the scanner posts carries api_host', () => {
   it('never sends the key, even when the address carries it', async () => {
     const { calls, fetchFn } = captureFetch();
     await postBatch(
-      { apiUrl: 'https://kkvin.com/ownmind?key=SECRET', apiKey: 'SECRET', fetchFn },
+      { apiUrl: 'https://old-host.example.com/ownmind?key=SECRET', apiKey: 'SECRET', fetchFn },
       { events: [], heartbeat: { tool: 'claude-code' } }
     );
     assert.doesNotMatch(JSON.stringify(calls[0].body), /SECRET/);
@@ -109,13 +109,13 @@ describe('every heartbeat the scanner posts carries api_host', () => {
 describe('normaliseApiHost', () => {
   it('accepts a host name and lower-cases it', () => {
     assert.equal(normaliseApiHost('Fapa.WelcomeTW.com'), 'fapa.welcometw.com');
-    assert.equal(normaliseApiHost('  kkvin.com '), 'kkvin.com');
+    assert.equal(normaliseApiHost('  old-host.example.com '), 'old-host.example.com');
     assert.equal(normaliseApiHost('localhost'), 'localhost');
   });
   it('treats a URL, a path, a space or a key as "did not say"', () => {
-    assert.equal(normaliseApiHost('https://kkvin.com'), null);
-    assert.equal(normaliseApiHost('kkvin.com/ownmind'), null);
-    assert.equal(normaliseApiHost('kkvin.com:443'), null);
+    assert.equal(normaliseApiHost('https://old-host.example.com'), null);
+    assert.equal(normaliseApiHost('old-host.example.com/ownmind'), null);
+    assert.equal(normaliseApiHost('old-host.example.com:443'), null);
     assert.equal(normaliseApiHost('two words'), null);
     assert.equal(normaliseApiHost(''), null);
     assert.equal(normaliseApiHost(42), null);
@@ -151,10 +151,10 @@ async function ingest(heartbeat) {
 
 describe('writing a heartbeat with api_host', () => {
   it('stores the host and lets it through the rate limit when it changed', async () => {
-    const { status, hb } = await ingest({ tool: 'claude-code', machine: 'LAPTOP-1', api_host: 'kkvin.com' });
+    const { status, hb } = await ingest({ tool: 'claude-code', machine: 'LAPTOP-1', api_host: 'old-host.example.com' });
     assert.equal(status, 200);
     assert.ok(hb);
-    assert.equal(hb.params[7], 'kkvin.com');
+    assert.equal(hb.params[7], 'old-host.example.com');
     assert.equal(hb.params[8], true);
     assert.match(hb.sql, /api_host\s*=\s*CASE WHEN \$9 THEN \$8 ELSE collector_heartbeat\.api_host END/);
     assert.match(hb.sql, /\$9 AND collector_heartbeat\.api_host IS DISTINCT FROM \$8/);
@@ -168,7 +168,7 @@ describe('writing a heartbeat with api_host', () => {
   });
 
   it('an odd value is ignored, not rejected: the heartbeat still lands', async () => {
-    const { status, hb } = await ingest({ tool: 'claude-code', machine: 'M', api_host: 'https://kkvin.com/ownmind?key=x' });
+    const { status, hb } = await ingest({ tool: 'claude-code', machine: 'M', api_host: 'https://old-host.example.com/ownmind?key=x' });
     assert.equal(status, 200);
     assert.ok(hb, 'the heartbeat must still be written');
     assert.equal(hb.params[7], null);
@@ -176,7 +176,7 @@ describe('writing a heartbeat with api_host', () => {
   });
 
   it('the new parameter in the INSERT ... SELECT list carries an explicit type', async () => {
-    const { hb } = await ingest({ tool: 'claude-code', machine: 'M', api_host: 'kkvin.com' });
+    const { hb } = await ingest({ tool: 'claude-code', machine: 'M', api_host: 'old-host.example.com' });
     assert.match(hb.sql, /\$8::varchar/);
   });
 });
@@ -204,7 +204,7 @@ describe('canonicalHostOf', () => {
 
 describe('loadClients — on_old_host', () => {
   const query = async () => ({ rows: [
-    row(1, 'LAPTOP-G95HIQ3V', 'kkvin.com'),
+    row(1, 'LAPTOP-OLD-HOST', 'old-host.example.com'),
     row(2, 'TANK', 'fapa.welcometw.com'),
     row(3, 'OLD-MAC', null)
   ] });
@@ -212,7 +212,7 @@ describe('loadClients — on_old_host', () => {
   it('flags the computer whose host is not the canonical one, and only that one', async () => {
     const data = await loadClients({ query, serverVersion: '1.32.0', now: new Date(), canonicalHost: 'fapa.welcometw.com' });
     const byId = new Map(data.users.map((u) => [u.user_id, u]));
-    assert.equal(byId.get(1).clients[0].api_host, 'kkvin.com');
+    assert.equal(byId.get(1).clients[0].api_host, 'old-host.example.com');
     assert.equal(byId.get(1).clients[0].on_old_host, true);
     assert.equal(byId.get(1).on_old_host, true);
     assert.equal(byId.get(2).clients[0].on_old_host, false);
@@ -260,10 +260,10 @@ describe('groupClientsByMachine — api_host', () => {
 
   it('carries the host and the flag up to the computer', () => {
     const [g] = groupClientsByMachine([
-      c({ tool: 'claude-code', api_host: 'kkvin.com', on_old_host: true }),
-      c({ tool: 'codex', api_host: 'kkvin.com', on_old_host: true })
+      c({ tool: 'claude-code', api_host: 'old-host.example.com', on_old_host: true }),
+      c({ tool: 'codex', api_host: 'old-host.example.com', on_old_host: true })
     ]);
-    assert.equal(g.api_host, 'kkvin.com');
+    assert.equal(g.api_host, 'old-host.example.com');
     assert.equal(g.on_old_host, true);
   });
 
@@ -308,11 +308,11 @@ describe('the self-check names the server', () => {
   it('prints the host before scanning, so a pasted result answers #152 on its own', async () => {
     const lines = [];
     await runSelfCheck({
-      credentials: () => ({ apiUrl: 'https://kkvin.com/ownmind', apiKey: 'k'.repeat(12) }),
+      credentials: () => ({ apiUrl: 'https://old-host.example.com/ownmind', apiKey: 'k'.repeat(12) }),
       scan: async () => { throw new Error('stop here'); },
       fetch: async () => ({ ok: false, error: 'unused' }),
       print: (l) => lines.push(String(l))
     });
-    assert.ok(lines.some((l) => l.includes('Server: kkvin.com')), lines.join('\n'));
+    assert.ok(lines.some((l) => l.includes('Server: old-host.example.com')), lines.join('\n'));
   });
 });

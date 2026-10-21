@@ -10,7 +10,7 @@ on Vin's Mac — not in this repo because its demo rows carry colleagues' names)
 2026-10-08 Vin looked at it and said it can go ahead.
 
 The same day showed what the current console cannot answer. Finding which computer still
-talked to the retired host kkvin.com (#152) took reading nginx logs on that host,
+talked to the retired host (#152) took reading nginx logs on that host,
 reading `/api/usage/admin/clients` by hand, and matching a handoff number against
 everyone's session logs. Every machine on the list said 1.31.14; none said where it
 connects. The rebuild adds that column, and it ships first.
@@ -68,5 +68,5 @@ same routes so it can ship as soon as it is done. See `tasks.md`.
 ## Not in this change
 
 - Changing what is collected, beyond `api_host`.
-- Retiring kkvin.com forwarding (#152 step 3).
+- Retiring the old host's forwarding (#152 step 3).
 - Mobile app. The pages must work at phone width, as today.

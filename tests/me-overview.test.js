@@ -286,13 +286,13 @@ describe('buildOverview — footer lights', () => {
   it('turns red when a machine posts to another host (issue #152)', async () => {
     const a = baseAnswers();
     a[1] = ['GROUP BY machine', [
-      { machine: 'LAPTOP-G95HIQ3V', api_host: 'kkvin.com', last_reported_at: '2026-10-08T00:00:00Z' },
+      { machine: 'LAPTOP-OLD-HOST', api_host: 'old-host.example.com', last_reported_at: '2026-10-08T00:00:00Z' },
       { machine: 'TANK', api_host: 'fapa.welcometw.com', last_reported_at: '2026-10-08T00:00:00Z' },
     ]];
     const { o } = await build(user, a);
     assert.equal(o.lights.reporting.state, 'bad');
     assert.deepEqual(o.lights.reporting.machines.map((m) => [m.machine, m.on_old_host]),
-      [['LAPTOP-G95HIQ3V', true], ['TANK', false]]);
+      [['LAPTOP-OLD-HOST', true], ['TANK', false]]);
   });
 
   it('turns yellow when a tool used this week has a silent collector', async () => {
@@ -313,7 +313,7 @@ describe('buildOverview — footer lights', () => {
 
   it('flags nobody as on an old host when the server has no canonical host', async () => {
     const a = baseAnswers();
-    a[1] = ['GROUP BY machine', [{ machine: 'X', api_host: 'kkvin.com', last_reported_at: '2026-10-08T00:00:00Z' }]];
+    a[1] = ['GROUP BY machine', [{ machine: 'X', api_host: 'old-host.example.com', last_reported_at: '2026-10-08T00:00:00Z' }]];
     const { o } = await build(user, a, { canonicalHost: null });
     assert.equal(o.lights.reporting.state, 'good');
   });

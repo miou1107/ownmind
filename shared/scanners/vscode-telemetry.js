@@ -44,7 +44,7 @@ export async function readVscodeTelemetry({
   } catch (err) {
     // v1.31.14 — no sqlite3 on a machine that has no such database is not a sqlite problem:
     // the tool is not installed here. Asked first, so a server without Cursor stops failing
-    // its self-check with "install sqlite3" (bot.kkvin.com, 2026-10-04).
+    // its self-check with "install sqlite3" (a headless Ubuntu VPS, 2026-10-04).
     if (err.code === 'ENOENT' && !(await exists(dbPath))) return { failure: NO_INSTALL };
     // v1.26.69 — the caller needs to tell "no sqlite3 on this machine" apart from "this
     // database would not open". They are different problems with different fixes, and
