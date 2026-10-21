@@ -100,6 +100,9 @@ export const NAV_ENTRIES = [
       // v1.32.5 — the rules the AI follows for this person: their iron rules and the team
       // standards they can read (/api/memory/type/iron_rule, /type/team_standard).
       { id: 'rules', path: '/memory/rules', labelKey: 'nav.memory.rules', minRole: 'user' },
+      // v1.33.0 — the project memories the AI archived while keeping the store
+      // (GET /api/memory/archived, the caller's own), each with 還原.
+      { id: 'archived', path: '/memory/archived', labelKey: 'nav.memory.archived', minRole: 'user' },
     ],
   },
   {

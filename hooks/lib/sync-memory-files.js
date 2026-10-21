@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { resolveProjectName } from '../../shared/helpers.js';
 
 const SYNCABLE_TYPES = ['iron_rule', 'project', 'feedback'];
 const TYPE_LABELS = {
@@ -212,7 +213,46 @@ function byNewestFirst(a, b) {
   return String(a.filename || '').localeCompare(String(b.filename || ''));
 }
 
-export function buildMemoryIndex(entries, serverTime, syncFailed) {
+// v1.33.0 — the current project first.
+//
+// The index holds 140 lines and a heavy user has 374 project memories, so most of them are
+// in the "N more not listed here" line. Newest-first is a fair default and the wrong one
+// for the session that just opened: what it needs is the memories about the project it is
+// sitting in, and those are not the newest. Measured 2026-10-21: the memory the AI needed
+// was in the 220 lines that did not fit. A project memory belongs to the current project
+// when a tag equals the project name or `project:<name>`, when `metadata.project` says so,
+// or when the title mentions it — all case-insensitive. Those come first, each group in
+// newest-first order, so the index for `~/SourceCode/Vinutes` opens with every Vinutes memory.
+export function isCurrentProjectMemory(entry, project) {
+  const name = String(project || '').trim().toLowerCase();
+  if (!name || !entry || entry.type !== 'project') return false;
+  const tags = Array.isArray(entry.tags) ? entry.tags : [];
+  for (const tag of tags) {
+    const tg = String(tag || '').trim().toLowerCase();
+    if (tg === name || tg === `project:${name}`) return true;
+  }
+  const meta = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {};
+  if (String(meta.project || '').trim().toLowerCase() === name) return true;
+  return String(entry.title || '').toLowerCase().includes(name);
+}
+
+function orderForIndex(items, project) {
+  const sorted = items.slice().sort(byNewestFirst);
+  if (!project) return sorted;
+  const mine = sorted.filter((e) => isCurrentProjectMemory(e, project));
+  if (mine.length === 0) return sorted;
+  const rest = sorted.filter((e) => !isCurrentProjectMemory(e, project));
+  return [...mine, ...rest];
+}
+
+/**
+ * @param {object[]} entries
+ * @param {string} serverTime
+ * @param {boolean} syncFailed
+ * @param {object} [opts]
+ * @param {string|null} [opts.project] the current project's name; its memories lead the list
+ */
+export function buildMemoryIndex(entries, serverTime, syncFailed, { project = null } = {}) {
   const lines = [];
   lines.push(`${AUTO_MARKER_PREFIX} ${serverTime} -->`);
   if (syncFailed) {
@@ -243,7 +283,7 @@ export function buildMemoryIndex(entries, serverTime, syncFailed) {
   const alloc = allocateIndexBudget(counts, MEMORY_INDEX_MAX_LINES - overhead);
 
   for (const type of present) {
-    const items = byType[type].slice().sort(byNewestFirst);
+    const items = orderForIndex(byType[type], project);
     const shown = items.slice(0, alloc[type] || 0);
     lines.push(`## ${TYPE_LABELS[type]}`);
     for (const e of shown) lines.push(indexEntryLine(e));
@@ -303,7 +343,14 @@ function applyFailMode(memoryIndexPath) {
   );
 }
 
-export function syncMemoryFiles({ memoryDir, data, sync_failed = false } = {}) {
+/**
+ * @param {object} opts
+ * @param {string} opts.memoryDir
+ * @param {object} [opts.data]           the /api/memory/sync payload
+ * @param {boolean} [opts.sync_failed]
+ * @param {string|null} [opts.project]   the current project's name, for the index order
+ */
+export function syncMemoryFiles({ memoryDir, data, sync_failed = false, project = null } = {}) {
   if (!memoryDir) throw new Error('syncMemoryFiles: memoryDir required');
   fs.mkdirSync(memoryDir, { recursive: true });
   const memoryIndexPath = path.join(memoryDir, 'MEMORY.md');
@@ -330,7 +377,10 @@ export function syncMemoryFiles({ memoryDir, data, sync_failed = false } = {}) {
 
   const activeEntries = [];
   for (const mem of data.memories) {
-    if (mem.status === 'disabled') continue;
+    // v1.33.0: an allow-list. `archived` is a third status now — a project that ended, true
+    // at the time — and a deny-list of `disabled` alone would have written every archived
+    // memory into the index as if it were current. Only what is active is mirrored.
+    if (mem.status !== 'active') continue;
     // type and id come from the server and become part of a path. Only names the cleanup
     // below would also recognise are written: a type such as `../../x` or an id with a
     // slash in it would otherwise put a file outside this folder.
@@ -348,7 +398,7 @@ export function syncMemoryFiles({ memoryDir, data, sync_failed = false } = {}) {
     try { fs.rmSync(path.join(memoryDir, f), { force: true }); } catch {}
   }
 
-  fs.writeFileSync(memoryIndexPath, buildMemoryIndex(activeEntries, data.server_time, false));
+  fs.writeFileSync(memoryIndexPath, buildMemoryIndex(activeEntries, data.server_time, false, { project }));
 }
 
 export function projectSlugFromPath(projectPath) {
@@ -414,7 +464,9 @@ async function main() {
     syncMemoryFiles({ memoryDir, sync_failed: true });
     return;
   }
-  syncMemoryFiles({ memoryDir, data });
+  // The same derivation the session-start hooks use, so the index leads with the project
+  // this directory is.
+  syncMemoryFiles({ memoryDir, data, project: resolveProjectName() });
 }
 
 // `pathToFileURL`, not `file://` + argv. The concatenation is right on POSIX only because the

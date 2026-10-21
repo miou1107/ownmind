@@ -23,8 +23,9 @@ Call ownmind_task_list with project "<project>". Pick the oldest open card whose
 true. If there is none, say so and stop.
 Call ownmind_task_claim on it. Read the card body as the whole brief.
 Do the work on a branch named task/<id>. Run the project's tests. Commit.
-Call ownmind_task_done with a result that says what changed, where, and how to verify it,
-and a link to the branch or merge request.
+Run the card's verification yourself, then call ownmind_task_done with a result that says what
+changed and where, `evidence` holding the verification command and what it printed, and a link
+to the branch or merge request. The card closes on that call.
 Call ownmind_log_session with lessons.
 Do not pick a second card.
 ```
@@ -44,4 +45,5 @@ Run it at a time nobody is editing, so the collision warning (v1.31.2) has nothi
 - A claim is exclusive; two routines cannot take the same card.
 - A claim older than 24 hours is handed back by the daily job with a note, so a run that died
   does not hold a card forever.
-- No tool can mark a card reviewed. Only the console can.
+- `done` closes the card; the server refuses `done` without `evidence`. A card closed by mistake
+  goes back to open with `ownmind_task_reopen` (or the 退回 button on the console).

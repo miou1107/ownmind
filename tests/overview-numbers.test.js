@@ -56,14 +56,15 @@ describe('v1.32.8 — the overview uses the real counts, not a capped preview', 
   it('what 要你決定的事 leaves off is the real count minus the recent ones', async () => {
     const { query } = fakeQuery(answers);
     const o = await buildOverview({ query, user: admin, rangeDays: 7, canonicalHost: null, now: NOW });
-    // 67 + 49 + 1 + 3 waiting; nothing recent in this fixture.
-    assert.equal(o.decisions.hidden, 120);
+    // 67 + 49 + 3 waiting; nothing recent in this fixture. The one done card is not waiting
+    // for anyone since v1.33.0 (done with evidence closes it), so it is not counted.
+    assert.equal(o.decisions.hidden, 119);
   });
 
   it('a member\'s total leaves bugs out', async () => {
     const { query } = fakeQuery(answers);
     const o = await buildOverview({ query, user, rangeDays: 7, canonicalHost: null, now: NOW });
-    assert.equal(o.decisions.hidden, 117);
+    assert.equal(o.decisions.hidden, 116);
   });
 });
 

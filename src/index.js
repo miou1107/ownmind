@@ -7,6 +7,7 @@ import { startNightlyRecomputeJob } from './jobs/nightly-recompute.js';
 import { startTouchCleanupJob } from './jobs/touch-cleanup.js';
 import { startTaskClaimExpiryJob } from './jobs/task-claim-expiry.js';
 import { startNightlyUpgradeReminderJob } from './jobs/nightly-upgrade-reminder.js';
+import { startMemoryConsolidationJob } from './jobs/memory-consolidation.js';
 import { seedDefaultPasswords } from './jobs/seed-default-passwords.js';
 import { runInstallCheckAlerts } from './jobs/install-check-alerts.js';
 import {
@@ -35,6 +36,9 @@ async function start() {
     startTouchCleanupJob();
     startTaskClaimExpiryJob();
     startNightlyUpgradeReminderJob();
+    // v1.33.0: the monthly consolidation card, written daily if the month has none, and
+    // once at boot. Its own catch, like the sweeps below.
+    startMemoryConsolidationJob();
     // v1.17.25: seed a default password for users without a password_hash (idempotent)
     seedDefaultPasswords();
     // Evaluate the reports already in the table once per boot, so failures that

@@ -80,7 +80,7 @@ user_invocable: true
 3. 呼叫 `ownmind_init` 載入使用者記憶（包含 profile、principles、**iron_rules**、active_handoff）
 4. 顯示載入摘要
 5. **將所有 iron_rules 內化為工作準則**，在整個 session 中主動防護（不需列出給使用者，但即將違反時必須攔截）
-6. 如果有待接手的交接（active_handoff），先摘要給使用者確認
+6. 啟動內容裡有「Handoff to accept now」就直接接手（`ownmind_handoff_accept`），接完跟使用者說一句「已接手 ＿＿ 的交接，要撤銷跟我說一聲」；別的專案的交接只會看到一行提醒，不用動
 
 ## 每日更新檢查（強制）
 
@@ -581,10 +581,18 @@ ownmind_save({
    - 關鍵檔案路徑
 2. 顯示摘要給使用者確認
 
-### 交接回來（init 發現有 pending handoff）
-1. 顯示交接摘要
-2. 問使用者「確認接手嗎？」
-3. 確認後呼叫 `ownmind_handoff_accept`
+### 交接回來（啟動內容出現「Handoff to accept now」）
+1. 這一段只會出現在跟交接同一個專案的對話裡，所以不用問，直接呼叫 `ownmind_handoff_accept`
+2. 接完跟使用者說一句「已接手 ＿＿ 的交接，要撤銷跟我說一聲」；他說撤銷就呼叫 `ownmind_handoff_reopen`
+3. 在別的專案開對話時只會看到一行「你有一筆 ＿＿ 的交接還沒接」，不用動
+
+## 教訓、任務卡、記憶整理：AI 自己做，後台只看與撤銷（v1.33.0）
+
+- 對話結束時 `ownmind_log_session` 帶 `lessons`。同一個坑第二次出現，伺服器當場把它存成記憶；其他的等每月整理時由 AI 判斷留不留（`ownmind_lesson_set`）。不用叫使用者進後台按「留下」。
+- 任務卡做完呼叫 `ownmind_task_done` 要帶 `evidence`（真的跑過的驗證指令與輸出），卡片就結案；不用等人審。做錯了用 `ownmind_task_reopen` 退回。
+- 啟動內容說有「整理記憶」的卡打開著，就在背景開一個 subagent 照 `ownmind-consolidate` skill 做，不要卡住使用者；整理完的那一行月報會在他下一次開對話時自動出現。
+- 存記憶時伺服器會先比對：已經有一樣的就不另存（回 `duplicate_of`）；有很像的會回 `similar` 清單而不存，這時改用 `ownmind_update` 更新最像的那條，確定是不同的事才用 `force: true` 再存一次。
+- 每一個自動做的動作都要跟使用者講一句，結尾是「要撤銷跟我說一聲」；撤銷用 `ownmind_restore`（歸檔）、`ownmind_lesson_set`（教訓）、`ownmind_task_reopen`（任務卡）、`ownmind_handoff_reopen`（交接）。
 
 ## 停用規則
 
@@ -822,6 +830,15 @@ OwnMind 使用 sync token 確保多工具環境下的記憶一致性。
 | `ownmind_disable(id, reason)` | 停用記憶 |
 | `ownmind_handoff_create(...)` | 建立交接 |
 | `ownmind_handoff_accept(id, accepted_by)` | 接受交接 |
+| `ownmind_handoff_reopen(id)` | 把接錯的交接放回待接手 |
+| `ownmind_merge(keep, drop)` | 兩條記憶講同一件事時併成一條，留 keep |
+| `ownmind_archive(id, reason)` | 專案記憶講的事結束了，歸檔（仍可還原） |
+| `ownmind_restore(id)` | 把歸檔的記憶還原 |
+| `ownmind_decide(id, decision, source_id)` | 替「待決定」的記憶寫上決定，依據要是比它新的記憶 |
+| `ownmind_ask_later(memory_id, question)` | 整理時判斷不了的事，留一題等使用者在那個專案開對話時回答 |
+| `ownmind_consolidation_candidates()` | 每月整理的候選清單 |
+| `ownmind_lesson_set(id, status, reason?)` | 教訓留下（promoted）或不留（dismissed） |
+| `ownmind_task_reopen(id, note?)` | 把做完的任務卡退回 |
 | `ownmind_dismiss_notice(broadcast_id, snooze_hours?)` | 使用者說已經知道某則提醒時呼叫，用提醒上的 (notice #N)；每個工具都不再出現 |
 | `ownmind_log_session(summary, tool, model, ...)` | 記錄 session（**summary/tool/model 必填**）|
 | `ownmind_get_secret(key)` | 取得密鑰 |

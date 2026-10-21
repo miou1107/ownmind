@@ -154,6 +154,7 @@ app.use((req, res, next) => {
 
 // mount routes
 import memoryRoutes from './routes/memory.js';
+import { createMemoryConsolidationRouter } from './routes/memory-consolidation.js';
 import sessionRoutes from './routes/session.js';
 import { createSessionLessonsRouter } from './routes/session-lessons.js';
 import { createActivityTouchRouter } from './routes/activity-touch.js';
@@ -212,6 +213,9 @@ app.use('/api/me/confirm-password', confirmPasswordRoutes);
 // otherwise answer first.
 app.use('/api', apiKeyRotateRoutes);
 
+// v1.33.0: before /api/memory, so /api/memory/consolidation/* is answered here and never
+// arrives at the memory router as an id.
+app.use('/api/memory/consolidation', createMemoryConsolidationRouter({ query, auth, logger }));
 app.use('/api/memory', memoryRoutes);
 app.use('/api/compliance', complianceRoutes);
 // v1.31.0: before /api/session, so /api/session/lessons is answered here and never

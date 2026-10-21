@@ -44,6 +44,10 @@ import {
   isSuggestReportEligible,
 } from '../utils/bug-report-helpers.js';
 import { SERVER_VERSION } from '../utils/server-version.js';
+import { findSimilarMemories } from '../lib/memory-similarity.js';
+import {
+  archiveMemoryRow, answerOpenQuestions, buildConsolidationState, projectOfTags,
+} from './memory-consolidation.js';
 
 function parseSemver(v) {
   const parts = (v || '0.0.0').split('.').map(s => parseInt(s, 10));
@@ -448,12 +452,41 @@ router.get('/sync-token', async (req, res) => {
     } catch (err) {
       logger.warn('lessons_waiting count failed', { error: err.message });
     }
-    res.json({ sync_token, lessons_waiting });
+    // v1.33.0: the hook overlays these live fields on its cached init payload, so a
+    // cache-fresh start still sees the handoffs of the last 30 minutes and the consolidation
+    // card, report and questions. Same shapes as /init.
+    const handoffs = await recentHandoffs(req.user.id);
+    const consolidation = await buildConsolidationState(query, req.user.id, { logger });
+    res.json({ sync_token, lessons_waiting, handoffs, consolidation });
   } catch (err) {
     logger.error('GET /sync-token failed', { error: err.message });
     res.status(500).json({ error: 'Failed to obtain sync-token' });
   }
 });
+
+/**
+ * v1.33.0: every pending handoff plus the ones accepted in the last 30 minutes, so the hook
+ * can accept the one whose project matches and tell a second window in the same project who
+ * took it. Shared by /init and /sync-token. An empty list on a database error: the start
+ * must not fail for this.
+ */
+async function recentHandoffs(userId) {
+  try {
+    const hr = await query(
+      `SELECT id, project, from_tool, from_machine, content, status, accepted_by, accepted_at
+         FROM handoffs
+        WHERE user_id = $1
+          AND (status = 'pending'
+               OR (status = 'accepted' AND accepted_at >= NOW() - INTERVAL '30 minutes'))
+        ORDER BY created_at DESC`,
+      [userId],
+    );
+    return hr.rows;
+  } catch (err) {
+    logger.warn('handoffs lookup failed', { error: err.message });
+    return [];
+  }
+}
 
 /**
  * Issue #139: store the guessed `required_skills` on rules saved before the field existed.
@@ -525,6 +558,11 @@ router.get('/init', async (req, res) => {
        LIMIT 1`,
       [req.user.id]
     );
+
+    // v1.33.0: `handoffs` (pending + accepted in the last 30 minutes) and the consolidation
+    // state. `active_handoff` above stays for hooks older than this.
+    const handoffs = await recentHandoffs(req.user.id);
+    const consolidation = await buildConsolidationState(query, req.user.id, { logger });
 
     const memories = memoriesResult.rows;
     const profile = memories.find(m => m.type === 'profile') || null;
@@ -885,6 +923,8 @@ router.get('/init', async (req, res) => {
       // OS-detected language, so sending null here (rather than omitting the key) is safe.
       locale: accountLocale || null,
       active_handoff: activeHandoff,
+      handoffs,
+      consolidation,
       lessons_waiting: lessonsWaiting,
       tasks: tasksForProject,
       weekly_summary: weeklySummary,
@@ -1107,10 +1147,14 @@ router.get('/search', async (req, res) => {
 
     // user_id is $1, tokens start at $2.
     const built = buildSearchWhere(tokens, 2);
+    // v1.33.0: archived rows (the thing ended; what they say was true then) are out of the
+    // default answer and in only when the caller asks a history question.
+    const includeArchived = req.query.include_archived === '1' || req.query.include_archived === 'true';
+    const statusPredicate = includeArchived ? "m.status IN ('active', 'archived')" : "m.status = 'active'";
     // v1.26.38: search is the documented way to find a team-standard fragment,
     // so it must span shared rows rather than the caller's own rows only.
     const predicate =
-      `WHERE m.status = 'active'
+      `WHERE ${statusPredicate}
          AND ${buildReadableWhere({ alias: 'm', userParam: '$1' })}
          AND ${built.whereClause}`;
     const params = [req.user.id, ...built.params];
@@ -1140,6 +1184,34 @@ router.get('/search', async (req, res) => {
   } catch (err) {
     logger.error('memory search failed', { error: err.message });
     res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+/**
+ * GET /archived - the caller's archived memories, newest archive first (v1.33.0).
+ *
+ * The console's 已歸檔 tab, with 還原 per row. Registered above `/:id` for the same reason as
+ * every other literal path here. `project` is read off the `project:<name>` tag.
+ */
+router.get('/archived', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT id, type, title, content, tags, archived_reason, archived_at, updated_at, created_at
+         FROM memories
+        WHERE user_id = $1 AND status = 'archived'
+        ORDER BY archived_at DESC NULLS LAST, id DESC
+        LIMIT 200`,
+      [req.user.id]
+    );
+    res.json(result.rows.map((row) => ({
+      id: row.id, type: row.type, title: row.title, content: row.content, tags: row.tags,
+      project: projectOfTags(row.tags),
+      archived_reason: row.archived_reason, archived_at: row.archived_at,
+      updated_at: row.updated_at, created_at: row.created_at,
+    })));
+  } catch (err) {
+    logger.error('archived memories query failed', { error: err.message });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
@@ -1327,6 +1399,26 @@ router.post('/', async (req, res) => {
       });
       if (!resolved.ok) return res.status(400).json({ error: resolved.error });
       requiredSkillsFields = resolved.fields;
+    }
+
+    // v1.33.0: the save-time duplicate check, server side, no model. The same text saved
+    // twice is answered with the row that already holds it; a near rewrite is answered with
+    // the related rows so the AI updates one instead of adding a third. `force: true` skips
+    // both — the AI read the list and decided. Nothing is written on either answer, so the
+    // sync token it carries is the current one. `is_test` rows compare only with `is_test`.
+    if (req.body.force !== true) {
+      const similar = await findSimilarMemories(query, { userId: req.user.id, type, title, content, isTest: isTestFlag });
+      if (similar.exact) {
+        const existing = await query(
+          `SELECT id, type, title, content, code, tags, metadata, status, created_at, updated_at
+             FROM memories WHERE id = $1`,
+          [similar.exact.id]
+        );
+        return res.json({ saved: false, duplicate_of: existing.rows[0] || similar.exact, sync_token: await generateSyncToken(req.user.id) });
+      }
+      if (similar.similar.length > 0) {
+        return res.json({ saved: false, similar: similar.similar, sync_token: await generateSyncToken(req.user.id) });
+      }
     }
 
     // iron_rule auto-numbering.
@@ -2073,6 +2165,198 @@ router.put('/:id/enable', async (req, res) => {
   } catch (err) {
     logger.error('memory enable failed', { error: err.message });
     res.status(500).json({ error: 'Failed to enable memory' });
+  }
+});
+
+/**
+ * What the four v1.33.0 write routes below share: the sync token, who may write to the
+ * row, and the admin rule for shared types. Answers the response itself on refusal and
+ * returns null; otherwise the resolved access.
+ */
+async function openConsolidationWrite(req, res, id, verb) {
+  const tokenResult = await checkSyncToken(req.user.id, req.body?.sync_token);
+  if (!tokenResult.ok) {
+    res.status(409).json(tokenResult.errorResponse);
+    return null;
+  }
+  const access = await resolveWritableMemory({ id, user: req.user, queryFn: query });
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return null;
+  }
+  if (isSharedMemoryType(access.memory.type) && !isAtLeast(req.user.role, 'admin')) {
+    res.status(403).json({ error: `Team standards and their details may only be ${verb} by admins` });
+    return null;
+  }
+  return { ...access, tokenWarning: tokenResult.warning };
+}
+
+async function answerWithToken(res, row, tokenWarning, userId) {
+  const response = { ...row, sync_token: await generateSyncToken(userId) };
+  if (tokenWarning) response.update_warning = tokenWarning;
+  res.json(response);
+}
+
+/** `YYYY-MM-DD` in Asia/Taipei, the date a decision is stamped with. */
+function taipeiDate(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
+
+/**
+ * POST /merge { keep, drop } - two memories that say the same thing become one (v1.33.0).
+ *
+ * `keep` stays as it is; `drop` is disabled — not archived — with "merged into #keep", so it
+ * can never come back as a valid historical fact. When the two conflict the newer wins by
+ * staying; the older text is in history, not pasted into the kept body. Registered before
+ * the `/:id` routes, like every literal path here.
+ */
+router.post('/merge', async (req, res) => {
+  try {
+    const { keep, drop } = req.body || {};
+    if (!parseRowId(keep).ok || !parseRowId(drop).ok) {
+      return res.status(400).json({ error: 'keep and drop are required memory ids' });
+    }
+    if (String(keep) === String(drop)) return res.status(400).json({ error: 'keep and drop must differ' });
+    const keepAccess = await openConsolidationWrite(req, res, keep, 'merged');
+    if (!keepAccess) return;
+    const dropFound = await resolveWritableMemory({ id: drop, user: req.user, queryFn: query });
+    if (!dropFound.ok) return res.status(dropFound.status).json({ error: dropFound.error });
+    const a = keepAccess.memory;
+    const b = dropFound.memory;
+    if (String(a.user_id) !== String(b.user_id)) return res.status(409).json({ error: 'keep and drop belong to different users' });
+    if (a.type !== b.type) return res.status(409).json({ error: 'keep and drop are different types' });
+    if (a.status !== 'active' || b.status !== 'active') {
+      return res.status(409).json({ error: 'Only two active memories can be merged', keep_status: a.status, drop_status: b.status });
+    }
+    const reason = `merged into #${a.id}`;
+    const dropped = await query(
+      `UPDATE memories
+          SET status = 'disabled', disabled_reason = $1, disabled_at = NOW(), updated_at = NOW()
+        WHERE id = $2 AND status = 'active'
+        RETURNING *`,
+      [reason, b.id]
+    );
+    if (dropped.rows.length === 0) return res.status(409).json({ error: 'drop changed while merging; read it again' });
+    const kept = await query(
+      `UPDATE memories
+          SET metadata = jsonb_set(
+                COALESCE(CASE WHEN jsonb_typeof(metadata) = 'object' THEN metadata END, '{}'::jsonb),
+                '{merged_from}',
+                COALESCE(CASE WHEN jsonb_typeof(metadata) = 'object' THEN metadata->'merged_from' END, '[]'::jsonb) || to_jsonb($1::int)),
+              updated_at = NOW()
+        WHERE id = $2
+        RETURNING *`,
+      [b.id, a.id]
+    );
+    const historyMeta = JSON.stringify({ keep: a.id, drop: b.id });
+    await query(
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
+       VALUES ($1, 'api', 'merge', $2, $3), ($4, 'api', 'merge', $5, $3)`,
+      [b.id, dropped.rows[0].content, historyMeta, a.id, kept.rows[0].content]
+    );
+    await answerOpenQuestions(query, b.id);
+    const response = { keep: kept.rows[0], drop: dropped.rows[0], sync_token: await generateSyncToken(req.user.id) };
+    if (keepAccess.tokenWarning) response.update_warning = keepAccess.tokenWarning;
+    res.json(response);
+  } catch (err) {
+    logger.error('memory merge failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to merge memories' });
+  }
+});
+
+/**
+ * POST /:id/archive { reason } - the thing this memory describes has ended (v1.33.0).
+ * Project memories only; iron rules, standards and preferences are never archived by a
+ * route. Answers any question the AI had parked about it.
+ */
+router.post('/:id/archive', async (req, res) => {
+  try {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (!reason) return res.status(400).json({ error: 'An archive reason is required' });
+    const access = await openConsolidationWrite(req, res, req.params.id, 'archived');
+    if (!access) return;
+    if (access.memory.type !== 'project') return res.status(409).json({ error: 'Only project memories can be archived' });
+    if (access.memory.status !== 'active') return res.status(409).json({ error: 'Only an active memory can be archived', status: access.memory.status });
+    const row = await archiveMemoryRow(query, { id: access.memory.id, reason, changedBy: 'api' });
+    if (!row) return res.status(409).json({ error: 'Memory changed while archiving; read it again' });
+    await answerWithToken(res, row, access.tokenWarning, req.user.id);
+  } catch (err) {
+    logger.error('memory archive failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to archive memory' });
+  }
+});
+
+/** POST /:id/restore - archived → active again (the console's 還原 and ownmind_restore). */
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const access = await openConsolidationWrite(req, res, req.params.id, 'restored');
+    if (!access) return;
+    if (access.memory.status !== 'archived') return res.status(409).json({ error: 'Only an archived memory can be restored', status: access.memory.status });
+    const result = await query(
+      `UPDATE memories
+          SET status = 'active', archived_at = NULL, archived_reason = NULL, updated_at = NOW()
+        WHERE id = $1 AND status = 'archived'
+        RETURNING *`,
+      [access.memory.id]
+    );
+    if (result.rows.length === 0) return res.status(409).json({ error: 'Memory changed while restoring; read it again' });
+    await query(
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
+       VALUES ($1, 'api', 'restore', $2, $3)`,
+      [access.memory.id, result.rows[0].content, JSON.stringify({ archived_reason: access.memory.archived_reason ?? null })]
+    );
+    await answerWithToken(res, result.rows[0], access.tokenWarning, req.user.id);
+  } catch (err) {
+    logger.error('memory restore failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to restore memory' });
+  }
+});
+
+/**
+ * POST /:id/decide { decision, source_id } - a waiting item got its answer (v1.33.0).
+ * The answer is cited: `source_id` is a memory of the same user created after this one,
+ * so a decision can never rest on something older than the question.
+ */
+router.post('/:id/decide', async (req, res) => {
+  try {
+    const decision = typeof req.body?.decision === 'string' ? req.body.decision.trim() : '';
+    const sourceId = req.body?.source_id;
+    if (!decision) return res.status(400).json({ error: 'decision is required' });
+    if (!parseRowId(sourceId).ok) return res.status(400).json({ error: 'source_id is required' });
+    const access = await openConsolidationWrite(req, res, req.params.id, 'decided');
+    if (!access) return;
+    if (access.memory.status !== 'active') return res.status(409).json({ error: 'Only an active memory can be decided', status: access.memory.status });
+    const target = await query('SELECT id, created_at, content FROM memories WHERE id = $1', [access.memory.id]);
+    const source = await query('SELECT id, created_at FROM memories WHERE id = $1 AND user_id = $2', [sourceId, access.memory.user_id]);
+    if (source.rows.length === 0) return res.status(404).json({ error: 'source memory not found' });
+    if (!(new Date(source.rows[0].created_at) > new Date(target.rows[0].created_at))) {
+      return res.status(409).json({ error: 'source must be newer' });
+    }
+    const oldContent = target.rows[0].content;
+    const newContent = `決定（${taipeiDate()}，依據 #${source.rows[0].id}）：${decision}\n\n${oldContent}`;
+    // The decision text lands in `content`, so it passes the same secret guard PUT /:id runs
+    // on an edited body; a key pasted into a decision is refused the same way.
+    const guardResult = validateMemoryContent({
+      type: access.memory.type, title: access.memory.title, content: newContent, metadata: access.memory.metadata,
+    });
+    if (!guardResult.ok) return res.status(guardResult.status).json(guardResult.body);
+    const result = await query(
+      `UPDATE memories
+          SET content = $1, previous_content = $2, updated_at = NOW()
+        WHERE id = $3
+        RETURNING *`,
+      [newContent, oldContent, access.memory.id]
+    );
+    await query(
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
+       VALUES ($1, 'api', 'decide', $2, $3)`,
+      [access.memory.id, oldContent, JSON.stringify({ decision, source_id: source.rows[0].id })]
+    );
+    await answerOpenQuestions(query, access.memory.id);
+    await answerWithToken(res, result.rows[0], access.tokenWarning, req.user.id);
+  } catch (err) {
+    logger.error('memory decide failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to record the decision' });
   }
 });
 

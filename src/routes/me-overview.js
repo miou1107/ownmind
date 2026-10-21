@@ -391,7 +391,8 @@ export async function buildOverview({ query, user, rangeDays, canonicalHost, now
       ? bugList.map((b) => ({ id: b.id, title: b.title, reporter_name: b.reporter_name ?? null, updated_at: toIso(b.updated_at) }))
       : null,
     bugs_count: bugList ? recentBugs : null,
-    hidden: Math.max(0, counts.total - (recentHandoffs + recentLessons + recentTasks + recentBugs)),
+    // Done cards are listed as what the AI closed, not counted as waiting (v1.33.0).
+    hidden: Math.max(0, counts.total - (recentHandoffs + recentLessons + recentBugs)),
   };
 
   return {
@@ -446,18 +447,19 @@ function summarizeCompliance(rows) {
 export async function buildPendingCount({ query, user }) {
   const uid = user.id;
   const admin = isAtLeast(user.role, 'admin');
-  const [h, l, t, b] = await Promise.all([
+  const [h, l, b] = await Promise.all([
     query(`SELECT COUNT(*)::int AS n FROM handoffs WHERE user_id = $1 AND status = 'pending'`, [uid]),
     query(`SELECT COUNT(*)::int AS n FROM session_lessons WHERE user_id = $1 AND status = 'new'`, [uid]),
-    query(`SELECT COUNT(*)::int AS n FROM tasks WHERE user_id = $1 AND status = 'done'`, [uid]),
     admin
       ? query(`SELECT COUNT(*)::int AS n FROM bug_reports WHERE status = 'new'`)
       : Promise.resolve(null),
   ]);
+  // v1.33.0: a done card is closed, not waiting for 審過 — nobody pressed it. The field stays
+  // at 0 so a console reading `tasks` keeps working; the home page still lists recent closes.
   const counts = {
     handoffs: int(h.rows[0]?.n),
     lessons: int(l.rows[0]?.n),
-    tasks: int(t.rows[0]?.n),
+    tasks: 0,
     bugs: b ? int(b.rows[0]?.n) : null,
   };
   counts.total = counts.handoffs + counts.lessons + counts.tasks + (counts.bugs ?? 0);

@@ -138,6 +138,7 @@ test('scripts/update.ps1 must sync the Claude Code skills directory', () => {
   assert.match(content, /skills/i, 'update.ps1 must handle skill sync');
   assert.match(content, /ownmind-memory/, 'update.ps1 must copy the ownmind-memory skill');
   assert.match(content, /ownmind-upgrade/, 'update.ps1 must copy the ownmind-upgrade skill');
+  assert.match(content, /ownmind-consolidate/, 'update.ps1 must copy the ownmind-consolidate skill');
   assert.match(content, /SessionStart|PreToolUse/,
     'update.ps1 must inject settings.json hooks (counterpart to update.sh step 3)');
 });

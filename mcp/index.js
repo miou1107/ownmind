@@ -16,6 +16,7 @@ import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
 import { isNetworkError, readMemoryCache, readHookInitPayload, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, replayQueue, formatCacheAge } from './offline.js';
 import { runMemorySearch } from './lib/memory-search.js';
+import { runKeepingAction, saveNotice, assertEvidence, taskDoneNotice } from './lib/memory-keeping.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
@@ -266,13 +267,23 @@ const TYPE_MAP = {
   ownmind_save: 'Memory write',
   ownmind_update: 'Memory write',
   ownmind_disable: 'Memory write',
+  // v1.33.0 — the AI keeps the memory
+  ownmind_consolidation_candidates: 'Consolidation candidates',
+  ownmind_merge: 'Memories merged',
+  ownmind_archive: 'Memory archived',
+  ownmind_decide: 'Decision recorded',
+  ownmind_restore: 'Memory restored',
+  ownmind_ask_later: 'Question parked',
+  ownmind_lesson_set: 'Lesson decided',
   ownmind_handoff_create: 'Handoff created',
   ownmind_handoff_accept: 'Handoff accepted',
+  ownmind_handoff_reopen: 'Handoff reopened',
   ownmind_task_create: 'Task card created',
   ownmind_task_list: 'Task cards',
   ownmind_task_claim: 'Task card claimed',
   ownmind_task_done: 'Task card finished',
   ownmind_task_drop: 'Task card handed back',
+  ownmind_task_reopen: 'Task card reopened',
   ownmind_dismiss_notice: 'Notice turned off',
   ownmind_log_session: 'Session logged',
   ownmind_get_secret: 'Secret management',
@@ -527,24 +538,26 @@ const TOOLS = [
     // title in the startup list got looked up and the same thing said differently did not.
     // This description is in front of the model on every turn, which the startup context is
     // not — and it reaches every tool, including the ones that never see that context.
-    description: "Search memories and session logs by keyword. CALL THIS when something in the request points at the user rather than at the world — a name, tool, site, process, server or decision you cannot resolve from the repo in front of you, or a phrase you would have to guess at (\"the company X\", \"our Y\", \"the usual Z\") — BEFORE you answer or start work. Also call it before you ask the user something they may have stored already. NEVER tell the user you have no information about something of theirs — a server, a project, a credential, a decision — until you have searched for it in this session; that is a claim about their memory, not about the world. Results are previews: content is cut to 400 characters, with content_length and content_truncated on each row. Call ownmind_get with that row's id to read one in full — and always do that before ownmind_update, or you will overwrite the rest of it. The response carries memory_total and memory_returned; when they differ the list was capped and a narrower query will reach the rest.",
+    description: "Search memories and session logs by keyword. CALL THIS when something in the request points at the user rather than at the world — a name, tool, site, process, server or decision you cannot resolve from the repo in front of you, or a phrase you would have to guess at (\"the company X\", \"our Y\", \"the usual Z\") — BEFORE you answer or start work. Also call it before you ask the user something they may have stored already. NEVER tell the user you have no information about something of theirs — a server, a project, a credential, a decision — until you have searched for it in this session; that is a claim about their memory, not about the world. Results are previews: content is cut to 400 characters, with content_length and content_truncated on each row. Call ownmind_get with that row's id to read one in full — and always do that before ownmind_update, or you will overwrite the rest of it. The response carries memory_total and memory_returned; when they differ the list was capped and a narrower query will reach the rest. Archived memories (subject ended, text true at the time) are left out unless include_archived is true.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search keyword" },
+        include_archived: { type: "boolean", description: "(optional) true to also return archived memories — project memories whose subject has ended (a shipped project, a retired host). For history questions only; each row then carries `status` ('active' or 'archived'). Disabled memories are never returned." },
       },
       required: ["query"],
     },
   },
   {
     name: "ownmind_save",
-    description: "⚠️ For sensitive data (passwords, tokens, API keys, credentials) use ownmind_set_secret instead — do not write secrets into memories (the memory API detects and rejects them with HTTP 400). Save a new memory: specify type, title, content, plus optional code, tags, metadata. When writing an iron_rule, the AI should also pass origin_event / user_quote describing \"why this rule was created at the time\" — if unknown, write \"user issued the rule directly\". When writing a team_standard that a person can ask for by name, set metadata.user_invocable: true together with metadata.invocation_hint — the sentence they are shown in the daily tip, in their own words. The flag without the sentence is rejected.",
+    description: "⚠️ For sensitive data (passwords, tokens, API keys, credentials) use ownmind_set_secret instead — do not write secrets into memories (the memory API detects and rejects them with HTTP 400). Save a new memory: specify type, title, content, plus optional code, tags, metadata. When writing an iron_rule, the AI should also pass origin_event / user_quote describing \"why this rule was created at the time\" — if unknown, write \"user issued the rule directly\". When writing a team_standard that a person can ask for by name, set metadata.user_invocable: true together with metadata.invocation_hint — the sentence they are shown in the daily tip, in their own words. The flag without the sentence is rejected. The server checks for duplicates before inserting: an exact duplicate comes back as saved:false with duplicate_of and nothing is written; related memories of the same type come back as saved:false with `similar` (id, title, similarity, excerpt) — read them, then either ownmind_update the closest one or call ownmind_save again with force: true when none of them is this one.",
     inputSchema: {
       type: "object",
       properties: {
         type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "Memory type" },
         title: { type: "string", description: "Memory title" },
         content: { type: "string", description: "Memory content" },
+        force: { type: "boolean", description: "(optional) true to insert even though the server found related memories or an exact duplicate. Only on a second call, after you read the `similar` list the first call returned and decided none of them is this memory. A first call never passes it." },
         code: { type: "string", description: "Related code (optional)" },
         tags: {
           type: "array",
@@ -615,7 +628,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_disable",
-    description: "Disable a memory entry (e.g., an iron rule). A reason is required.",
+    description: "Disable a memory that is wrong or superseded (an iron rule withdrawn, a fact that was never true, a duplicate that lost a merge). A disabled memory never comes back into search. For a project memory whose subject has simply ended — the project shipped, the host was retired — use ownmind_archive instead, which keeps it readable as history. A reason is required.",
     inputSchema: {
       type: "object",
       properties: {
@@ -623,6 +636,93 @@ const TOOLS = [
         reason: { type: "string", description: "Reason for disabling" },
       },
       required: ["id", "reason"],
+    },
+  },
+  // v1.33.0 — the AI keeps the memory. The monthly consolidation card (整理記憶 YYYY-MM, project
+  // ownmind) is worked with these; the judgement rules live in
+  // the ownmind-consolidate skill. Every write answers with a `notice` the AI
+  // relays, ending in 要撤銷跟我說一聲, because the person pressed nothing and the chat is where
+  // the undo is offered. See openspec/changes/v1.33.0-ai-keeps-the-memory/spec.md.
+  {
+    name: "ownmind_consolidation_candidates",
+    description: "What the server found worth a look for the monthly memory consolidation card, computed from the caller's own memories and changing nothing: duplicates (pairs of same-type memories with high text similarity), concluded (project memories whose title carries a done marker such as 【已結案】 or 【已過時】), stale (project memories untouched for 90 days — a flag only, never archive on that alone), waiting (memories still marked 待決定 / 待確認 / 待執行), lessons older than 7 days, and task cards closed this month. Call it first when working the card, right after ownmind_task_claim. The judgement is yours, following the `ownmind-consolidate` skill: merge true duplicates with ownmind_merge, archive concluded project memories with ownmind_archive, settle waiting items with ownmind_decide when a newer memory answers them, park with ownmind_ask_later what only the person can answer, keep or dismiss lessons with ownmind_lesson_set. Append a progress line to the card as you go, so a run that stops half-way leaves a trail the next run continues from.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "ownmind_merge",
+    description: "Merge two active memories of the same type that say the same thing: `keep` stays active, `drop` is disabled with the reason 'merged into #keep' and can never come back as a historical fact. When the two conflict, the newer wins: if `keep` is the older one, ownmind_update it with the newer wording first, then merge; the older text goes to history, not into the kept body. Use it only for true duplicates — the pairs ownmind_consolidation_candidates lists, or the `similar` rows a save returned. A memory that is wrong or superseded goes to ownmind_disable; one whose subject has ended goes to ownmind_archive. Relay the returned notice to the person.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        keep: { type: "number", description: "Memory id that stays active" },
+        drop: { type: "number", description: "Memory id that is disabled as 'merged into #keep'" },
+      },
+      required: ["keep", "drop"],
+    },
+  },
+  {
+    name: "ownmind_archive",
+    description: "Archive a project memory whose subject has ended — the project shipped, the host was retired, the decision was carried out — so it leaves the local index, the sync payload and the default search but stays readable with ownmind_search include_archived: what it says was true at the time. Not for memories that are wrong or superseded (those go to ownmind_disable), and never for an iron rule, team standard, preference or env — the server refuses anything but type project with 409. Before archiving something as finished, check git log, the file system or the server; ask the person with ownmind_ask_later only about things outside the machine. Pass the reason in plain words. Relay the returned notice; ownmind_restore undoes it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Memory id (type project)" },
+        reason: { type: "string", description: "Why its subject has ended, in plain words; shown on the console next to the row" },
+      },
+      required: ["id", "reason"],
+    },
+  },
+  {
+    name: "ownmind_decide",
+    description: "Record that a memory marked 待決定 / 待確認 / 待執行 has been settled, citing the memory that settles it: the content becomes 決定（date，依據 #source_id）：decision above the old text, and the old text goes to history. `source_id` must be a memory of the same person created after `id` — the server refuses an older source with 409 source must be newer. Find the answer in memories created after the waiting one and cite that id; do not decide from your own reading of the situation. Afterwards: a one-off item is archived with ownmind_archive; a standing decision stays active and you remove 待決定 from its title with ownmind_update. Relay the returned notice.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "The waiting memory" },
+        decision: { type: "string", description: "What was decided, one or two sentences" },
+        source_id: { type: "number", description: "The newer memory that records the answer" },
+      },
+      required: ["id", "decision", "source_id"],
+    },
+  },
+  {
+    name: "ownmind_restore",
+    description: "Put an archived memory back to active, with the archive reason cleared (the console 還原 button calls the same route). Call it when the person asks to undo an archive, or when the consolidation pass archived something that is still running. Only archived rows; a disabled memory is not restored this way. Relay the returned notice.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Memory id" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "ownmind_ask_later",
+    description: "Park a question for the person about one memory, to be asked at a natural moment in a session whose project matches the memory's (at most three per session start). Use it only for what the machine cannot answer — did Adam open the API, was the form resent; git log, the file system and the server answer the rest, so check those first. One open question per memory; a second call replaces the text. A question shown twice without an answer archives its project memory automatically (兩次未確認，自動歸檔), so ask only what is worth that. Relay the returned notice.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memory_id: { type: "number", description: "The memory the question is about" },
+        question: { type: "string", description: "The question, in the person's words, one line" },
+      },
+      required: ["memory_id", "question"],
+    },
+  },
+  {
+    name: "ownmind_lesson_set",
+    description: "Decide one lesson that ownmind_log_session stored: status 'promoted' turns it into a project memory now (the console 還是留 button does the same); status 'dismissed' drops it with a one-line reason, required then. Use it at the monthly pass on the lessons ownmind_consolidation_candidates lists (older than 7 days): keep the ones still true and not already fixed in code or CLAUDE.md, dismiss the rest with the reason. A lesson seen a second time is promoted by the server on its own; this tool is for the rest. Relay the returned notice; to take back a promotion, archive the memory it made with ownmind_archive.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Lesson id" },
+        status: { type: "string", enum: ["promoted", "dismissed"], description: "promoted = make it a project memory now; dismissed = drop it with a reason" },
+        reason: { type: "string", description: "(required with dismissed) One line: why it is not worth keeping, e.g. already fixed in CLAUDE.md" },
+      },
+      required: ["id", "status"],
     },
   },
   {
@@ -658,6 +758,17 @@ const TOOLS = [
     },
   },
   {
+    name: "ownmind_handoff_reopen",
+    description: "Put an accepted handoff back to pending, so the next session that starts in that project picks it up again (the console 重開 button does the same). Use it when a session accepted a handoff it did not actually carry on — a test window that swallowed it, or the person asks to undo the accept. Not for a handoff that was finished; that one stays accepted. Relay the returned notice.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Handoff record ID" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "ownmind_dismiss_notice",
     description: "Turn off an OwnMind notice (the 📢 broadcast lines) for this person in every tool and on every machine. CALL THIS when the user says they already know about a notice, it is handled, or they do not want to see it again — saying \"noted\" back to them does NOT turn it off, and it will reappear in the next conversation. Each notice shows its number as (notice #N). Pass snooze_hours instead to hide it for a while, only on notices that offer a snooze.",
     inputSchema: {
@@ -671,7 +782,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_log_session",
-    description: "Log a work session's summary and context. Must be called before a conversation ends; does not require user confirmation. Pass `lessons` whenever the work got stuck at any point: each one says where it got stuck, what unstuck it, and what to do differently next time. The person promotes or dismisses them later in the console; the AI never writes them into memory itself.",
+    description: "Log a work session's summary and context. Must be called before a conversation ends; does not require user confirmation. Pass `lessons` whenever the work got stuck at any point: each one says where it got stuck, what unstuck it, and what to do differently next time. A lesson that says the same thing as an earlier one is promoted into a project memory by the server at once (seen a second time); the rest wait for the monthly consolidation pass, where the AI keeps or dismisses them with ownmind_lesson_set. Nobody reviews them in the console, so do not write a lesson into memory yourself at close.",
     inputSchema: {
       type: "object",
       properties: {
@@ -710,8 +821,9 @@ const TOOLS = [
       required: ["summary"],
     },
   },
-  // v1.31.3 — task cards an AI session can pick up. Five tools; none can mark a card
-  // reviewed, because the AI never closes its own work. See docs/task-runner.md.
+  // v1.31.3 — task cards an AI session can pick up. See docs/task-runner.md.
+  // v1.33.0 — done with evidence closes the card; nobody reviews it. The verification the AI
+  // ran and what it printed is the evidence, and ownmind_task_reopen is the undo.
   {
     name: "ownmind_task_create",
     description: "Write a task card for one AI session to pick up later: a project, a title, and a body that is the whole brief (at most 4000 characters — a card that needs more is more than one session's work; split it). Use when the person says to queue, park, or hand off a piece of work rather than do it now. Set auto=true only when the person says it may be done unattended.",
@@ -750,15 +862,16 @@ const TOOLS = [
   },
   {
     name: "ownmind_task_done",
-    description: "Finish the card this session holds. result says what changed, where, and how to verify; links may add a branch, merge request or commit. The person reviews it in the console; this tool cannot mark it reviewed.",
+    description: "Finish the card this session holds. Run the card's verification first — the 'how to verify' in its body: the test, the command, the page — and pass what it printed as `evidence`; the server refuses done without it, and a method with no output is not evidence. result says what changed and where; links may add a branch, merge request or commit. done closes the card: there is no review step, the monthly consolidation report lists it, and ownmind_task_reopen (or the console 退回 button) brings it back. Relay the returned notice.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "number", description: "Card id" },
-        result: { type: "string", description: "What was done, where to look, how to verify. At most 4000 characters" },
+        result: { type: "string", description: "What was done and where to look. At most 4000 characters" },
+        evidence: { type: "string", description: "The verification you ran and what it printed — command and output, test counts, the page you opened. At least 20 characters; a method with no result is refused" },
         links: { type: "object", description: "(optional) name → URL", additionalProperties: { type: "string" } },
       },
-      required: ["id", "result"],
+      required: ["id", "result", "evidence"],
     },
   },
   {
@@ -771,6 +884,18 @@ const TOOLS = [
         reason: { type: "string", description: "Why it is handed back" },
       },
       required: ["id", "reason"],
+    },
+  },
+  {
+    name: "ownmind_task_reopen",
+    description: "Put a done task card back to open with a note saying why (the console 退回 button does the same); owner or admin only. Use it when the person says the work was not actually done, or the evidence turned out to be wrong. The claim, result and evidence are cleared and the note is appended to the card, so the next session sees why it came back. Not for a card someone else holds — that is theirs to drop. Relay the returned notice.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Card id" },
+        note: { type: "string", description: "(optional) Why it is reopened, one line; appended to the card" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -1190,7 +1315,7 @@ async function handleTool(name, args) {
       // and shipped a swallowed error for months.
       const result = await runMemorySearch(
         { callApi, isNetworkError, readMemoryCache: readOwnMemoryCache, localSearch, logEvent, formatCacheAge, apiUrl: API_URL, apiUrlConfigured: API_URL_CONFIGURED },
-        { query: args.query, syncToken: currentSyncToken },
+        { query: args.query, syncToken: currentSyncToken, includeArchived: args.include_archived === true },
       );
       if (result._new_token) {
         currentSyncToken = result._new_token;
@@ -1211,6 +1336,8 @@ async function handleTool(name, args) {
       if (args.metadata !== undefined) body.metadata = args.metadata;
       // v1.19: iron rule tiering — the server validates that non-iron-rule entries cannot set a tier.
       if (args.tier !== undefined) body.tier = args.tier;
+      // v1.33.0: only after the AI read the `similar` list a first call returned.
+      if (args.force === true) body.force = true;
 
       // v1.18.2: iron_rule auto-capture + inject origin_context (situational context).
       // - Technical fields (cwd / git_branch / captured_at) are filled in by the client.
@@ -1243,6 +1370,15 @@ async function handleTool(name, args) {
       try {
         const data = await callApi("POST", "/api/memory", body);
         if (data.sync_token) currentSyncToken = data.sync_token;
+        // v1.33.0: the server declines an exact duplicate (duplicate_of) or holds back when
+        // related memories exist (similar); nothing was written either way. The notice tells
+        // the AI which, and what to do next — it is the AI that has the model to judge the
+        // similar list, not the server.
+        const notice = saveNotice(data);
+        if (notice) {
+          logEvent('memory_save', { type: args.type, title: args.title, saved: false, duplicate_of: data.duplicate_of?.id ?? null, similar: Array.isArray(data.similar) ? data.similar.length : 0 });
+          return { ...data, notice };
+        }
         logEvent('memory_save', { type: args.type, title: args.title });
         // Refresh cache if iron_rule was saved
         if (args.type === 'iron_rule') {
@@ -1335,6 +1471,24 @@ async function handleTool(name, args) {
       return data;
     }
 
+    // v1.33.0 — the AI keeps the memory. One case per tool so the source-level tests can find
+    // each handler; the method, path, body and notice live in mcp/lib/memory-keeping.js. None
+    // of these queue offline: each updates a row by id against the state the server holds now.
+    case "ownmind_consolidation_candidates":
+    case "ownmind_merge":
+    case "ownmind_archive":
+    case "ownmind_decide":
+    case "ownmind_restore":
+    case "ownmind_ask_later":
+    case "ownmind_lesson_set":
+    case "ownmind_task_reopen":
+    case "ownmind_handoff_reopen": {
+      const data = await runKeepingAction({ callApi, syncToken: currentSyncToken }, name, args);
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      logEvent(name.replace(/^ownmind_/, ''), { id: args.id ?? args.keep ?? args.memory_id ?? null });
+      return data;
+    }
+
     case "ownmind_dismiss_notice": {
       // ALL_TOOLS ('*' in src/lib/broadcast-filter.js): turned off once, it stays off in
       // every tool. The per-tool form is what the upgrade script's own snooze still uses.
@@ -1382,7 +1536,7 @@ async function handleTool(name, args) {
       if (!body.lessons) {
         return {
           ...data,
-          lessons_notice: 'No lessons were recorded for this session. If the work got stuck anywhere, call ownmind_log_session again with `lessons` so the person can keep what was learned.',
+          lessons_notice: 'No lessons were recorded for this session. If the work got stuck anywhere, call ownmind_log_session again with `lessons`: a repeat is promoted into memory at once, the rest are kept or dismissed at the monthly consolidation pass.',
         };
       }
       return data;
@@ -1416,11 +1570,15 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_task_done": {
+      // v1.33.0: done closes the card, so the evidence has to be real before it goes. Same
+      // sentence as the server's 400, checked here to save the round-trip.
+      assertEvidence(args.evidence);
       const data = await callApi("PUT", `/api/tasks/${encodeURIComponent(String(args.id))}/done`, {
-        result: args.result, links: args.links, sync_token: currentSyncToken,
+        result: args.result, evidence: args.evidence, links: args.links, sync_token: currentSyncToken,
       });
+      if (data?.sync_token) currentSyncToken = data.sync_token;
       logEvent('task_done', { id: args.id });
-      return data;
+      return { ...data, notice: taskDoneNotice(args.id) };
     }
 
     case "ownmind_task_drop": {

@@ -165,7 +165,10 @@ if (Test-Path $ClaudeDir) {
   CopyIfExists `
     (Join-Path $OwnMindDir "skills\ownmind-upgrade.md") `
     (Join-Path $ClaudeDir "skills\ownmind-upgrade\SKILL.md") | Out-Null
-  Write-Host "[ OK ] Skills synced (ownmind-memory + ownmind-upgrade)"
+  CopyIfExists `
+    (Join-Path $OwnMindDir "skills\ownmind-consolidate.md") `
+    (Join-Path $ClaudeDir "skills\ownmind-consolidate\SKILL.md") | Out-Null
+  Write-Host "[ OK ] Skills synced (ownmind-memory + ownmind-upgrade + ownmind-consolidate)"
 }
 
 # --- 1b. 同步升級規則到其他 AI 工具 ---

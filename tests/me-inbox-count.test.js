@@ -35,7 +35,8 @@ describe('buildPendingCount', () => {
   it('counts what a member may handle and leaves bugs null, unqueried', async () => {
     const { query, calls } = fakeQuery(ROWS);
     const c = await buildPendingCount({ query, user: { id: 7, role: 'user' } });
-    assert.deepEqual(c, { handoffs: 2, lessons: 3, tasks: 1, bugs: null, total: 6 });
+    // v1.33.0: a done card is closed, not waiting — tasks is 0 and the table is not asked.
+    assert.deepEqual(c, { handoffs: 2, lessons: 3, tasks: 0, bugs: null, total: 5 });
     assert.ok(!calls.some((x) => x.sql.includes('bug_reports')));
     for (const x of calls) assert.equal(x.params[0], 7, 'every count is the caller\'s own');
   });
@@ -43,7 +44,7 @@ describe('buildPendingCount', () => {
   it('adds the open bug reports for an admin', async () => {
     const { query } = fakeQuery(ROWS);
     const c = await buildPendingCount({ query, user: { id: 1, role: 'admin' } });
-    assert.deepEqual(c, { handoffs: 2, lessons: 3, tasks: 1, bugs: 5, total: 11 });
+    assert.deepEqual(c, { handoffs: 2, lessons: 3, tasks: 0, bugs: 5, total: 10 });
   });
 
   it('is served under /api/me/overview/pending-count', async () => {
@@ -55,7 +56,7 @@ describe('buildPendingCount', () => {
     try {
       const res = await fetch(`${server.url}/api/me/overview/pending-count`);
       assert.equal(res.status, 200);
-      assert.equal((await res.json()).total, 6);
+      assert.equal((await res.json()).total, 5);
     } finally {
       await server.close();
     }

@@ -289,6 +289,8 @@ describe('nav structure — role filtering', () => {
     assert.equal(navMinRole('/team/members'), 'user');
     assert.equal(navMinRole('/admin/users'), 'admin');
     assert.equal(navMinRole('/memory/rules'), 'user');
+    // v1.33.0 — the archived tab lists the caller's own rows, so every member sees it.
+    assert.equal(navMinRole('/memory/archived'), 'user');
     assert.equal(navMinRole('/inbox/bugs'), 'admin');
     assert.equal(navMinRole('/usage/team'), 'admin');
     assert.equal(navMinRole('/admin/machines'), 'admin');

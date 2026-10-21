@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { parseRowId } from '../utils/row-id.js';
 import { isAtLeast } from '../middleware/adminAuth.js';
 import {
-  normalizeTaskCreate, normalizeTaskDone, claimNote, CLAIM_TTL_HOURS, TASK_STATUSES,
+  normalizeTaskCreate, normalizeTaskDone, claimNote, reopenNote, CLAIM_TTL_HOURS, TASK_STATUSES,
 } from '../../shared/task-body.js';
 
 /**
@@ -11,15 +11,21 @@ import {
  *   POST   /             create (the AI writes the card the person asked for)
  *   GET    /             list: ?project=  open+claimed cards of a project the caller may see
  *                              ?mine=true  cards the caller owns or holds, not yet closed
+ *                              ?mine=true&closed=month  the caller's cards closed this month
  *                              ?all=true   admin+: every non-private card, any status
  *   PUT    /:id/claim    take an open card (or move my own claim to this session)
- *   PUT    /:id/done     finish the card I hold
+ *   PUT    /:id/done     finish the card I hold — with evidence (v1.33.0)
  *   PUT    /:id/drop     hand back the card I hold, with a reason
- *   PUT    /:id/review   close a done card — owner or admin, from the console only
+ *   PUT    /:id/review   close a done card (kept for older consoles; done is terminal now)
+ *   PUT    /:id/reopen   send a done or reviewed card back to open — owner or admin (v1.33.0)
  *
  * Visibility is one predicate (`visibleWhere`): a private card is seen by its owner and its
- * holder and nobody else. The MCP offers no review tool on purpose; the AI never closes its
- * own work.
+ * holder and nobody else.
+ *
+ * v1.33.0: `done` closes the card. It used to wait for the person to press 審過, and nobody
+ * did, so the evidence the AI would have shown a reviewer is now required on the call
+ * itself and stored with the card; the monthly report lists the closed cards and a wrong
+ * close is undone with `reopen`.
  *
  * A factory, so a test can hand it a fake `query` and prove the claim races, the visibility
  * rule and the status machine without a database.
@@ -34,7 +40,7 @@ function visibleWhere(alias, slot) {
 
 const CARD_COLUMNS = `
   t.id, t.user_id, t.project, t.title, t.body, t.status, t.is_private, t.auto, t.links,
-  t.claimed_by, t.claimed_tool, t.claimed_session, t.claimed_at, t.result, t.done_at,
+  t.claimed_by, t.claimed_tool, t.claimed_session, t.claimed_at, t.result, t.evidence, t.done_at,
   t.reviewed_by, t.reviewed_at, t.created_at, t.updated_at,
   owner.name AS owner_name, holder.name AS holder_name`;
 
@@ -99,9 +105,15 @@ export function createTasksRouter({ query, auth, logger = console }) {
         where = 't.is_private = FALSE';
         values = [];
         if (TASK_STATUSES.includes(req.query.status)) { values.push(req.query.status); where += ` AND t.status = $${values.length}`; }
+      } else if (req.query.mine === 'true' && req.query.closed === 'month') {
+        // v1.33.0: what I closed this month (Asia/Taipei), for the console's closed list and
+        // the monthly report. Newest close first, below.
+        values = [uid];
+        where = `(t.user_id = $1 OR t.claimed_by = $1) AND t.status IN ('done', 'reviewed')
+                 AND to_char(t.done_at AT TIME ZONE 'Asia/Taipei', 'YYYY-MM') = to_char(NOW() AT TIME ZONE 'Asia/Taipei', 'YYYY-MM')`;
       } else if (req.query.mine === 'true') {
         values = [uid];
-        where = `(t.user_id = $1 OR t.claimed_by = $1) AND t.status NOT IN ('reviewed', 'dropped')`;
+        where = `(t.user_id = $1 OR t.claimed_by = $1) AND t.status NOT IN ('done', 'reviewed', 'dropped')`;
       } else {
         const project = typeof req.query.project === 'string' ? req.query.project.trim() : '';
         if (!project) return res.status(400).json({ error: 'project, mine=true or all=true is required' });
@@ -111,10 +123,13 @@ export function createTasksRouter({ query, auth, logger = console }) {
       // "Held by me" is decided here, so a client never has to know its own account id. The
       // all branch carries no caller parameter, so it answers FALSE rather than reference $1.
       const heldByMe = req.query.all === 'true' ? 'FALSE' : '(t.claimed_by = $1)';
+      const order = req.query.closed === 'month'
+        ? 't.done_at DESC'
+        : `CASE t.status WHEN 'claimed' THEN 0 WHEN 'open' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+                   t.created_at ASC`;
       const r = await query(
         `SELECT ${columns}, ${heldByMe} AS held_by_me ${CARD_JOINS} WHERE ${where}
-          ORDER BY CASE t.status WHEN 'claimed' THEN 0 WHEN 'open' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
-                   t.created_at ASC
+          ORDER BY ${order}
           LIMIT ${LIST_LIMIT}`,
         values,
       );
@@ -163,10 +178,11 @@ export function createTasksRouter({ query, auth, logger = console }) {
       const n = normalizeTaskDone(req.body);
       if (!n.ok) return res.status(400).json({ error: n.error });
       const r = await query(
-        `UPDATE tasks SET status = 'done', result = $3, links = links || $4::jsonb, done_at = NOW(), updated_at = NOW()
+        `UPDATE tasks SET status = 'done', result = $3, links = links || $4::jsonb, evidence = $5,
+                done_at = NOW(), updated_at = NOW()
           WHERE id = $1 AND status = 'claimed' AND claimed_by = $2
-          RETURNING id, project, title, status, result, links, done_at`,
-        [req.params.id, req.user.id, n.result, JSON.stringify(n.links)],
+          RETURNING id, project, title, status, result, evidence, links, done_at`,
+        [req.params.id, req.user.id, n.result, JSON.stringify(n.links), n.evidence],
       );
       if (r.rows[0]) return res.json(r.rows[0]);
       const row = await findVisible(req.params.id, req.user.id);
@@ -217,6 +233,39 @@ export function createTasksRouter({ query, auth, logger = console }) {
     } catch (err) {
       logger.error('task review failed', { error: err.message });
       res.status(500).json({ error: 'Failed to review task' });
+    }
+  });
+
+  /**
+   * PUT /:id/reopen — a close that was wrong. Owner or admin; done or reviewed → open, with
+   * everything the close wrote cleared and a note in the body saying who sent it back and why.
+   */
+  router.put('/:id/reopen', async (req, res) => {
+    try {
+      const uid = req.user.id;
+      const row = await findVisible(req.params.id, uid);
+      if (!row) return res.status(404).json({ error: 'Task not found' });
+      if (row.user_id !== uid && !isAtLeast(req.user.role, 'admin')) {
+        return res.status(403).json({ error: 'Only the owner or an admin can reopen a task' });
+      }
+      if (row.status !== 'done' && row.status !== 'reviewed') {
+        return res.status(409).json({ error: 'Only a done or reviewed task can be reopened', status: row.status });
+      }
+      const note = reopenNote({ name: req.user.name, note: req.body?.note, at: new Date() });
+      const r = await query(
+        `UPDATE tasks SET status = 'open', body = body || $2,
+                claimed_by = NULL, claimed_tool = NULL, claimed_session = NULL, claimed_at = NULL,
+                result = NULL, evidence = NULL, done_at = NULL, reviewed_by = NULL, reviewed_at = NULL,
+                updated_at = NOW()
+          WHERE id = $1 AND status IN ('done', 'reviewed')
+          RETURNING id, project, title, status, body`,
+        [req.params.id, note],
+      );
+      if (!r.rows[0]) return res.status(409).json({ error: 'Task changed while reopening; read it again' });
+      res.json(r.rows[0]);
+    } catch (err) {
+      logger.error('task reopen failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to reopen task' });
     }
   });
 

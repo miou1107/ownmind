@@ -167,6 +167,7 @@ SRC_TO_DST=(
   "${OWNMIND_DIR}/hooks/ownmind-session-start.sh|${CLAUDE_DIR}/hooks/ownmind-session-start.sh"
   "${OWNMIND_DIR}/skills/ownmind-memory.md|${CLAUDE_DIR}/skills/ownmind-memory/SKILL.md"
   "${OWNMIND_DIR}/skills/ownmind-upgrade.md|${CLAUDE_DIR}/skills/ownmind-upgrade/SKILL.md"
+  "${OWNMIND_DIR}/skills/ownmind-consolidate.md|${CLAUDE_DIR}/skills/ownmind-consolidate/SKILL.md"
 )
 
 # hooks/lib/*.js added dynamically.

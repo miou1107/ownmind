@@ -3,10 +3,45 @@ import { useT, useLocale } from '../../i18n/LocaleContext';
 import { apiGet, apiPut } from '../../api';
 import { notifyInboxChanged } from '../../hooks/useInboxCount';
 import { fmtDate } from '../../utils/fmtDate';
+import { HANDOFFS_PATH, handoffGroups, reopenedHandoff } from './handoffs-vm.js';
 
-// 工作交接頁 — list 待處理交接、接手後從清單移除
-// 接手時 PUT /:id/accept、accepted_by 用當前 user 的 name（從 /api/me/profile 拿）
-// 若 profile 載入失敗、myName 拿不到 → 整頁顯示 banner、不允許接手（避免空字串污染 DB）
+// 工作交接頁 — what other AI tools left for this person.
+//
+// v1.33.0: nobody presses 接手. The AI accepts a handoff when a conversation opens in the
+// same project, so a pending row only says so. A row accepted in the last week shows who
+// took it and one undo, 重開, which puts it back to pending (PUT /:id/reopen).
+
+function HandoffRow({ h, t, locale, children }) {
+  return (
+    <li className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-medium text-slate-900 break-all">
+            {h.project || `#${h.id}`}
+          </h2>
+          {/* v1.30.4: the label is dropped rather than left dangling. from_tool stopped
+              being server-required, so a row with all three source fields empty is now
+              reachable and rendered as "來源：· 2026/08/15" — a label with nothing after
+              it. Omitting the whole prefix reads correctly in all three languages and
+              needs no new string. */}
+          <p className="mt-1 text-xs text-slate-500">
+            {(() => {
+              const from = [h.from_tool, h.from_model, h.from_machine].filter(Boolean).join(' / ');
+              return from ? `${t('handoffs.from_label')}：${from} · ` : '';
+            })()}
+            {fmtDate(h.created_at, locale)}
+          </p>
+        </div>
+        {children}
+      </div>
+      {h.content ? (
+        <pre className="mt-3 text-sm text-slate-700 whitespace-pre-wrap break-words bg-slate-50 rounded p-3">
+          {h.content}
+        </pre>
+      ) : null}
+    </li>
+  );
+}
 
 export default function HandoffsPage() {
   const t = useT();
@@ -15,59 +50,48 @@ export default function HandoffsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [myName, setMyName] = useState('');
-  const [profileFailed, setProfileFailed] = useState(false);
-  // acceptingId 鎖住「正在接手」的 row、避免重複 click
-  const [acceptingId, setAcceptingId] = useState(null);
+  // busyId locks the row whose request is in flight, so a double click cannot reopen twice.
+  const [busyId, setBusyId] = useState(null);
   const [rowError, setRowError] = useState({});
   const [toast, setToast] = useState('');
 
   useEffect(() => {
     let aborted = false;
     (async () => {
-      // 並行載 user name + handoffs，省一次 round trip
-      const [profileR, handoffsR] = await Promise.all([
-        apiGet('/api/me/profile'),
-        apiGet('/api/handoff/pending'),
-      ]);
+      const r = await apiGet(HANDOFFS_PATH);
       if (aborted) return;
       setLoading(false);
-      // profile 失敗或 name 為空 → 標記 profileFailed，整頁停用接手避免送 'unknown' 進 DB
-      if (profileR.ok && profileR.data?.name) {
-        setMyName(profileR.data.name);
-      } else {
-        setProfileFailed(true);
-      }
-      if (!handoffsR.ok) {
-        setLoadError(handoffsR.error || 'load_failed');
+      if (!r.ok) {
+        setLoadError(r.error || 'load_failed');
         return;
       }
-      setItems(Array.isArray(handoffsR.data) ? handoffsR.data : []);
+      setItems(Array.isArray(r.data) ? r.data : []);
     })();
     return () => { aborted = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleAccept(id) {
-    if (acceptingId) return;
-    // 防護：profile 失敗時直接擋 — 不能送空字串或 'unknown' 污染 DB（邏輯卡控）
-    if (!myName) {
-      setRowError((prev) => ({ ...prev, [id]: t('handoffs.profile_failed') }));
-      return;
-    }
-    setAcceptingId(id);
+  async function handleReopen(id) {
+    if (busyId) return;
+    setBusyId(id);
     setRowError((prev) => ({ ...prev, [id]: '' }));
-    const r = await apiPut(`/api/handoff/${id}/accept`, { accepted_by: myName });
-    setAcceptingId(null);
+    const r = await apiPut(`/api/handoff/${id}/reopen`, {});
+    setBusyId(null);
     if (!r.ok) {
-      setRowError((prev) => ({ ...prev, [id]: r.error || t('handoffs.accept_error') }));
+      setRowError((prev) => ({ ...prev, [id]: t('handoffs.reopen_error') }));
       return;
     }
-    // 從 list 移除
-    setItems((prev) => prev.filter((h) => h.id !== id));
+    setItems((prev) => prev.map((h) => (h.id === id ? reopenedHandoff(h) : h)));
     notifyInboxChanged();
-    setToast(t('handoffs.accept_success'));
+    setToast(t('handoffs.reopened'));
   }
+
+  const { pending, accepted } = handoffGroups(items);
+
+  const rowErrorBox = (id) => (rowError[id] ? (
+    <div role="alert" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+      {rowError[id]}
+    </div>
+  ) : null);
 
   return (
     <div className="max-w-4xl">
@@ -83,15 +107,6 @@ export default function HandoffsPage() {
         </div>
       ) : null}
 
-      {profileFailed ? (
-        <div
-          role="alert"
-          className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
-        >
-          {t('handoffs.profile_failed')}
-        </div>
-      ) : null}
-
       {loading ? (
         <p className="mt-6 text-slate-500">{t('common.loading')}</p>
       ) : loadError ? (
@@ -101,58 +116,45 @@ export default function HandoffsPage() {
         >
           {loadError === 'load_failed' ? t('common.error_load') : loadError}
         </div>
-      ) : items.length === 0 ? (
+      ) : pending.length === 0 && accepted.length === 0 ? (
         <p className="mt-6 text-slate-500">{t('handoffs.empty')}</p>
       ) : (
-        <ul className="mt-6 space-y-3">
-          {items.map((h) => (
-            <li
-              key={h.id}
-              className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="font-medium text-slate-900 break-all">
-                    {h.project || `#${h.id}`}
-                  </h2>
-                  {/* v1.30.4: the label is dropped rather than left dangling. from_tool stopped
-                      being server-required, so a row with all three source fields empty is now
-                      reachable and rendered as "來源：· 2026/08/15" — a label with nothing after
-                      it. Omitting the whole prefix reads correctly in all three languages and
-                      needs no new string. */}
-                  <p className="mt-1 text-xs text-slate-500">
-                    {(() => {
-                      const from = [h.from_tool, h.from_model, h.from_machine].filter(Boolean).join(' / ');
-                      return from ? `${t('handoffs.from_label')}：${from} · ` : '';
-                    })()}
-                    {fmtDate(h.created_at, locale)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAccept(h.id)}
-                  disabled={acceptingId === h.id || profileFailed}
-                  className="shrink-0 rounded-lg bg-sage-600 px-4 py-1.5 text-sm text-white font-medium hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
-                >
-                  {acceptingId === h.id ? t('handoffs.accepting') : t('handoffs.accept')}
-                </button>
-              </div>
-              {h.content ? (
-                <pre className="mt-3 text-sm text-slate-700 whitespace-pre-wrap break-words bg-slate-50 rounded p-3">
-                  {h.content}
-                </pre>
-              ) : null}
-              {rowError[h.id] ? (
-                <div
-                  role="alert"
-                  className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
-                >
-                  {rowError[h.id]}
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <>
+          {pending.length > 0 ? (
+            <ul className="mt-6 space-y-3">
+              {pending.map((h) => (
+                <HandoffRow key={h.id} h={h} t={t} locale={locale}>
+                  <p className="shrink-0 max-w-[12rem] text-right text-xs text-slate-500">{t('handoffs.auto_accept')}</p>
+                </HandoffRow>
+              ))}
+            </ul>
+          ) : null}
+          {accepted.length > 0 ? (
+            <section className="mt-6">
+              <h2 className="text-sm font-medium text-slate-600 mb-2">{t('handoffs.accepted_section')} · {accepted.length}</h2>
+              <ul className="space-y-3">
+                {accepted.map((h) => (
+                  <HandoffRow key={h.id} h={h} t={t} locale={locale}>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <p className="text-xs text-slate-500">
+                        {t('handoffs.taken_by', { name: h.accepted_by || t('handoffs.taken_by_ai') })} · {fmtDate(h.accepted_at, locale)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleReopen(h.id)}
+                        disabled={busyId === h.id}
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 transition-colors"
+                      >
+                        {busyId === h.id ? t('handoffs.reopening') : t('handoffs.reopen')}
+                      </button>
+                      {rowErrorBox(h.id)}
+                    </div>
+                  </HandoffRow>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </>
       )}
     </div>
   );

@@ -48,15 +48,30 @@ router.post('/', async (req, res) => {
 
 /**
  * GET /pending - fetch pending handoffs.
+ *   ?with_accepted=7   v1.33.0: also the caller's accepted ones from the last N days (1–90),
+ *                      for the console page that shows who took a handoff and offers 重開.
+ *                      Without it the list stays pending-only; the session-start hook
+ *                      relies on that.
  */
 router.get('/pending', async (req, res) => {
   try {
-    const result = await query(
-      `SELECT * FROM handoffs
-       WHERE user_id = $1 AND status = 'pending'
-       ORDER BY created_at DESC`,
-      [req.user.id]
-    );
+    const days = Number.parseInt(req.query.with_accepted, 10);
+    const withAccepted = Number.isInteger(days) && days > 0 ? Math.min(days, 90) : 0;
+    const result = withAccepted
+      ? await query(
+        `SELECT * FROM handoffs
+         WHERE user_id = $1
+           AND (status = 'pending'
+                OR (status = 'accepted' AND accepted_at >= NOW() - INTERVAL '1 day' * $2))
+         ORDER BY created_at DESC`,
+        [req.user.id, withAccepted]
+      )
+      : await query(
+        `SELECT * FROM handoffs
+         WHERE user_id = $1 AND status = 'pending'
+         ORDER BY created_at DESC`,
+        [req.user.id]
+      );
 
     res.json(result.rows);
   } catch (err) {
@@ -67,6 +82,11 @@ router.get('/pending', async (req, res) => {
 
 /**
  * PUT /:id/accept - accept a handoff.
+ *
+ * v1.33.0: only a pending one. Sessions accept on their own now, so two windows opened in
+ * the same project a moment apart both call this; the second must not overwrite who took
+ * it. It gets 409 with the row's status and taker, which the hook renders as "another
+ * window took it n minutes ago".
  */
 router.put('/:id/accept', async (req, res) => {
   try {
@@ -81,19 +101,55 @@ router.put('/:id/accept', async (req, res) => {
        SET status = 'accepted',
            accepted_by = $1,
            accepted_at = NOW()
-       WHERE id = $2 AND user_id = $3
+       WHERE id = $2 AND user_id = $3 AND status = 'pending'
        RETURNING *`,
       [accepted_by, req.params.id, req.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Handoff not found' });
+      const existing = await query(
+        'SELECT status, accepted_by, accepted_at FROM handoffs WHERE id = $1 AND user_id = $2',
+        [req.params.id, req.user.id]
+      );
+      const row = existing.rows[0];
+      if (!row) return res.status(404).json({ error: 'Handoff not found' });
+      return res.status(409).json({
+        error: 'Handoff already accepted',
+        status: row.status,
+        accepted_by: row.accepted_by,
+        accepted_at: row.accepted_at,
+      });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
     logger.error('handoff accept failed', { error: err.message });
     res.status(500).json({ error: 'Failed to accept handoff' });
+  }
+});
+
+/**
+ * PUT /:id/reopen - put an accepted handoff back to pending (v1.33.0).
+ *
+ * The next session in the matching project accepts a handoff on its own; this is the undo
+ * when the wrong window took it. Only an accepted handoff of the caller's own reopens.
+ */
+router.put('/:id/reopen', async (req, res) => {
+  try {
+    const result = await query(
+      `UPDATE handoffs
+       SET status = 'pending', accepted_by = NULL, accepted_at = NULL
+       WHERE id = $1 AND user_id = $2 AND status = 'accepted'
+       RETURNING *`,
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Handoff not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    logger.error('handoff reopen failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to reopen handoff' });
   }
 });
 

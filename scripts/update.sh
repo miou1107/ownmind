@@ -156,7 +156,12 @@ if [ -d "$HOME/.claude" ]; then
     mkdir -p "$HOME/.claude/skills/ownmind-upgrade"
     cp "$OWNMIND_DIR/skills/ownmind-upgrade.md" "$HOME/.claude/skills/ownmind-upgrade/SKILL.md"
   fi
-  echo "[ OK ] Skills synced (ownmind-memory + ownmind-upgrade)"
+  # v1.33.0: the monthly memory consolidation rules
+  if [ -f "$OWNMIND_DIR/skills/ownmind-consolidate.md" ]; then
+    mkdir -p "$HOME/.claude/skills/ownmind-consolidate"
+    cp "$OWNMIND_DIR/skills/ownmind-consolidate.md" "$HOME/.claude/skills/ownmind-consolidate/SKILL.md"
+  fi
+  echo "[ OK ] Skills synced (ownmind-memory + ownmind-upgrade + ownmind-consolidate)"
 fi
 
 # --- 1b. Sync upgrade rules to other AI tools (skip ones that aren't installed) ---

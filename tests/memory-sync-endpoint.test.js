@@ -76,11 +76,13 @@ describe('buildSyncQuery', () => {
     assert.deepEqual(q.values, [1, ['iron_rule']]);
   });
 
-  it('with since → fetch updated_at > since OR disabled_at > since', () => {
+  it('with since → fetch updated_at > since OR disabled_at > since OR archived_at > since', () => {
     const d = new Date('2026-04-20T00:00:00Z');
     const q = buildSyncQuery(2, ['project', 'feedback'], d);
     assert.match(q.text, /updated_at > \$3/);
     assert.match(q.text, /disabled_at/);
+    // v1.33.0: an archived row leaves the local index the same way a disabled one does.
+    assert.match(q.text, /archived_at IS NOT NULL AND archived_at > \$3/);
     assert.doesNotMatch(q.text, /status = 'active'/);
     assert.deepEqual(q.values, [2, ['project', 'feedback'], d]);
   });

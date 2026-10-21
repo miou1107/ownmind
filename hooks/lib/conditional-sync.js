@@ -142,7 +142,12 @@ export async function fetchSyncTokenLight(apiUrl, apiKey, fetchFn = globalThis.f
  * count of waiting lessons travels here because it is live state, not cached state: a
  * fresh cache must still say what the server says now. See overlayLiveFields.
  *
- * @returns {Promise<{ sync_token: string, lessons_waiting?: number }|null>}
+ * v1.33.0 — `handoffs` and `consolidation` ride the same way when the server sends them.
+ * Neither is ever written to the cache (see LIVE_FIELDS), so a sync-token answer that
+ * carries them is the only way a cache-fresh start learns about them; one that does not
+ * leaves them absent, which the renderer treats as nothing to show.
+ *
+ * @returns {Promise<{ sync_token: string, lessons_waiting?: number, handoffs?: object[], consolidation?: object }|null>}
  */
 export async function fetchSyncTokenInfo(apiUrl, apiKey, fetchFn = globalThis.fetch) {
   if (!apiUrl || !apiKey) return null;
@@ -160,6 +165,8 @@ export async function fetchSyncTokenInfo(apiUrl, apiKey, fetchFn = globalThis.fe
     if (!body || typeof body.sync_token !== 'string') return null;
     const info = { sync_token: body.sync_token };
     if (Number.isInteger(body.lessons_waiting)) info.lessons_waiting = body.lessons_waiting;
+    if (Array.isArray(body.handoffs)) info.handoffs = body.handoffs;
+    if (body.consolidation && typeof body.consolidation === 'object') info.consolidation = body.consolidation;
     return info;
   } catch {
     return null;
@@ -175,8 +182,29 @@ export async function fetchSyncTokenInfo(apiUrl, apiKey, fetchFn = globalThis.fe
  */
 export function overlayLiveFields(data, info) {
   if (!data || typeof data !== 'object' || !info) return data;
-  if (!Number.isInteger(info.lessons_waiting)) return data;
-  return { ...data, lessons_waiting: info.lessons_waiting };
+  const live = {};
+  if (Number.isInteger(info.lessons_waiting)) live.lessons_waiting = info.lessons_waiting;
+  if (Array.isArray(info.handoffs)) live.handoffs = info.handoffs;
+  if (info.consolidation && typeof info.consolidation === 'object') live.consolidation = info.consolidation;
+  if (Object.keys(live).length === 0) return data;
+  return { ...data, ...live };
+}
+
+/**
+ * v1.33.0 — fields that must never be served from disk. A handoff is accepted by the next
+ * session in its project and a consolidation report is shown once; a cached copy would have
+ * the AI accept the same handoff twice and relay the same report every start until the memory
+ * table happened to move. The sync token does not cover these tables, so the cache cannot
+ * know when they changed. They are stripped on write and overlaid live (overlayLiveFields,
+ * hooks/lib/session-live-state.js) on read.
+ */
+export const LIVE_FIELDS = ['handoffs', 'consolidation'];
+
+export function stripLiveFields(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const out = { ...data };
+  for (const key of LIVE_FIELDS) delete out[key];
+  return out;
 }
 
 /**
@@ -221,7 +249,7 @@ export function writeCache(payload, cachePath = DEFAULT_CACHE_PATH, fsModule = f
       sync_token: payload.sync_token || '',
       saved_at: new Date().toISOString(),
       ...(account ? { account: accountFingerprint(account) } : {}),
-      data: payload.data || payload,
+      data: stripLiveFields(payload.data || payload),
     };
     // Owner-only: the file is every memory this account has. `mode` only applies when the
     // file is created, so a cache from an older version is tightened afterwards too.

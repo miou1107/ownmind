@@ -8,7 +8,7 @@
 > 呼叫 ownmind_init MCP tool，或執行 `bash ~/.claude/hooks/ownmind-session-start.sh`
 > 如果都不可用，呼叫 API: `GET YOUR_OWNMIND_URL/api/memory/init`
 
-載入後顯示摘要（【OwnMind vX.X.X】{類型}：{內容} 格式），如有交接先摘要給使用者確認。
+載入後顯示摘要（【OwnMind vX.X.X】{類型}：{內容} 格式），啟動內容裡出現「Handoff to accept now」就直接接手並跟使用者說一句「已接手 ＿＿ 的交接，要撤銷跟我說一聲」；別的專案的交接只會看到一行提醒，不用動。
 
 ## 鐵律強制執行（最高優先級）
 

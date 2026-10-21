@@ -30,6 +30,7 @@ import BugReportsPage from './pages/Admin/BugReportsPage';
 import StatsPage from './pages/Team/StatsPage';
 import MembersPage from './pages/Team/MembersPage';
 import MemoryRulesPage from './pages/Memory/MemoryRulesPage';
+import MemoryArchivedPage from './pages/Memory/MemoryArchivedPage';
 import SystemConfigPage from './pages/System/SystemConfigPage';
 import BroadcastPage from './pages/System/BroadcastPage';
 import WorkLogPage from './pages/System/WorkLogPage';
@@ -54,6 +55,7 @@ const REAL_PAGES = {
   '/team/tasks': <TeamTasksPage />,
   '/memory/projects': <ProjectHistoryPage />,
   '/memory/rules': <MemoryRulesPage />,
+  '/memory/archived': <MemoryArchivedPage />,
   '/settings/profile': <ProfilePage />,
   '/settings/security': <SecurityPage />,
   '/settings/vault': <VaultPage />,

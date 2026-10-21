@@ -1,0 +1,199 @@
+<title>記憶整理交給 AI</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column, 68ch; AS-IS and TO-BE are two tinted bands with a label strip. */
+:root{
+  --bg:#f7f8f6; --fg:#1f2a24; --muted:#5f6b64; --line:#d9ded9; --card:#ffffff;
+  --accent:#4f7d63; --accent-soft:#e6efe9;
+  --asis-bg:#fbf3ea; --asis-line:#d9b48a; --asis-fg:#7a4a12;
+  --tobe-bg:#eaf3ee; --tobe-line:#8fb79f; --tobe-fg:#245239;
+  --red:#b3443f; --amber:#a86a12;
+  --font-body:"Noto Sans TC",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#171c19; --fg:#e6ebe7; --muted:#9aa69f; --line:#2f3934; --card:#1f2622;
+  --accent:#8dbb9d; --accent-soft:#233229;
+  --asis-bg:#2a2219; --asis-line:#7a5a33; --asis-fg:#e4bf8c;
+  --tobe-bg:#1c2b22; --tobe-line:#3f6b50; --tobe-fg:#a9d3b8;
+  --red:#e08a86; --amber:#d9a556; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#171c19; --fg:#e6ebe7; --muted:#9aa69f; --line:#2f3934; --card:#1f2622;
+  --accent:#8dbb9d; --accent-soft:#233229;
+  --asis-bg:#2a2219; --asis-line:#7a5a33; --asis-fg:#e4bf8c;
+  --tobe-bg:#1c2b22; --tobe-line:#3f6b50; --tobe-fg:#a9d3b8;
+  --red:#e08a86; --amber:#d9a556; color-scheme:dark }
+
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:16px;line-height:1.75;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+main{max-width:68ch;margin:0 auto}
+h1{font-size:1.75rem;line-height:1.3;margin:0 0 .25rem;text-wrap:balance}
+.sub{color:var(--muted);margin:0 0 2rem;font-size:.95rem}
+h2{font-size:1.15rem;margin:2.5rem 0 .75rem;padding-top:1.25rem;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:1rem;margin:1.5rem 0 .5rem}
+p{margin:.6rem 0}
+ul,ol{padding-left:1.4rem;margin:.5rem 0}
+li{margin:.3rem 0}
+.tl{list-style:none;padding:0}
+.tl li{display:grid;grid-template-columns:7.5ch 1fr;gap:.75rem}
+.tl time{font-family:var(--font-mono);font-size:.85rem;color:var(--muted);padding-top:.15rem}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{text-align:left;vertical-align:top;padding:.5rem .6rem;border-bottom:1px solid var(--line)}
+th{font-weight:500;color:var(--muted);font-size:.85rem}
+th:first-child,td:first-child{white-space:nowrap}
+.tw{overflow-x:auto}
+code,.id{font-family:var(--font-mono);font-size:.85em}
+.band{border:1px solid;border-radius:14px;padding:1rem 1.1rem;margin:1rem 0}
+.band .tag{display:inline-block;font-size:.78rem;letter-spacing:.06em;font-weight:700;padding:.15rem .6rem;border-radius:999px;margin-bottom:.75rem}
+.asis{background:var(--asis-bg);border-color:var(--asis-line)}
+.asis .tag{background:var(--asis-line);color:#fff}
+.asis h3{color:var(--asis-fg)}
+.tobe{background:var(--tobe-bg);border-color:var(--tobe-line)}
+.tobe .tag{background:var(--tobe-line);color:#fff}
+.tobe h3{color:var(--tobe-fg)}
+/* mock screen */
+.screen{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:.86rem;margin:.75rem 0}
+.screen .bar{display:flex;gap:.5rem;align-items:center;padding:.45rem .8rem;border-bottom:1px solid var(--line);color:var(--muted);font-size:.78rem}
+.screen .bar b{color:var(--fg);font-weight:500}
+.screen .body{padding:.8rem}
+.row{display:flex;flex-wrap:wrap;gap:.5rem .8rem;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .t{flex:1 1 220px;min-width:0}
+.row .t small{display:block;color:var(--muted)}
+.pill{font-size:.72rem;padding:.1rem .5rem;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:600;white-space:nowrap}
+.pill.red{background:transparent;color:var(--red);border:1px solid var(--red)}
+.pill.amber{background:transparent;color:var(--amber);border:1px solid var(--amber)}
+.pre{font-family:var(--font-mono);font-size:.8rem;white-space:pre-wrap;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin:.6rem 0}
+/* mock chat */
+.chat{display:flex;flex-direction:column;gap:.5rem;margin:.75rem 0}
+.msg{max-width:92%;padding:.6rem .85rem;border-radius:12px;font-size:.88rem;line-height:1.6;white-space:pre-wrap}
+.msg.ai{background:var(--card);border:1px solid var(--line);align-self:flex-start}
+.msg.me{background:var(--accent);color:#fff;align-self:flex-end}
+.msg .who{display:block;font-size:.72rem;color:var(--muted);margin-bottom:.2rem;letter-spacing:.04em}
+.msg.me .who{color:rgba(255,255,255,.75)}
+.note{color:var(--muted);font-size:.9rem}
+@media (max-width:520px){ .tl li{grid-template-columns:1fr} .msg{max-width:100%} }
+</style>
+
+<main>
+<h1>記憶整理交給 AI，後台只看與撤銷</h1>
+<p class="sub">重複的合併、結束的歸檔、等決定的查清楚、教訓留不留、任務卡結案、交接接手，全部由 AI 自己做；你只讀一行月報、最多回三題。提案第三版，2026-10-21。</p>
+
+<h2>來龍去脈</h2>
+<ul class="tl">
+  <li><time>08 月</time><span>本機索引改成最多 140 行。記憶再多，每次開對話 Claude 也只會讀前 140 行。</span></li>
+  <li><time>10/03</time><span>同一天存進兩組專案記憶，每組兩條內容完全相同（funpass 菲律賓案、OwnMind 公開 repo 改代號），到今天四條都還在。</span></li>
+  <li><time>10/21</time><span>第一版提案是控制台多一頁，一列一條讓你按合併或歸檔。你退回：沒有人會進後台做這件事，整理要 AI 自己判斷執行，判斷不了的才問你。</span></li>
+  <li><time>10/21</time><span>你接著問後台是不是要拿掉一些東西。盤點後台，還有三個地方要你進去按，東西才會動：教訓的「留下」、任務卡的「審過」、交接的「接手」。</span></li>
+  <li><time>10/21</time><span>第二版審過一輪，改了十二處，這一版是改完的樣子。你說「做吧」，程式同一天開工。</span></li>
+</ul>
+
+<section class="band asis">
+  <span class="tag">AS-IS　目前的畫面</span>
+  <h3>記憶只進不出，三件事等你進後台按</h3>
+  <p>每次開對話，Claude 讀到的本機索引是這個樣子：</p>
+  <div class="pre">## Iron Rules
+- [圖表底下的警語，第一句的主詞要是畫面上那個東西⋯]
+- ⋯（20 條）
+- 135 more not listed here (line budget)
+
+## Projects
+- [femas_cli：用 CLI 操作鋒形人資系統⋯]
+- ⋯（120 條）
+- 220 more not listed here (line budget)</div>
+  <p>記憶只有兩種狀態：使用中、已停用。「已停用」的意思是這條錯了，沒有一種狀態叫「這件事結束了」。Claude 存新記憶時，伺服器不會查有沒有同樣的一條已經存在，所以同一件事存兩份照樣進去。</p>
+  <div class="tw"><table>
+    <tr><th>後台哪一頁</th><th>你要按什麼</th><th>你不按會怎樣</th></tr>
+    <tr><td>教訓</td><td>留下</td><td>教訓留在後台，不會變成記憶</td></tr>
+    <tr><td>任務卡</td><td>審過</td><td>任務卡做完了也不結案</td></tr>
+    <tr><td>交接</td><td>接手</td><td>另一台電腦接不到工作</td></tr>
+  </table></div>
+</section>
+
+<h2>為什麼要改</h2>
+<p>你的記憶現在有 155 條鐵律、374 條專案記憶同步在本機，一個月多 160 條。它們現在造成四種事：</p>
+<ul>
+  <li>你在 Vinutes 開新對話，Claude 讀到的 140 行裡塞滿別的專案，Vinutes 那十幾條排在第 200 行之後，一條都沒進來。Claude 於是用猜的，或問你第二次。</li>
+  <li>Claude 搜「funpass 菲律賓」，拿到兩條內容完全相同的記憶，佔掉兩個回傳名額。</li>
+  <li>idaytour 正式機與測試機的 Gemini 金鑰那條記憶，標題寫著【已過時】，狀態還是使用中。Claude 搜到照樣讀，要靠標題上的字判斷還能不能信。</li>
+  <li>教訓、任務卡、交接三頁的按鈕沒有人按，教訓累積著不變成記憶，做完的卡一直掛著。</li>
+</ul>
+<p>四件事的源頭是同一個：所有整理都設計成要你進後台按，而你不會進後台，所以等於沒有人做。</p>
+
+<section class="band tobe">
+  <span class="tag">TO-BE　調整後的樣子</span>
+  <h3>每月 1 號開一張整理卡，AI 在背景做完，你下一次開對話讀到一行</h3>
+  <p>每月 1 號伺服器算出候選，開一張「整理記憶」的任務卡。你任何一台電腦開對話，Claude 看到這張卡就在背景另開一個子對話去做，不會卡住你手上的事；每做一條就寫回卡片，中途斷掉下一次接著做。整理完，你下一次開對話會讀到一行月報。判斷不了的事最多留三題，而且只會在那個專案的對話裡問你，不會在你急著處理線上問題的時候跳出來。下面的例子都是你現在記憶裡真的有的：</p>
+  <div class="chat">
+    <div class="msg ai"><span class="who">Claude，你 11/1 在 OwnMind 開對話時</span>[OwnMind] 10 月的記憶整理完了：合併 2、歸檔 18、定案 5。要還原任何一條，說一聲。</div>
+    <div class="msg ai"><span class="who">Claude，你在 FUNIT 專案開對話、正事做完之後</span>有一題我判斷不了：FUNIT 產文規範在等 Adam 開放 API（#1429），16 天沒動靜，查 git 跟記憶都沒有後續。Adam 開了嗎？還是先歸檔？</div>
+    <div class="msg me"><span class="who">Vin</span>先歸檔</div>
+    <div class="msg ai"><span class="who">Claude</span>[OwnMind] #1429 歸檔了，要還原跟我說一聲。</div>
+  </div>
+
+  <h3>AI 怎麼判斷：什麼時候自己做，什麼時候問你</h3>
+  <div class="tw"><table>
+    <tr><th>候選</th><th>AI 自己做</th><th>AI 問你</th></tr>
+    <tr><td>重複</td><td>兩條講同一件事：留較新的一條，較舊的停用並記「併進 #1394」。兩條講法衝突（舊做法對上新做法）：以較新的為準，舊的只留在修改歷史，不混進正文。</td><td>AI 分不出來兩條講的是不是同一件事。</td></tr>
+    <tr><td>已結束</td><td>標題開頭或結尾寫著已過時、已結案、已完成、已發、已合併、已關單的專案記憶：讀一次確認整條都在講那件事，就歸檔。內文裡出現這些字不算，「PR 已合併後要通知測試群組」是還在用的規則。金鑰換掉、設定不存在這種過時的：停用，不是歸檔。</td><td>90 天沒更新的：先查那個專案的 git、檔案、主機，查不到後續才問「這件事還在跑嗎」。第一個月只標記不處理。</td></tr>
+    <tr><td>等決定</td><td>AI 先搜比它晚建立的記憶，找到就在那條最上面寫「決定（日期，依據 #1309）：⋯」。一次性的事（搬機器、採購）寫完歸檔；長期的決定（用哪個模型、哪種格式）留在使用中，標題拿掉「待決定」。</td><td>記憶、git、設定檔都查不到，而且答案在別人手上（請購單重送了嗎、Adam 開 API 了嗎）才問。「Mac 還沒裝 X」這種待辦改開成任務卡，不會每個月再問一次。</td></tr>
+    <tr><td>教訓</td><td>同一件事第二次卡住，伺服器當場把兩條教訓併成一條記憶。其他的每月整理時 AI 讀一次：還會再踩、程式和 CLAUDE.md 都沒修到的才留，其餘不留並寫一句原因。</td><td>不問。留錯了你說一聲就收回。</td></tr>
+    <tr><td>任務卡</td><td>AI 回報做完時要附真的跑過的驗證輸出，伺服器沒看到就不收；收了卡片就結案，月報列出這個月結了哪幾張。</td><td>不問。結錯了你說一聲就退回。</td></tr>
+    <tr><td>交接</td><td>你在同一個專案開對話，Claude 直接接手，跟你說一句「已接手 ＿＿ 的交接」。接走後 30 分鐘內同專案再開一個視窗，內容照樣送進去，不會被測試視窗吃掉。</td><td>在別的專案開對話只看到一行「你有一筆 ＿＿ 的交接還沒接」，不會接錯。</td></tr>
+  </table></div>
+
+  <h3>存新記憶時當場查重複</h3>
+  <p>Claude 要存一條新記憶，伺服器先比對同類型的記憶。跟某一條幾乎一字不差：不存，回「已經存過，是 #1388」。有幾條很像但不一樣：也先不存，把那幾條回給 Claude 看，由 Claude 讀過再決定是更新舊的那條，還是確定是不同的事再存一次。正式機跟測試機的部署清單只差一個 IP，不會被誤併成一條。</p>
+  <div class="chat">
+    <div class="msg ai"><span class="who">Claude 存記憶時伺服器回的話</span>[OwnMind] 沒存。已經有 2 條跟這條很像：#1388「funpass 菲律賓案的目標有查原因與萃方法兩項⋯」、#1402「funpass 菲律賓 KOL 名單⋯」。更新最像的那條，或確定是不同的事再存一次。</div>
+  </div>
+
+  <h3>已歸檔是新狀態，不是停用</h3>
+  <p>已歸檔的意思是「這件事結束了，當時寫的是對的」，只有專案記憶會歸檔。已停用照舊，意思仍然是「這條錯了或被取代了」，合併時被淘汰的那條、換掉的金鑰都走停用。已歸檔的記憶不進本機索引、不同步到各台電腦、預設搜尋搜不到；Claude 要查以前的事可以指定連歸檔的一起搜。每一次合併、歸檔、定案、還原都寫進記憶的修改歷史。</p>
+
+  <h3>開對話時，目前專案的記憶先進來</h3>
+  <p>本機索引那 140 行改成先放跟目前資料夾同名專案的記憶，一條不漏，剩下的名額再按最近更新排。你在 Vinutes 開對話，Vinutes 的十幾條一定在最前面。每月整理讓搜尋結果乾淨，這一條才是讓「要用的那條讀得到」的改法。</p>
+
+  <h3>後台三頁改成只看與撤銷</h3>
+  <div class="tw"><table>
+    <tr><th>後台哪一頁</th><th>改完你會看到</th><th>還能做什麼</th></tr>
+    <tr><td>教訓</td><td>每條標著「AI 留下了」「AI 沒留：已修進程式」「等月底整理」</td><td>收回、還是留</td></tr>
+    <tr><td>任務卡</td><td>做完的卡附驗證輸出，列在「本月結案」</td><td>退回</td></tr>
+    <tr><td>交接</td><td>「會在那個專案開對話時自動接手」，接走的寫誰接的</td><td>重開</td></tr>
+    <tr><td>記憶</td><td>多一個「已歸檔」分頁，每條寫歸檔原因</td><td>還原</td></tr>
+  </table></div>
+  <p>後台能撤銷的每一個動作，在對話裡講一句也能撤銷。AI 每做一個自動動作都會跟你講一句，結尾是「要撤銷跟我說一聲」。</p>
+
+  <h3>哪些靠機制，哪些靠 AI 記得</h3>
+  <ul>
+    <li>整理卡由伺服器每月開，不靠 AI 記得要整理；哪一台電腦、哪一個對話接手都可以，不綁 bot.kkvin.com。</li>
+    <li>月報那一行由開場送進對話的內容帶著，顯示過一次就標記，不會每個視窗重複；不靠回話檢查擋第一句。</li>
+    <li>一題問過兩次你都沒回，伺服器自動歸檔那條並在下個月的月報列出來，不會一直佔著三題的名額。</li>
+    <li>存記憶查重複、任務卡要驗證輸出、交接只在同專案接手，都是伺服器與開場內容做的，AI 不照做也過不了。</li>
+  </ul>
+</section>
+
+<h2>改了有什麼好處</h2>
+<div class="tw"><table>
+  <tr><th>誰</th><th>改完以後</th></tr>
+  <tr><td>Vin</td><td>每個月讀一行月報、最多在對應的專案回三題，不用進後台。開新對話時目前專案的記憶一定在，不用再講第二次。</td></tr>
+  <tr><td>Claude</td><td>搜尋結果不再有兩條相同的、不再讀到標著已過時的。等決定的事定了以後，答案就寫在那條最上面。存記憶時知道有沒有存過。</td></tr>
+  <tr><td>同事</td><td>每個人自己的記憶一樣由自己電腦上的 AI 整理，判斷不了的在各自的對話裡問，不經過你，也不用你的額度。</td></tr>
+</table></div>
+
+<h2>要做的事</h2>
+<ol>
+  <li>資料：記憶狀態多一種「已歸檔」；修改歷史多四種動作：合併、歸檔、定案、還原；整理時留給你的題目有自己的表。</li>
+  <li>伺服器：候選清單；每月開「整理記憶」任務卡；存記憶時先比對；任務卡做完要驗證輸出、可以退回；交接可以重開；教訓第二次出現自動變記憶。</li>
+  <li>記憶工具多九個動作：合併、歸檔、定案、還原、留題、教訓留不留、任務卡退回、交接重開、候選清單；搜尋多一個「連歸檔的一起搜」。</li>
+  <li>開場內容：同專案的交接直接接手、整理卡在背景做、月報一行、最多三題；本機索引目前專案先進來。</li>
+  <li>後台：教訓、任務卡、交接三頁改成只看與撤銷；記憶頁多「已歸檔」分頁；文案中英日。</li>
+  <li>判斷規則寫成 ownmind-consolidate 這個 skill，升級時一起裝。</li>
+  <li>測試、版號 v1.33.0。第一次月報 11/1，我陪你看。</li>
+</ol>
+<p class="note">伺服器自己不呼叫模型，判斷都在你自己電腦的對話裡用你的訂閱做。第一個月先只做「標題寫著已過時」這類最確定的歸檔和幾乎一字不差的合併，90 天那條規則第二個月再開，避免第一次就歸檔錯。</p>
+
+<h2>什麼時候可以開始</h2>
+<p>你 10/21 晚上說「做吧」，程式同一天開工，做好會給你 PR 跟後台的截圖。</p>
+</main>
