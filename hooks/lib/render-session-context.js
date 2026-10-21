@@ -64,6 +64,8 @@ export function broadcastBody(body) {
 // v1.33.0 — handoffs and the consolidation card.
 
 const HANDOFF_GRACE_MINUTES = 30;
+/** Pending handoffs of other projects, one line each; past this, one line with the count. */
+const ELSEWHERE_MAX_LINES = 3;
 const HANDOFF_BODY_MAX_LINES = 80;
 const HANDOFF_BODY_MAX_CHARS = 4000;
 
@@ -169,10 +171,14 @@ export function handoffContextLines(rows, { aliases, machine, now, t }) {
   }
   if (elsewhere.length > 0) {
     lines.push('## Handoffs waiting in other projects');
-    for (const h of elsewhere) {
+    for (const h of elsewhere.slice(0, ELSEWHERE_MAX_LINES)) {
       lines.push(`- #${h.id ?? '?'} (${h.project || '?'}): tell the person once — `
         + t('handoff.waitingElsewhere', { project: h.project || '?' })
         + ' — and do not accept it from here.');
+    }
+    if (elsewhere.length > ELSEWHERE_MAX_LINES) {
+      lines.push(`- and ${elsewhere.length - ELSEWHERE_MAX_LINES} more: tell the person once — `
+        + t('handoff.waitingElsewhereMore', { count: elsewhere.length - ELSEWHERE_MAX_LINES }));
     }
     lines.push('');
   }

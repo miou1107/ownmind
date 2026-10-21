@@ -53,22 +53,42 @@ export function taipeiMonth(now = new Date()) {
  * The six candidate groups for one user. Shared by the route and the job (which writes the
  * counts into the card body).
  */
-export async function buildConsolidationCandidates(query, userId) {
-  const [pairs, concluded, stale, waiting, lessons, closedTasks] = await Promise.all([
-    query(
-      `SELECT a.id AS a_id, a.title AS a_title, a.type AS a_type, a.updated_at AS a_updated_at,
+/**
+ * Pairs are compared on the title first. On 2026-10-21 the full-text self-join over one
+ * person's 816 active memories took 54 s on the production database (400k trigram
+ * comparisons); comparing titles first and the full text only on the survivors took 2 s and
+ * kept 2 of the 3 pairs above SIMILARITY_CANDIDATE. The miss is a duplicate whose title was
+ * reworded; the monthly pass sees it again once either title is touched.
+ */
+export const TITLE_PREFILTER = 0.4;
+
+const PAIRS_SQL = `WITH near AS (
+         SELECT a.id AS a_id, b.id AS b_id
+           FROM memories a
+           JOIN memories b
+             ON b.user_id = a.user_id AND b.type = a.type AND b.status = 'active'
+            AND b.is_test = FALSE AND a.id < b.id
+          WHERE a.user_id = $1 AND a.status = 'active' AND a.is_test = FALSE
+            AND similarity(lower(a.title), lower(b.title)) >= $3)
+       SELECT a.id AS a_id, a.title AS a_title, a.type AS a_type, a.updated_at AS a_updated_at,
               b.id AS b_id, b.title AS b_title, b.type AS b_type, b.updated_at AS b_updated_at,
               similarity(lower(a.title || ' ' || a.content), lower(b.title || ' ' || b.content)) AS similarity
-         FROM memories a
-         JOIN memories b
-           ON b.user_id = a.user_id AND b.type = a.type AND b.status = 'active'
-          AND b.is_test = FALSE AND a.id < b.id
-        WHERE a.user_id = $1 AND a.status = 'active' AND a.is_test = FALSE
-          AND similarity(lower(a.title || ' ' || a.content), lower(b.title || ' ' || b.content)) >= $2
+         FROM near
+         JOIN memories a ON a.id = near.a_id
+         JOIN memories b ON b.id = near.b_id
+        WHERE similarity(lower(a.title || ' ' || a.content), lower(b.title || ' ' || b.content)) >= $2
         ORDER BY similarity DESC, a.id ASC
-        LIMIT ${MAX_DUPLICATE_PAIRS}`,
-      [userId, SIMILARITY_CANDIDATE],
-    ),
+        LIMIT ${MAX_DUPLICATE_PAIRS}`;
+
+/**
+ * The six candidate groups for one user. Shared by the route and the job (which writes the
+ * counts into the card body). `pairs: false` skips the duplicate search: the job at boot
+ * runs this for every user and must not spend seconds per user on it; the card says the
+ * pairs are computed when the AI calls the candidates route.
+ */
+export async function buildConsolidationCandidates(query, userId, { pairs: wantPairs = true } = {}) {
+  const [pairs, concluded, stale, waiting, lessons, closedTasks] = await Promise.all([
+    wantPairs ? query(PAIRS_SQL, [userId, SIMILARITY_CANDIDATE, TITLE_PREFILTER]) : Promise.resolve(null),
     query(
       `SELECT id, title, updated_at FROM memories
         WHERE user_id = $1 AND type = 'project' AND status = 'active' AND is_test = FALSE
@@ -108,7 +128,7 @@ export async function buildConsolidationCandidates(query, userId) {
     ),
   ]);
   return {
-    duplicates: pairs.rows.map((r) => ({
+    duplicates: pairs === null ? null : pairs.rows.map((r) => ({
       a: { id: r.a_id, title: r.a_title, type: r.a_type, updated_at: r.a_updated_at },
       b: { id: r.b_id, title: r.b_title, type: r.b_type, updated_at: r.b_updated_at },
       similarity: Number(r.similarity),
