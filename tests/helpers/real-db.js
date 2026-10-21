@@ -221,7 +221,7 @@ export async function startRealDb({
       return await startContainer({ image, port: candidate, name: containerName });
     } catch (err) {
       lastErr = err;
-      try { execFileSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' }); } catch { /* none */ }
+      try { removeContainer(containerName); } catch { /* none */ }
       // Only a `docker run` refused for the port is worth another attempt, and only the call
       // site that ran it may say so — hence the flag rather than a match on the message here.
       // A postgres that dies during initdb writes `could not bind IPv4 address "0.0.0.0":
@@ -269,7 +269,7 @@ function portCandidates() {
  * The container is named after the port, and the port comes from the pid of the process that
  * started it. A test process killed without its `stop()` therefore leaves a container that
  * nothing later can name: the next process derives its own name from its own pid, so the
- * `docker rm -f` at startup misses, and `docker run` fails with `address already in use`.
+ * removal by name at startup misses, and `docker run` fails with `address already in use`.
  * That is how the ubuntu/node 24 leg of run 36527943229 went red on a dependency bump.
  *
  * Asking docker which container publishes the port is what the name cannot answer.
@@ -294,7 +294,7 @@ export function reclaimAbandonedContainersOn(port) {
   const removed = [];
   for (const name of names) {
     try {
-      execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      removeContainer(name);
       removed.push(name);
     } catch { /* someone else got there first */ }
   }
@@ -316,9 +316,22 @@ function stderrOf(err) {
   return String(raw).trim();
 }
 
+/**
+ * Remove a container this helper started, together with its anonymous volumes.
+ *
+ * The image declares a VOLUME for its data directory, so every `docker run` of it creates an
+ * anonymous volume, and `docker rm -f` without `-v` leaves that volume behind with nothing
+ * referencing it. Seven DB-backed test files each start a container, so every full suite run
+ * left about seven; by 2026-10-21 one laptop held 549 of them, 28 GB. `-v` never touches a
+ * named volume. Throws when docker does, so a caller that needs to know can tell.
+ */
+function removeContainer(name) {
+  execFileSync('docker', ['rm', '-f', '-v', name], { stdio: 'ignore' });
+}
+
 /** The body of startRealDb, once the lock is held. Never call this without it. */
 async function startContainer({ image, port, name }) {
-  try { execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' }); } catch { /* none */ }
+  try { removeContainer(name); } catch { /* none */ }
   try {
     execFileSync('docker', ['run', '-d', '--name', name,
       '-e', 'POSTGRES_PASSWORD=test',
@@ -377,7 +390,7 @@ async function startContainer({ image, port, name }) {
   // the container first: the next holder starts its own the moment it acquires, and two
   // postgres containers alive at once is exactly what the lock exists to prevent.
   const stop = () => {
-    try { execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' }); } catch { /* gone */ }
+    try { removeContainer(name); } catch { /* gone */ }
     releaseDbLock();
   };
   if (!ready) {
