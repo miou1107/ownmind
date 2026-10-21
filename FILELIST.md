@@ -1,5 +1,24 @@
 # OwnMind 檔案結構
 
+## 網站（2026-10-21，不發版）
+
+新增檔：
+```
+docs/site/template.html                                 — 首頁版型，{{T.key}} 放字串，{{#Alternates}} 列其他語言
+docs/site/strings.json                                  — 首頁字串，en、zh-TW、ja 三個區塊，鍵要一樣
+scripts/gen-site/gen-site.mjs                           — 從版型與字串產出 docs/index.html、docs/zh-tw/index.html、docs/ja/index.html、sitemap.xml、robots.txt
+tests/gen-site.test.js                                  — 九條：三種語言鍵一致、產出與 docs 裡的頁面一字不差、樣板跳脫、區段重複、沒定義的鍵會丟錯、區段沒關會丟錯、script 裡的 JSON 不會被 </script> 截斷、字串只展開一次、不讀繼承來的屬性
+docs/index.html, docs/zh-tw/index.html, docs/ja/index.html, docs/sitemap.xml, docs/robots.txt — 產出檔，不要手改
+docs/.nojekyll                                          — 叫 GitHub Pages 原樣發佈 docs，不跑 Jekyll
+docs/assets/icon.svg, docs/assets/og.png                — 網站圖示與分享預覽圖
+```
+
+修改檔：
+```
+README.md, docs/README.zh-TW.md, docs/README.ja.md       — 版本那一行上面加網站連結
+CHANGELOG.md
+```
+
 ## v1.32.15 修改（用量上傳失敗一次後電腦就闔上，後台不會再誤報；Windows 查排程逾時不會再發警告）
 
 新增檔：
