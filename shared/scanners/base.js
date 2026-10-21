@@ -142,7 +142,7 @@ export function chunk(arr, size = BATCH_SIZE) {
  *
  * Host only: lower-cased, no scheme, port, path, query or credentials. The server stores
  * this next to the version so the admin list can say which computer still talks to a
- * retired host (issue #152: two machines posted to kkvin.com for a week after the move,
+ * retired host (issue #152: two machines posted to the old host for a week after the move,
  * and every row they produced read "1.31.14" and nothing else). Anything that is not a
  * parseable URL yields null and the field is left out.
  *

@@ -1,6 +1,6 @@
 -- v1.32.0 — which server each machine reports to.
 --
--- 2026-10-08, issue #152: two computers were still posting to the retired host kkvin.com
+-- 2026-10-08, issue #152: two computers were still posting to the retired host
 -- a week after the move, and finding them took reading nginx logs on that host and
 -- matching a handoff number against everyone's session logs. Every row here said
 -- 1.31.14; none said where it connects. Now the scanner's heartbeat carries the host part

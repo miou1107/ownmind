@@ -216,7 +216,7 @@ describe('createOpenCodeAdapter.readSince', () => {
   });
 
   it('ENOENT with no database at the path is no_install, not sqlite_missing (v1.31.14)', async () => {
-    // bot.kkvin.com 2026-10-04: no sqlite3 and no OpenCode, yet the daily self-check said
+    // A headless Ubuntu VPS, 2026-10-04: no sqlite3 and no OpenCode, yet the daily self-check said
     // "install sqlite3" for a tool nobody runs there.
     const logs = [];
     const adapter = createOpenCodeAdapter({
