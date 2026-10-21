@@ -253,8 +253,10 @@ describe('buildOverview — 要你決定的事', () => {
     assert.equal(d.lessons.count, 5);
     assert.equal(d.tasks[0].title, '重錄 6 張截圖');
     assert.equal(d.bugs[0].reporter_name, 'Eric');
-    // waiting: 67 + 52 + 2 + 4 = 125; recent: 4 + 5 + 1 + 1 = 11
-    assert.equal(d.hidden, 114);
+    // waiting: 67 + 52 + 4 = 123 (a done card no longer waits for anyone, v1.33.0);
+    // recent: 4 + 5 + 1 = 10
+    assert.equal(d.hidden, 113);
+    assert.ok(!calls.some((x) => x.sql.includes('AS n FROM tasks')), 'done cards are not counted as pending');
     for (const needle of ['GROUP BY LOWER(TRIM(COALESCE(project', 'FROM session_lessons\n', 'AS recent_tasks']) {
       const c = calls.find((x) => x.sql.includes(needle));
       assert.ok(c, needle);
@@ -697,5 +699,22 @@ describe('the copy', () => {
       const d = JSON.parse(fs.readFileSync(path.join(repoRoot, `client/src/i18n/${loc}.json`), 'utf8'));
       for (const k of homeKeys) assert.equal(ph(d[k]), ph(zh[k]), `${loc} ${k}`);
     }
+  });
+});
+
+// ── v1.33.0: a done card is closed, not waiting ──────────────────────────────────────────
+
+describe('buildPendingCount — done cards are no longer the person\'s to review', () => {
+  it('counts handoffs, lessons and bugs, and never asks the tasks table', async () => {
+    const fq = fakeQuery([
+      ['AS n FROM handoffs', [{ n: 2 }]],
+      ['AS n FROM session_lessons', [{ n: 3 }]],
+      ['AS n FROM bug_reports', [{ n: 4 }]],
+      ['FROM tasks', [{ n: 99 }]],
+    ]);
+    const { buildPendingCount } = await import('../src/routes/me-overview.js');
+    const c = await buildPendingCount({ query: fq.query, user: adminUser });
+    assert.deepEqual(c, { handoffs: 2, lessons: 3, tasks: 0, bugs: 4, total: 9 });
+    assert.ok(!fq.calls.some((x) => x.sql.includes('FROM tasks')));
   });
 });

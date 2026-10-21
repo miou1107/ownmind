@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const { renderSessionContext } = await import('../hooks/lib/render-session-context.js');
+const { renderSessionContext, handoffMatchesProject } = await import('../hooks/lib/render-session-context.js');
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -165,7 +165,11 @@ describe('renderSessionContext — memory', () => {
     assert.match(out, /IR-001/);
     assert.match(out, /- 通用性/);
     assert.match(out, /- 零負擔/);
-    assert.match(out, /Project: ownmind/);
+    // v1.33.0: a handoff is a section with its content when this directory is its project, and
+    // one reminder line naming the project otherwise. No project was given here.
+    assert.match(out, /## Handoffs waiting in other projects/);
+    assert.match(out, /\(ownmind\)/);
+    assert.doesNotMatch(out, /Project: ownmind/);
   });
 
   it('missing sections do not crash', () => {
@@ -264,5 +268,156 @@ describe('renderSessionContext — team standards', () => {
       team_standards_digest: '[團隊] 前端命名規範',
     }, []);
     assert.ok(out.indexOf('Iron rules') < out.indexOf('Team standards'));
+  });
+});
+
+// v1.33.0 — the AI keeps the memory: handoffs accepted by the matching project, the monthly
+// consolidation card, and the two things that stopped being said.
+describe('renderSessionContext — handoffs (v1.33.0)', () => {
+  const zh = (key, params) => ({
+    'handoff.waitingElsewhere': `你有一筆 ${params.project} 的交接還沒接，在那個專案開對話就會接手`,
+    'handoff.accepted': `已接手 ${params.project} 的交接，要撤銷跟我說一聲`,
+    'handoff.takenByAnotherWindow': `另一個視窗 ${params.minutes} 分鐘前接走`,
+  }[key] || key);
+  const base = { server_version: '1.33.0' };
+  const pending = { id: 12, project: 'nantou-funbus', from_machine: 'mac-studio', content: '查到一半的 KOL 名單\n下一步：對 10 月排程', status: 'pending' };
+
+  it('the matching project gets the content and the accept instruction', () => {
+    const out = renderSessionContext({ ...base, handoffs: [pending] }, [], { tip: () => '', t: zh, projectAliases: ['nantou-funbus'], machine: 'vin-mbp' });
+    assert.match(out, /## Handoff to accept now \(#12, from mac-studio\)/);
+    assert.match(out, /查到一半的 KOL 名單/);
+    assert.match(out, /下一步：對 10 月排程/);
+    assert.match(out, /ownmind_handoff_accept\(\{ id: 12, accepted_by: "vin-mbp" \}\)/);
+    assert.match(out, /已接手 nantou-funbus 的交接，要撤銷跟我說一聲/);
+    assert.doesNotMatch(out, /## Pending handoff/);
+  });
+
+  it('a different project gets one reminder line and no content', () => {
+    const out = renderSessionContext({ ...base, handoffs: [pending] }, [], { tip: () => '', t: zh, projectAliases: ['line-summarizer-bot'], machine: 'vin-mbp' });
+    assert.match(out, /## Handoffs waiting in other projects/);
+    assert.match(out, /- #12 \(nantou-funbus\): .*你有一筆 nantou-funbus 的交接還沒接，在那個專案開對話就會接手/);
+    assert.doesNotMatch(out, /查到一半的 KOL 名單/);
+    assert.doesNotMatch(out, /ownmind_handoff_accept/);
+  });
+
+  it('matches exactly (case-insensitive), on leading whole segments, and on the git remote alias', () => {
+    assert.ok(handoffMatchesProject('Vinutes', ['vinutes']));
+    assert.ok(handoffMatchesProject('nantou-funbus', ['nantou-funbus-admin']), 'a sub-project extends its parent\'s name');
+    assert.ok(handoffMatchesProject('nantou-funbus-admin', ['nantou-funbus']), 'and the other way round');
+    assert.ok(handoffMatchesProject('ownmind', ['OwnMind-worktree', 'ownmind']));
+    assert.ok(handoffMatchesProject('nantou_funbus', ['Nantou FunBus.admin']), 'underscore, space and dot split segments too');
+    assert.ok(handoffMatchesProject('fapa/api', ['fapa']), 'a slash splits segments');
+    assert.ok(!handoffMatchesProject('idaytour', ['vinutes']));
+  });
+
+  it('never matches a substring inside a segment, nor a segment that is not at the start', () => {
+    assert.ok(!handoffMatchesProject('api', ['fapa-api-gateway']), 'api is not the project fapa-api-gateway');
+    assert.ok(!handoffMatchesProject('ai', ['main']), 'ai inside main');
+    assert.ok(!handoffMatchesProject('bot', ['line-summarizer-bot']), 'bot is not the project line-summarizer-bot');
+    assert.ok(!handoffMatchesProject('funbus', ['nantou-funbus']), 'a trailing segment is the bot case again');
+    assert.ok(!handoffMatchesProject('mind', ['ownmind']), 'mind inside ownmind');
+    assert.ok(!handoffMatchesProject('ownmind-dev', ['ownmind-worktree']), 'sharing a first segment is not enough');
+    assert.ok(!handoffMatchesProject('', ['vinutes']), 'a blank project matches nothing');
+    assert.ok(!handoffMatchesProject('vinutes', []), 'no aliases match nothing');
+    assert.ok(!handoffMatchesProject('vinutes', ['']), 'a blank alias matches nothing');
+    assert.ok(!handoffMatchesProject('-', ['-']), 'nothing but separators matches nothing');
+  });
+
+  it('accepted five minutes ago in the matching project: content plus the other-window note', () => {
+    const now = Date.parse('2026-10-21T10:00:00Z');
+    const accepted = { ...pending, status: 'accepted', accepted_by: 'vin-mini', accepted_at: '2026-10-21T09:55:00Z' };
+    const out = renderSessionContext({ ...base, handoffs: [accepted] }, [], { tip: () => '', t: zh, projectAliases: ['nantou-funbus'], now });
+    assert.match(out, /## Handoff #12 was taken by another window 5 minute\(s\) ago/);
+    assert.match(out, /查到一半的 KOL 名單/);
+    assert.match(out, /另一個視窗 5 分鐘前接走/);
+    assert.doesNotMatch(out, /ownmind_handoff_accept/, 'must not be accepted a second time');
+  });
+
+  it('accepted longer ago, or in another project, is not rendered at all', () => {
+    const now = Date.parse('2026-10-21T10:00:00Z');
+    const old = { ...pending, status: 'accepted', accepted_at: '2026-10-21T09:00:00Z' };
+    const out1 = renderSessionContext({ ...base, handoffs: [old] }, [], { tip: () => '', t: zh, projectAliases: ['nantou-funbus'], now });
+    assert.doesNotMatch(out1, /Handoff/);
+    const recentElsewhere = { ...pending, status: 'accepted', accepted_at: '2026-10-21T09:58:00Z' };
+    const out2 = renderSessionContext({ ...base, handoffs: [recentElsewhere] }, [], { tip: () => '', t: zh, projectAliases: ['idaytour'], now });
+    assert.doesNotMatch(out2, /Handoff/);
+  });
+
+  it('falls back to active_handoff from an older server, with the same rules', () => {
+    const out = renderSessionContext({ ...base, active_handoff: { id: 3, project: 'OwnMind', content: '舊伺服器的交接' } }, [], { tip: () => '', t: zh, project: 'ownmind' });
+    assert.match(out, /## Handoff to accept now \(#3\)/);
+    assert.match(out, /舊伺服器的交接/);
+    const elsewhere = renderSessionContext({ ...base, active_handoff: { id: 3, project: 'OwnMind', content: 'x' } }, [], { tip: () => '', t: zh, project: 'vinutes' });
+    assert.match(elsewhere, /你有一筆 OwnMind 的交接還沒接/);
+  });
+
+  it('reads the Chinese lines from the locale dictionary, not from code', () => {
+    const before = process.env.OWNMIND_LOCALE_FORCE;
+    process.env.OWNMIND_LOCALE_FORCE = 'zh';
+    try {
+      const out = renderSessionContext({ ...base, handoffs: [pending] }, [], { tip: () => '', projectAliases: ['nantou-funbus'] });
+      assert.match(out, /已接手 nantou-funbus 的交接，要撤銷跟我說一聲/);
+    } finally {
+      if (before === undefined) delete process.env.OWNMIND_LOCALE_FORCE; else process.env.OWNMIND_LOCALE_FORCE = before;
+    }
+  });
+
+  it('a long handoff is capped and says so', () => {
+    const content = Array.from({ length: 120 }, (_, i) => `第 ${i + 1} 行`).join('\n');
+    const out = renderSessionContext({ ...base, handoffs: [{ ...pending, content }] }, [], { tip: () => '', t: zh, projectAliases: ['nantou-funbus'] });
+    assert.match(out, /第 80 行/);
+    assert.doesNotMatch(out, /第 81 行\n/);
+    assert.match(out, /40 more line\(s\) not shown/);
+  });
+});
+
+describe('renderSessionContext — consolidation (v1.33.0)', () => {
+  const zh = (key, p) => (key === 'consolidation.report'
+    ? `[OwnMind] ${p.month} 的記憶整理完了：合併 ${p.merged}、歸檔 ${p.archived}、定案 ${p.decided}。要還原任何一條，說一聲。`
+    : key);
+  const base = { server_version: '1.33.0' };
+
+  it('an open card is handed to a background subagent, not worked here', () => {
+    const out = renderSessionContext({ ...base, consolidation: { card: { id: 40, title: '整理記憶 2026-10', status: 'open' }, report: null, questions: [] } }, [], { tip: () => '', t: zh });
+    assert.match(out, /## Memory consolidation card #40 is open \(整理記憶 2026-10\)/);
+    assert.match(out, /background subagent \(Agent tool\)/);
+    assert.match(out, /ownmind_task_claim\(\{ id: 40 \}\)/);
+    assert.match(out, /ownmind_consolidation_candidates/);
+    assert.match(out, /`ownmind-consolidate` skill/);
+    assert.doesNotMatch(out, /configs\/skills/);
+  });
+
+  it('a finished card renders the one-line report, exactly as the dictionary says it', () => {
+    const out = renderSessionContext({ ...base, consolidation: { card: null, report: { task_id: 40, month: '2026-10', merged: 2, archived: 18, decided: 5 }, questions: [] } }, [], { tip: () => '', t: zh });
+    assert.match(out, /## Memory consolidation report/);
+    assert.match(out, /\[OwnMind\] 2026-10 的記憶整理完了：合併 2、歸檔 18、定案 5。要還原任何一條，說一聲。/);
+    assert.match(out, /ownmind_restore/);
+  });
+
+  it('questions are listed, at most three, with how to record the answer', () => {
+    const questions = Array.from({ length: 5 }, (_, i) => ({ id: 100 + i, memory_id: 500 + i, project: i ? 'vinutes' : null, question: `第 ${i + 1} 題？` }));
+    const out = renderSessionContext({ ...base, consolidation: { card: null, report: null, questions } }, [], { tip: () => '', t: zh });
+    assert.match(out, /## Questions for the person \(ask at a natural moment, at most 3\)/);
+    assert.match(out, /- Q#100 about memory #500: 第 1 題？/);
+    assert.match(out, /- Q#101 about memory #501, project vinutes: 第 2 題？/);
+    assert.doesNotMatch(out, /第 4 題/);
+    assert.match(out, /ownmind_decide/);
+    assert.match(out, /ownmind_archive/);
+  });
+
+  it('nothing to say prints nothing', () => {
+    for (const c of [undefined, null, {}, { card: null, report: null, questions: [] }, { card: { id: 1, status: 'done' } }]) {
+      const out = renderSessionContext({ ...base, consolidation: c }, [], { tip: () => '', t: zh });
+      assert.doesNotMatch(out, /consolidation/i, `consolidation=${JSON.stringify(c)} printed a section`);
+      assert.doesNotMatch(out, /Questions for the person/);
+    }
+  });
+
+  it('the lessons-waiting section and the never-review sentence are gone', () => {
+    const out = renderSessionContext({ ...base, lessons_waiting: 7, tasks: { project: 'om', cards: [{ id: 1, title: 't', status: 'open' }] } }, [], { tip: () => '', t: zh });
+    assert.doesNotMatch(out, /Lessons waiting/);
+    assert.doesNotMatch(out, /inbox\/lessons/);
+    assert.doesNotMatch(out, /Never mark one reviewed/);
+    assert.match(out, /done needs evidence/);
   });
 });

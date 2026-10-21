@@ -42,6 +42,9 @@ function asMemoryRows(sessionRows) {
  * @param {object} args
  * @param {string} args.query
  * @param {string} [args.syncToken]
+ * @param {boolean} [args.includeArchived] v1.33.0: also return archived memories (the subject
+ *   ended; the text was true at the time). Rows then carry `status`, passed through as the
+ *   server sends them.
  * @returns {Promise<object>} the tool's response body. `_new_token`, when present, is the
  *   refreshed sync token for the caller to keep.
  */
@@ -50,7 +53,8 @@ export async function runMemorySearch(deps, args) {
   const logEvent = deps.logEvent || (() => {});
   const query = args.query;
   const searchTokenParam = args.syncToken ? `&sync_token=${args.syncToken}` : '';
-  const memoryPath = `/api/memory/search?q=${encodeURIComponent(query)}${searchTokenParam}`;
+  const archivedParam = args.includeArchived === true ? '&include_archived=1' : '';
+  const memoryPath = `/api/memory/search?q=${encodeURIComponent(query)}${searchTokenParam}${archivedParam}`;
   const sessionPath = `/api/session/recent?days=90&include_compressed=true&q=${encodeURIComponent(query)}`;
 
   const settle = (p) => p.then((value) => ({ ok: true, value }), (error) => ({ ok: false, error }));

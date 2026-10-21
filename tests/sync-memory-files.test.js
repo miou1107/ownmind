@@ -14,6 +14,7 @@ const {
   MEMORY_INDEX_MAX_LINES,
   MEMORY_INDEX_MAX_ENTRY_CHARS,
   IRON_RULE_INDEX_CAP,
+  isCurrentProjectMemory,
 } = await import('../hooks/lib/sync-memory-files.js');
 
 let tmpDir;
@@ -657,5 +658,105 @@ describe('syncMemoryFiles - full re-sync after partial state', () => {
     assert.equal(fs.existsSync(path.join(tmpDir, 'project_10_alpha.md')), false);
     const beta = fs.readFileSync(path.join(tmpDir, 'project_11_beta.md'), 'utf8');
     assert.match(beta, /b2/);
+  });
+});
+
+// v1.33.0 — only active rows are mirrored, and the current project leads the index.
+describe('syncMemoryFiles — status allow-list (v1.33.0)', () => {
+  it('archived rows and rows with no status are not written; active ones are', () => {
+    const tmpDir = tempDir('ownmind-sync-allow-');
+    try {
+      syncMemoryFiles({
+        memoryDir: tmpDir,
+        data: {
+          server_time: '2026-10-21T00:00:00Z',
+          memories: [
+            { id: 1, type: 'project', title: 'still running', content: 'x', updated_at: '2026-10-01T00:00:00Z', status: 'active' },
+            { id: 2, type: 'project', title: 'ended', content: 'x', updated_at: '2026-10-02T00:00:00Z', status: 'archived' },
+            { id: 3, type: 'project', title: 'merged away', content: 'x', updated_at: '2026-10-03T00:00:00Z', status: 'disabled' },
+            { id: 4, type: 'project', title: 'no status', content: 'x', updated_at: '2026-10-04T00:00:00Z' },
+          ],
+        },
+      });
+      const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith('project_'));
+      assert.deepEqual(files, ['project_1_still_running.md']);
+      const index = fs.readFileSync(path.join(tmpDir, 'MEMORY.md'), 'utf8');
+      assert.match(index, /still running/);
+      assert.doesNotMatch(index, /ended|merged away|no status/);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('an archived row removes the file a previous sync wrote', () => {
+    const tmpDir = tempDir('ownmind-sync-archive-');
+    try {
+      const row = { id: 9, type: 'project', title: 'gone', content: 'x', updated_at: '2026-10-01T00:00:00Z', status: 'active' };
+      syncMemoryFiles({ memoryDir: tmpDir, data: { server_time: 't', memories: [row] } });
+      assert.ok(fs.existsSync(path.join(tmpDir, 'project_9_gone.md')));
+      syncMemoryFiles({ memoryDir: tmpDir, data: { server_time: 't', memories: [{ ...row, status: 'archived' }] } });
+      assert.ok(!fs.existsSync(path.join(tmpDir, 'project_9_gone.md')));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('buildMemoryIndex — the current project first (v1.33.0)', () => {
+  const day = (i) => new Date(Date.UTC(2026, 0, 1 + i)).toISOString();
+  const project = (i, extra = {}) => ({
+    id: i, type: 'project', title: `other ${i}`, updated_at: day(i), filename: `project_${i}_other.md`, ...extra,
+  });
+
+  it('every memory of the current project precedes any other project memory, each group newest first', () => {
+    // 300 project memories, 12 of them Vinutes by tag, title, project: tag or metadata.
+    const entries = [];
+    for (let i = 0; i < 300; i += 1) {
+      if (i % 25 === 0) {
+        const how = [{ tags: ['Vinutes'] }, { tags: ['project:vinutes'] }, { title: `Vinutes v0.4.${i} 修法` }, { metadata: { project: 'vinutes' } }][(i / 25) % 4];
+        entries.push(project(i, how));
+      } else {
+        entries.push(project(i));
+      }
+    }
+    const md = buildMemoryIndex(entries, '2026-10-21T00:00:00Z', false, { project: 'Vinutes' });
+    const listed = md.split('\n').filter((l) => l.startsWith('- [')).map((l) => l.match(/\(project_(\d+)_/)[1]).map(Number);
+    const mine = new Set([0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275]);
+    assert.deepEqual(listed.slice(0, 12).slice().sort((a, b) => a - b), [...mine].sort((a, b) => a - b),
+      `the first twelve lines must be the Vinutes memories, got ${listed.slice(0, 12)}`);
+    assert.deepEqual(listed.slice(0, 12), [275, 250, 225, 200, 175, 150, 125, 100, 75, 50, 25, 0], 'newest first within the project');
+    assert.ok(listed.slice(12).every((id) => !mine.has(id)));
+    assert.ok(listed[12] > listed[13], 'the rest stay newest first');
+    assert.ok(md.split('\n').length <= MEMORY_INDEX_MAX_LINES, 'the budget is unchanged');
+  });
+
+  it('without a project, or when nothing matches, the order is newest first as before', () => {
+    const entries = [project(1), project(3), project(2)];
+    const plain = buildMemoryIndex(entries, 't', false);
+    const noMatch = buildMemoryIndex(entries, 't', false, { project: 'idaytour' });
+    assert.equal(plain, noMatch);
+    assert.match(plain, /other 3[\s\S]*other 2[\s\S]*other 1/);
+  });
+
+  it('iron rules keep their cap and their own order', () => {
+    const entries = [];
+    for (let i = 0; i < 40; i += 1) {
+      entries.push({ id: i, type: 'iron_rule', title: i === 5 ? 'Vinutes 專用' : `rule ${i}`, updated_at: day(i), filename: `iron_rule_${i}_r.md` });
+    }
+    const md = buildMemoryIndex(entries, 't', false, { project: 'vinutes' });
+    const listed = md.split('\n').filter((l) => l.startsWith('- ['));
+    assert.equal(listed.length, IRON_RULE_INDEX_CAP);
+    assert.match(listed[0], /rule 39/, 'the matching title does not jump the queue for a non-project type');
+  });
+
+  it('isCurrentProjectMemory: project type only, case-insensitive, tags or title or metadata', () => {
+    assert.ok(isCurrentProjectMemory({ type: 'project', tags: ['OwnMind'] }, 'ownmind'));
+    assert.ok(isCurrentProjectMemory({ type: 'project', tags: ['project:ownmind'] }, 'OwnMind'));
+    assert.ok(isCurrentProjectMemory({ type: 'project', title: 'OwnMind v1.33.0 部署' }, 'ownmind'));
+    assert.ok(isCurrentProjectMemory({ type: 'project', metadata: { project: 'ownmind' } }, 'ownmind'));
+    assert.ok(!isCurrentProjectMemory({ type: 'project', tags: ['ownmind-site'] }, 'ownmind'), 'a tag is matched whole');
+    assert.ok(!isCurrentProjectMemory({ type: 'iron_rule', title: 'ownmind' }, 'ownmind'));
+    assert.ok(!isCurrentProjectMemory({ type: 'project', title: 'ownmind' }, ''));
+    assert.ok(!isCurrentProjectMemory({ type: 'project', title: 'ownmind', tags: 'ownmind' }, 'x'));
   });
 });

@@ -14,6 +14,15 @@ export const MAX_LINK_LENGTH = 1000;
 
 export const TASK_STATUSES = Object.freeze(['open', 'claimed', 'done', 'reviewed', 'dropped']);
 
+/**
+ * v1.33.0: a card is closed by `done` with evidence — the verification the AI actually ran
+ * and what it printed. Fewer characters than this is a method without a result ("ran the
+ * tests"), which is what the person used to have to check by hand.
+ */
+export const MIN_EVIDENCE_LENGTH = 20;
+export const MAX_EVIDENCE_LENGTH = 4000;
+export const EVIDENCE_REQUIRED_ERROR = 'evidence is required: the verification you ran and what it printed';
+
 /** Hours a claim may sit without a `done` before the daily job hands the card back. */
 export const CLAIM_TTL_HOURS = 24;
 
@@ -66,14 +75,24 @@ export function normalizeTaskCreate(args) {
 }
 
 /**
- * @returns {{ ok: true, result: string, links: object } | { ok: false, error: string }}
+ * @returns {{ ok: true, result: string, evidence: string, links: object } | { ok: false, error: string }}
  */
 export function normalizeTaskDone(args) {
   const a = (args && typeof args === 'object') ? args : {};
   const result = text(a.result);
   if (!result) return { ok: false, error: 'result is required: say what was done and where to look' };
   if (result.length > MAX_RESULT_LENGTH) return { ok: false, error: `result is longer than ${MAX_RESULT_LENGTH} characters` };
-  return { ok: true, result, links: normalizeLinks(a.links) };
+  const evidence = text(a.evidence);
+  if (evidence.length < MIN_EVIDENCE_LENGTH) return { ok: false, error: EVIDENCE_REQUIRED_ERROR };
+  if (evidence.length > MAX_EVIDENCE_LENGTH) return { ok: false, error: `evidence is longer than ${MAX_EVIDENCE_LENGTH} characters` };
+  return { ok: true, result, evidence, links: normalizeLinks(a.links) };
+}
+
+/** The note appended to a card's body when its owner or an admin sends it back to open. */
+export function reopenNote({ name, note, at }) {
+  const when = at instanceof Date ? at.toISOString() : String(at || '');
+  const why = text(note);
+  return `\n\n[reopened ${when} by ${name || 'the owner'}]${why ? ` ${why}` : ''}`;
 }
 
 /** The note appended to a card's body when a claim is dropped or expires. */

@@ -25,6 +25,8 @@ import { missingSkillsFor, missingSkillNotice } from './missing-skills.js';
 import { t } from './i18n.js';
 import { readCredentials, resolveProjectName } from '../../shared/helpers.js';
 import { fetchProjectTasks } from './fetch-project-tasks.js';
+import { fetchPendingHandoffs, mergeHandoffs, markConsolidationShown, consolidationMarksOn } from './session-live-state.js';
+import { projectAliases } from './project-aliases.js';
 import { localDateOnly, localIsoTimestamp } from '../../shared/local-date.js';
 
 const LOG_DIR = path.join(os.homedir(), '.ownmind', 'logs');
@@ -67,9 +69,23 @@ async function httpGet(url, headers) {
 // v1.31.3 — the project's task cards, asked for outside the cache (the init payload is
 // served from disk whenever the memory table has not moved, and cards move without it).
 // hooks/ownmind-session-start.js does the same on Windows. Nothing to say leaves the block out.
+const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const projectName = resolveProjectName();
+
+// v1.33.0 — pending handoffs, live for the same reason as the task cards: the matching
+// project accepts one at session start, and a cached list would have it accepted twice or
+// never. Started here and awaited after the other fetches, so on a network that drops
+// packets its 3s timeout overlaps theirs instead of adding to them — the hook has 10s.
+const pendingHandoffs = (() => {
+  try {
+    const { apiKey, apiUrl } = readCredentials();
+    return fetchPendingHandoffs({ apiUrl, apiKey });
+  } catch { return Promise.resolve(null); }
+})();
+
 try {
   const { apiKey, apiUrl } = readCredentials();
-  const tasks = await fetchProjectTasks({ apiUrl, apiKey, project: resolveProjectName() });
+  const tasks = await fetchProjectTasks({ apiUrl, apiKey, project: projectName });
   if (tasks) initData = { ...initData, tasks };
 } catch { /* a reminder; its absence must never cost the session its context */ }
 
@@ -102,7 +118,30 @@ const missingSkills = missingSkillsFor(initData, {
 });
 const systemMessage = missingSkillNotice(missingSkills, t);
 
-const additionalContext = renderSessionContext(initData, broadcasts, { notifications, missingSkills });
+try {
+  initData = mergeHandoffs(initData, await pendingHandoffs);
+} catch { /* the init payload's own list, if any, stands */ }
+
+const additionalContext = renderSessionContext(initData, broadcasts, {
+  notifications,
+  project: projectName,
+  projectAliases: projectAliases({ project: projectName, projectDir }),
+  machine: os.hostname(),
+  missingSkills });
+
+// v1.33.0 — the consolidation report is relayed once and the questions count as asked once
+// they are in the context above. Sent *after* the write below, never before it: the shell hook
+// runs this script under `timeout 5`, and two slow requests ahead of the write cost the session
+// its whole context. Only on a fresh start (startup, clear) — a resume or a compact re-renders
+// what the person already saw and must not count a question as asked again. Both marks go out
+// together, each capped at 1.5s, and neither can throw; a failed mark means a repeat next start.
+const marksAfterOutput = () => {
+  try {
+    if (!consolidationMarksOn(process.env.OWNMIND_HOOK_START_SOURCE)) return Promise.resolve();
+    const { apiKey, apiUrl } = readCredentials();
+    return markConsolidationShown({ apiUrl, apiKey, consolidation: initData.consolidation });
+  } catch { return Promise.resolve(); }
+};
 
 // Let the loop drain if it can, and force the exit if it cannot.
 //
@@ -141,6 +180,8 @@ process.stdout.write(JSON.stringify({
     additionalContext
   }
 }), () => {
-  const forced = setTimeout(() => process.exit(0), 300);
-  forced.unref();
+  marksAfterOutput().then(() => {
+    const forced = setTimeout(() => process.exit(0), 300);
+    forced.unref();
+  });
 });

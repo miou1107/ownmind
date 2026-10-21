@@ -126,9 +126,11 @@ test('iron rules carry the skills they need, and init sends them', async (t) => 
     );
 
     // ── 3. A new rule gets the guess, and the author is told ─────────────────────────
+    // v1.33.0: this rule repeats IR-801's text, which the save-time duplicate check would
+    // answer with the existing row; `force` is what an AI passes after reading that answer.
     const created = await call('POST', '/api/memory', {
       type: 'iron_rule', title: '寫中文前後要過兩道工具（新）', content: SKILL_RULE, tags: ['trigger:write'],
-      metadata: { tool: 'test' },
+      metadata: { tool: 'test' }, force: true,
     });
     assert.equal(created.status, 201, JSON.stringify(created.json));
     assert.deepEqual(created.json.metadata.required_skills, ['zh-tw-doc-copy', 'humanizer-tw']);

@@ -47,6 +47,9 @@ const NOT_FOR_THE_SESSION_CONTEXT = {
   locale: 'not model-facing — hooks/lib/locale.js (Task 2, gate-message-i18n) reads this '
     + 'straight out of the local cache.data.locale the sync path writes, to pick the '
     + "language of the hook's own terminal notices; the AI never needs it in context",
+  lessons_waiting: 'v1.33.0 — the AI promotes lessons itself (on repeat, or at the monthly '
+    + 'consolidation card); nothing waits on the console, so there is nothing to tell the '
+    + 'person. Still sent for hooks older than v1.33.0',
 };
 
 /**

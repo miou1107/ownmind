@@ -2,18 +2,23 @@ import { Router } from 'express';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { lessonToMemory } from '../../shared/session-lessons.js';
 import { parseRowId } from '../utils/row-id.js';
+import { generateSyncToken } from '../utils/syncToken.js';
+import { promoteLessonRow, markLessonPromoted } from '../lib/session-lessons-store.js';
 
 /**
- * The lessons a session left behind, and what the person decides to do with them (v1.31.0).
+ * The lessons a session left behind, and what became of them (v1.31.0, reworked v1.33.0).
  *
  * Rows arrive through POST /api/session (src/routes/session.js) when the AI closes a
- * conversation with `lessons`. This router is the other half: list what is waiting, turn one
- * into a memory, or let it go. Nothing here writes a memory on its own — promotion is the
- * person's click, because a memory table that fills itself from every session is a log, and
- * a log is what the AI already fails to read.
+ * conversation with `lessons`. This router is the other half: list them, turn one into a
+ * memory, or let it go.
+ *
+ * v1.33.0: promotion is no longer the person's click. The store promotes a repeated lesson
+ * on insert, the AI works the rest at the monthly consolidation card through `/:id/set`,
+ * and the console only shows what was decided and offers the undo (收回 archives the memory;
+ * 還是留 calls `/set` with `promoted`). `/promote` and `/dismiss` stay for older consoles.
  *
  * Built as a factory, like me-narrative.js, so a test can hand it a fake `query` and prove
- * the three decisions without a database.
+ * the decisions without a database.
  */
 
 const STATUSES = new Set(['new', 'promoted', 'dismissed', 'all']);
@@ -53,7 +58,7 @@ export function createSessionLessonsRouter({ query, auth, logger = console }) {
       if (status !== 'new') { values.push(window); where.push(`created_at >= NOW() - INTERVAL '1 day' * $${values.length}`); }
       const result = await query(
         `SELECT id, session_log_id, project, stuck, fix, next_time, status, memory_id,
-                created_at, resolved_at
+                reason, promoted_by, created_at, resolved_at
            FROM session_lessons
           WHERE ${where.join(' AND ')}
           ORDER BY created_at DESC
@@ -68,11 +73,10 @@ export function createSessionLessonsRouter({ query, auth, logger = console }) {
   });
 
   /**
-   * PUT /:id/promote — make this lesson a memory of type `project`.
+   * PUT /:id/promote — make this lesson a memory of type `project` (older consoles).
    *
    * The lesson has to be this person's and still `new`; a row already promoted or dismissed
-   * is answered 409 rather than silently promoted twice. The scan is the same one every
-   * memory write runs: a lesson that quotes a key is refused, with the reason and no text.
+   * is answered 409 rather than silently promoted twice.
    */
   router.put('/:id/promote', async (req, res) => {
     try {
@@ -85,39 +89,130 @@ export function createSessionLessonsRouter({ query, auth, logger = console }) {
       if (row.status !== 'new') {
         return res.status(409).json({ error: 'Lesson already resolved', status: row.status });
       }
-
-      const memory = lessonToMemory(row);
-      // The same scan every memory write runs (narrative types skip the keyword heuristic),
-      // so a lesson is refused here exactly when POST /api/memory would refuse it. The
-      // answer carries the rule and nothing of the text.
-      const check = validateMemoryContent({ type: 'project', title: memory.title, content: memory.content });
-      if (!check.ok) {
-        return res.status(400).json({ error: 'Lesson looks like it contains a secret', rule: check.body?.detected_by || 'secret' });
-      }
-      const inserted = await query(
-        `INSERT INTO memories (user_id, type, title, content, tags, metadata)
-         VALUES ($1, 'project', $2, $3, $4, $5)
-         RETURNING id, type, title, content, tags, created_at`,
-        [req.user.id, memory.title, memory.content, memory.tags,
-          { source: 'session_lesson', lesson_id: row.id, session_log_id: row.session_log_id }],
-      );
-      const memoryRow = inserted.rows[0];
-      await query(
-        `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
-         VALUES ($1, 'session_lesson', 'create', $2, $3)`,
-        [memoryRow.id, memory.content, { source: 'session_lesson', lesson_id: row.id }],
-      );
-      const updated = await query(
-        `UPDATE session_lessons
-            SET status = 'promoted', memory_id = $1, resolved_at = NOW()
-          WHERE id = $2 AND user_id = $3
-          RETURNING *`,
-        [memoryRow.id, row.id, req.user.id],
-      );
-      res.json({ lesson: updated.rows[0], memory: memoryRow });
+      await promote(req, res, row, { promotedBy: 'console', reason: null });
     } catch (err) {
       logger.error('session lesson promote failed', { error: err.message });
       res.status(500).json({ error: 'Failed to promote lesson' });
+    }
+  });
+
+  /**
+   * Promote one row the caller owns: the same scan every memory write runs (a lesson that
+   * quotes a key is refused with the reason and no text), then the store's helper writes the
+   * project memory, its history row and the lesson's new status. The answer is built from
+   * what was written rather than read back, so the three statements are the whole cost.
+   */
+  async function promote(req, res, row, { promotedBy, reason }) {
+    const memory = lessonToMemory(row);
+    const check = validateMemoryContent({ type: 'project', title: memory.title, content: memory.content });
+    if (!check.ok) {
+      return res.status(400).json({ error: 'Lesson looks like it contains a secret', rule: check.body?.detected_by || 'secret' });
+    }
+    const memoryId = await promoteLessonRow(query, { row, userId: req.user.id, promotedBy, reason });
+    res.json({
+      lesson: { ...row, status: 'promoted', memory_id: memoryId, promoted_by: promotedBy, reason: reason ?? row.reason ?? null },
+      memory: { id: memoryId, type: 'project', title: memory.title, content: memory.content, tags: memory.tags },
+    });
+  }
+  /**
+   * Promote a lesson that already made a memory once: the console's pull-back archived that
+   * memory and dismissed the row; keep-anyway brings the same memory back rather than
+   * writing a second copy beside the archived one. Returns true when it handled the request.
+   *
+   *   archived  -> restored (active, archived_* cleared, history row `restore`, fresh sync
+   *                token: the same writes as POST /api/memory/:id/restore)
+   *   active    -> the lesson is re-linked to it; nothing in `memories` moves
+   *   otherwise -> false: disabled or deleted, so the caller writes a new memory as before
+   */
+  async function promoteByRestoring(req, res, row, { promotedBy, reason }) {
+    if (!parseRowId(row.memory_id).ok) return false;
+    const found = await query(
+      'SELECT id, status, archived_reason FROM memories WHERE id = $1 AND user_id = $2',
+      [row.memory_id, req.user.id],
+    );
+    const memory = found.rows[0];
+    if (!memory || (memory.status !== 'archived' && memory.status !== 'active')) return false;
+    let memoryRow = memory;
+    let restored = false;
+    if (memory.status === 'archived') {
+      const r = await query(
+        `UPDATE memories
+            SET status = 'active', archived_at = NULL, archived_reason = NULL, updated_at = NOW()
+          WHERE id = $1 AND status = 'archived'
+          RETURNING *`,
+        [memory.id],
+      );
+      if (r.rows.length === 0) return false;
+      memoryRow = r.rows[0];
+      restored = true;
+      await query(
+        `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
+         VALUES ($1, 'session_lesson', 'restore', $2, $3)`,
+        [memory.id, memoryRow.content, JSON.stringify({ archived_reason: memory.archived_reason ?? null, lesson_id: row.id, promoted_by: promotedBy })],
+      );
+    }
+    const lesson = await markLessonPromoted(query, { lessonId: row.id, userId: req.user.id, memoryId: memory.id, promotedBy, reason });
+    const response = {
+      lesson: lesson || { ...row, status: 'promoted', memory_id: memory.id, promoted_by: promotedBy, reason },
+      memory: memoryRow,
+    };
+    if (restored) response.sync_token = await generateSyncToken(req.user.id, query);
+    res.json(response);
+    return true;
+  }
+
+  /**
+   * PUT /:id/set — the AI's (or the console's) verdict on a lesson (v1.33.0).
+   *   { status: 'promoted', reason? }   any status but promoted -> one project memory;
+   *                                     signed ai_monthly when the MCP calls (x-ownmind-tool
+   *                                     header), console otherwise. A row whose memory was
+   *                                     archived gets that memory restored instead (see
+   *                                     promoteByRestoring)
+   *   { status: 'dismissed', reason }   -> dismissed with the reason stored; the reason is
+   *                                     required, the console shows it next to the lesson.
+   *                                     A promoted lesson may be dismissed too (the console's
+   *                                     pull-back archives the memory first, then dismisses);
+   *                                     its memory_id stays so the row still points at what
+   *                                     it made
+   */
+  router.put('/:id/set', async (req, res) => {
+    try {
+      const status = req.body?.status;
+      if (status !== 'promoted' && status !== 'dismissed') {
+        return res.status(400).json({ error: 'status must be promoted or dismissed' });
+      }
+      const reason = typeof req.body?.reason === 'string' && req.body.reason.trim()
+        ? req.body.reason.trim().slice(0, 1000) : null;
+      if (status === 'dismissed' && !reason) {
+        return res.status(400).json({ error: 'reason is required when dismissing a lesson' });
+      }
+      const found = await query(
+        'SELECT * FROM session_lessons WHERE id = $1 AND user_id = $2',
+        [req.params.id, req.user.id],
+      );
+      const row = found.rows[0];
+      if (!row) return res.status(404).json({ error: 'Lesson not found' });
+      if (status === 'promoted') {
+        if (row.status === 'promoted') {
+          return res.status(409).json({ error: 'Lesson already promoted', status: row.status, memory_id: row.memory_id });
+        }
+        const promotedBy = req.headers['x-ownmind-tool'] ? 'ai_monthly' : 'console';
+        if (await promoteByRestoring(req, res, row, { promotedBy, reason })) return;
+        return await promote(req, res, row, { promotedBy, reason });
+      }
+      // memory_id is deliberately left as it is: a dismissed-after-promotion row keeps
+      // pointing at the memory the console just archived, so 還是留 can find it again.
+      const updated = await query(
+        `UPDATE session_lessons
+            SET status = 'dismissed', reason = $1, resolved_at = NOW()
+          WHERE id = $2 AND user_id = $3
+          RETURNING *`,
+        [reason, row.id, req.user.id],
+      );
+      res.json(updated.rows[0] || { ...row, status: 'dismissed', reason });
+    } catch (err) {
+      logger.error('session lesson set failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to set lesson' });
     }
   });
 

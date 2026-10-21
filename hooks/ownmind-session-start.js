@@ -24,6 +24,8 @@ import { runConditionalSync } from './lib/conditional-sync.js';
 import { syncEnforcementBundle } from './lib/conditional-sync-cli.js';
 import { renderSessionContext } from './lib/render-session-context.js';
 import { fetchProjectTasks } from './lib/fetch-project-tasks.js';
+import { fetchPendingHandoffs, mergeHandoffs, markConsolidationShown, consolidationMarksOn } from './lib/session-live-state.js';
+import { projectAliases } from './lib/project-aliases.js';
 import { missingSkillsFor, missingSkillNotice } from './lib/missing-skills.js';
 import { t } from './lib/i18n.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
@@ -398,8 +400,14 @@ async function main() {
   // v1.31.3 — the project's task cards, asked for outside the cache: the init payload is
   // served from disk whenever the memory table has not moved, and cards move without it.
   // Nothing to say (no project, no server, no table) leaves the context without the block.
+  // v1.33.0 — pending handoffs, live for the same reason as the task cards: the matching
+  // project accepts one at session start, and a cached list would have it accepted twice or
+  // never. Started here and awaited after the other fetches, so on a bad network its 3s
+  // timeout overlaps theirs instead of adding to them.
+  const pendingHandoffs = fetchPendingHandoffs({ apiUrl, apiKey });
+  const projectName = PROJECT_NAME;
+
   try {
-    const projectName = PROJECT_NAME;
     const tasks = await fetchProjectTasks({ apiUrl, apiKey, project: projectName });
     if (tasks) initData = { ...initData, tasks };
   } catch { /* the block is a reminder; its absence must never cost the session its context */ }
@@ -441,7 +449,17 @@ async function main() {
   });
   const systemMessage = missingSkillNotice(missingSkills, t);
 
-  const lines = [renderSessionContext(initData, broadcasts, { notifications: notif, missingSkills })];
+  try {
+    initData = mergeHandoffs(initData, await pendingHandoffs);
+  } catch { /* the init payload's own list, if any, stands */ }
+
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const lines = [renderSessionContext(initData, broadcasts, {
+    notifications: notif,
+    project: projectName,
+    projectAliases: projectAliases({ project: projectName, projectDir }),
+    machine: os.hostname(),
+    missingSkills })];
 
   // v1.26.83 — write the memories into this project's directory, as the shell hook does.
   // Without it the AI reads whatever snapshot was last written, which on Windows was never.
@@ -456,7 +474,7 @@ async function main() {
           `${apiUrl}/api/memory/sync?types=iron_rule,project,feedback`,
           { Authorization: `Bearer ${apiKey}` }
         );
-        syncMemoryFiles({ memoryDir, data: JSON.parse(raw) });
+        syncMemoryFiles({ memoryDir, data: JSON.parse(raw), project: projectName });
       } catch {
         // Mark the index as stale rather than leaving yesterday's copy looking current.
         syncMemoryFiles({ memoryDir, sync_failed: true });
@@ -472,6 +490,17 @@ async function main() {
       additionalContext: lines.join('\n')
     }
   }));
+
+  // v1.33.0 — the consolidation report is relayed once and the questions count as asked once
+  // they are in the context above. After the write, never before it, and only on a fresh start
+  // (startup, clear): a resume or a compact re-renders what the person already saw. Both marks
+  // go out together, each capped at 1.5s, and neither can throw. session-start-output.js does
+  // the same on macOS and Linux, reading the source from the shell hook's environment variable.
+  try {
+    if (consolidationMarksOn(readHookPayload()?.source)) {
+      await markConsolidationShown({ apiUrl, apiKey, consolidation: initData.consolidation });
+    }
+  } catch { /* shown again next time */ }
 }
 
 main().catch(() => process.exit(0));

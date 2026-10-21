@@ -50,7 +50,9 @@ export function buildSyncQuery(userId, types, since) {
            FROM memories
            WHERE user_id = $1
              AND type = ANY($2::text[])
-             AND (updated_at > $3 OR (disabled_at IS NOT NULL AND disabled_at > $3))
+             AND (updated_at > $3
+                  OR (disabled_at IS NOT NULL AND disabled_at > $3)
+                  OR (archived_at IS NOT NULL AND archived_at > $3))
            ORDER BY updated_at DESC`,
     values: [userId, types, since],
   };

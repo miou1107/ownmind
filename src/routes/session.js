@@ -65,16 +65,17 @@ router.post('/', async (req, res) => {
 
     const row = result.rows[0];
 
-    // v1.31.0: the lessons this session learned, one row each, waiting for the person to
-    // promote or dismiss them. A lesson that quotes a secret is dropped here and counted,
-    // never stored — the same door every memory write goes through.
+    // v1.31.0: the lessons this session learned, one row each. A lesson that quotes a secret
+    // is dropped here and counted, never stored — the same door every memory write goes
+    // through. v1.33.0: a lesson learned for the second time is promoted to a project memory
+    // on the spot, and the answer says which; the rest wait for the monthly card.
     const { lessons } = normalizeLessons(req.body.lessons);
     if (lessons.length > 0) {
       const project = (cleanDetails && typeof cleanDetails.project === 'string' && cleanDetails.project) || null;
-      const { saved, rejected } = await storeSessionLessons({
+      const { saved, rejected, promoted } = await storeSessionLessons({
         query, logger, userId: req.user.id, sessionLogId: row.id, project, lessons, sanitize,
       });
-      return res.status(201).json({ ...row, lessons_saved: saved, lessons_rejected: rejected });
+      return res.status(201).json({ ...row, lessons_saved: saved, lessons_rejected: rejected, lessons_promoted: promoted });
     }
 
     res.status(201).json(row);

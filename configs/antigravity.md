@@ -8,7 +8,7 @@
 > `bash ~/.claude/hooks/ownmind-session-start.sh`
 > 如果 shell 不可用，呼叫 OwnMind API: `GET /api/memory/init`（Header: `Authorization: Bearer <OWNMIND_API_KEY>`）
 
-載入後顯示摘要（【OwnMind vX.X.X】{類型}：{內容} 格式），如有交接先摘要給使用者確認。
+載入後顯示摘要（【OwnMind vX.X.X】{類型}：{內容} 格式），啟動內容裡出現「Handoff to accept now」就直接接手並跟使用者說一句「已接手 ＿＿ 的交接，要撤銷跟我說一聲」；別的專案的交接只會看到一行提醒，不用動。
 
 ## 鐵律強制執行（最高優先級）
 

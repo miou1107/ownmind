@@ -1,36 +1,19 @@
-import { useState } from 'react';
 import { useT, useLocale } from '../../i18n/LocaleContext';
-import { apiPut } from '../../api';
-import { TaskCard, useTaskList } from '../Portal/TasksPage.jsx';
+import { TaskCard, useTaskList, useReopen, reopenInPlace } from '../Portal/TasksPage.jsx';
+import { teamTaskGroups } from '../Portal/tasks-vm.js';
 
-// Team task cards (v1.31.3, admin+): every non-private card of every member, by status. An
-// admin may review any done card.
+// Team task cards (v1.31.3, admin+): every non-private card of every member, by status.
+//
+// v1.33.0: nobody reviews a card; a closed one (本月結案) can be sent back with 退回, which
+// an admin may do on any card.
 
 export default function TeamTasksPage() {
   const t = useT();
   const { locale } = useLocale();
   const { items, setItems, loading, loadError } = useTaskList('/api/tasks?all=true&full=true');
-  const [busy, setBusy] = useState(null);
-  const [toast, setToast] = useState('');
-  const [error, setError] = useState('');
+  const { busy, toast, error, reopen } = useReopen({ t, onReopened: (id) => reopenInPlace(setItems, id) });
 
-  async function review(id) {
-    if (busy) return;
-    setBusy(id);
-    setError('');
-    const r = await apiPut(`/api/tasks/${id}/review`, {});
-    setBusy(null);
-    if (!r.ok) {
-      setError(r.status === 409 ? t('tasks.review_not_done') : t('tasks.action_error'));
-      return;
-    }
-    setItems((prev) => prev.map((c) => (c.id === id ? { ...c, status: 'reviewed' } : c)));
-    setToast(t('tasks.reviewed_ok'));
-  }
-
-  const groups = ['claimed', 'open', 'done', 'reviewed', 'dropped']
-    .map((status) => ({ status, cards: items.filter((c) => c.status === status) }))
-    .filter((g) => g.cards.length > 0);
+  const groups = teamTaskGroups(items);
 
   return (
     <div className="max-w-4xl">
@@ -48,11 +31,11 @@ export default function TeamTasksPage() {
         <p className="mt-6 text-slate-500">{t('tasks.team_empty')}</p>
       ) : (
         groups.map((g) => (
-          <section key={g.status} className="mt-6">
-            <h2 className="text-sm font-medium text-slate-600 mb-2">{t(`tasks.status.${g.status}`)} · {g.cards.length}</h2>
+          <section key={g.id} className="mt-6">
+            <h2 className="text-sm font-medium text-slate-600 mb-2">{t(g.labelKey)} · {g.cards.length}</h2>
             <ul className="space-y-3">
               {g.cards.map((c) => (
-                <TaskCard key={c.id} card={c} t={t} locale={locale} busy={busy} onReview={review} canReview />
+                <TaskCard key={c.id} card={c} t={t} locale={locale} busy={busy} onReopen={reopen} canReopen />
               ))}
             </ul>
           </section>

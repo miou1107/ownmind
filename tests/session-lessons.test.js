@@ -20,6 +20,7 @@ import {
 import { buildSessionLogBody } from '../mcp/lib/session-log-body.js';
 import { createSessionLessonsRouter } from '../src/routes/session-lessons.js';
 import { storeSessionLessons } from '../src/lib/session-lessons-store.js';
+import { LESSON_REPEAT } from '../src/lib/memory-similarity.js';
 import { renderSessionContext } from '../hooks/lib/render-session-context.js';
 import { fetchSyncTokenInfo, overlayLiveFields, runConditionalSync, writeCache } from '../hooks/lib/conditional-sync.js';
 import fs from 'node:fs';
@@ -157,20 +158,25 @@ describe('storeSessionLessons — the server keeps what it may, and counts the r
   }
   const quiet = { error() {}, warn() {} };
 
-  it('inserts one row per lesson with the session and project, through the sanitizer', async () => {
-    const q = scripted([[], []]);
+  it('inserts one row per lesson with the session and project, through the sanitizer, then looks for a repeat', async () => {
+    const q = scripted([[{ id: 21 }], [], [{ id: 22 }], []]);
     const r = await storeSessionLessons({
       query: q, logger: quiet, userId: 7, sessionLogId: 11, project: 'om',
       lessons: [{ stuck: 'a', fix: 'b' }, { stuck: 'c' }],
       sanitize: (s) => `<${s}>`,
     });
-    assert.deepEqual(r, { saved: 2, rejected: 0 });
+    assert.deepEqual(r, { saved: 2, rejected: 0, promoted: [] });
     assert.deepEqual(q.calls[0].values, [7, 11, 'om', '<a>', '<b>', null]);
-    assert.deepEqual(q.calls[1].values, [7, 11, 'om', '<c>', null, null]);
+    assert.match(q.calls[0].text, /RETURNING id/);
+    assert.deepEqual(q.calls[2].values, [7, 11, 'om', '<c>', null, null]);
+    // v1.33.0: after each insert, one lookup for an earlier lesson that says the same thing.
+    assert.match(q.calls[1].text, /similarity\(lower\(stuck \|\| ' ' \|\| COALESCE\(fix, ''\) \|\| ' ' \|\| COALESCE\(next_time, ''\)\), \$3\)/);
+    assert.match(q.calls[1].text, /status IN \('new', 'dismissed'\)/);
+    assert.deepEqual(q.calls[1].values, [7, 21, '<a> <b>', LESSON_REPEAT]);
   });
 
   it('refuses a lesson the memory write would refuse, and never sends it to the database', async () => {
-    const q = scripted([[]]);
+    const q = scripted([[{ id: 21 }], []]);
     const r = await storeSessionLessons({
       query: q, logger: quiet, userId: 7, sessionLogId: 11, project: null,
       lessons: [
@@ -178,13 +184,13 @@ describe('storeSessionLessons — the server keeps what it may, and counts the r
         { stuck: 'leaked', fix: ['OPENAI_API_KEY=sk', 'proj', 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP'].join('-') },
       ],
     });
-    assert.deepEqual(r, { saved: 1, rejected: 1 });
-    assert.equal(q.calls.length, 1);
+    assert.deepEqual(r, { saved: 1, rejected: 1, promoted: [] });
+    assert.equal(q.calls.length, 2, 'one insert and its repeat lookup');
     assert.ok(!JSON.stringify(q.calls).includes('sk-proj-'));
   });
 
   it('keeps a long project name inside the column', async () => {
-    const q = scripted([[]]);
+    const q = scripted([[{ id: 21 }], []]);
     await storeSessionLessons({ query: q, logger: quiet, userId: 7, sessionLogId: 1, project: 'p'.repeat(300), lessons: [{ stuck: 's' }] });
     assert.equal(q.calls[0].values[2].length, 255);
   });
@@ -192,7 +198,44 @@ describe('storeSessionLessons — the server keeps what it may, and counts the r
   it('survives a database without the table: nothing saved, nothing thrown', async () => {
     const q = scripted([new Error('relation "session_lessons" does not exist'), new Error('again')]);
     const r = await storeSessionLessons({ query: q, logger: quiet, userId: 7, sessionLogId: 1, project: 'p', lessons: [{ stuck: 'a' }, { stuck: 'b' }] });
-    assert.deepEqual(r, { saved: 0, rejected: 0 });
+    assert.deepEqual(r, { saved: 0, rejected: 0, promoted: [] });
+  });
+
+  it('a lookup that fails (no pg_trgm yet) costs the promotion, not the lesson', async () => {
+    const q = scripted([[{ id: 21 }], new Error('function similarity does not exist')]);
+    const r = await storeSessionLessons({ query: q, logger: quiet, userId: 7, sessionLogId: 1, project: 'p', lessons: [{ stuck: 'a' }] });
+    assert.deepEqual(r, { saved: 1, rejected: 0, promoted: [] });
+  });
+
+  it('the second time the same thing is learned, both lessons become one project memory', async () => {
+    const older = {
+      id: 21, user_id: 7, session_log_id: 5, project: 'om', status: 'new',
+      stuck: 'docker build 沒加 --no-cache 吃到舊層', fix: '加 --no-cache', next_time: null, similarity: 0.9,
+    };
+    const q = scripted([[{ id: 22 }], [older], [{ id: 99, type: 'project', title: '[om] docker build 沒加 --no-cache 吃到舊層' }], [], [], []]);
+    const r = await storeSessionLessons({
+      query: q, logger: quiet, userId: 7, sessionLogId: 11, project: 'om',
+      lessons: [{ stuck: 'docker build 沒加 --no-cache 吃到舊層', fix: '加 --no-cache 重跑', next_time: '每次 build 都加' }],
+    });
+    assert.deepEqual(r, { saved: 1, rejected: 0, promoted: [{ lesson_id: 22, memory_id: 99 }] });
+    const [, , insertMemory, history, markNewer, markOlder] = q.calls;
+    assert.match(insertMemory.text, /INSERT INTO memories/);
+    assert.equal(insertMemory.values[0], 7);
+    assert.equal(insertMemory.values[1], '[om] docker build 沒加 --no-cache 吃到舊層');
+    assert.match(insertMemory.values[2], /Fix: 加 --no-cache 重跑/, 'the newer lesson\'s text is the body');
+    assert.match(insertMemory.values[2], /（同一件事發生第二次）/);
+    assert.deepEqual(insertMemory.values[3], ['lesson', 'project:om']);
+    assert.equal(insertMemory.values[4].promoted_by, 'ai_repeat');
+    assert.equal(insertMemory.values[4].lesson_id, 22);
+    assert.equal(insertMemory.values[4].repeat_of, 21);
+    assert.match(history.text, /INSERT INTO memory_history/);
+    assert.equal(history.values[0], 99);
+    for (const [call, id] of [[markNewer, 22], [markOlder, 21]]) {
+      assert.match(call.text, /status = 'promoted'/);
+      assert.match(call.text, /promoted_by = \$2/);
+      assert.deepEqual(call.values.slice(0, 2), [99, 'ai_repeat']);
+      assert.ok(call.values.includes(id), `lesson ${id} is marked`);
+    }
   });
 });
 
@@ -242,14 +285,14 @@ function buildApp(query) {
   return app;
 }
 
-function request(app, method, path, body) {
+function request(app, method, path, body, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const port = server.address().port;
       const payload = body === undefined ? null : JSON.stringify(body);
       const req = http.request(
         { host: '127.0.0.1', port, method, path,
-          headers: payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {} },
+          headers: { ...extraHeaders, ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}) } },
         (r) => {
           let data = '';
           r.on('data', (c) => { data += c; });
@@ -272,13 +315,15 @@ function scriptedQuery(answers) {
   const calls = [];
   const fn = async (text, values) => {
     calls.push({ text, values });
-    const next = answers.shift();
+    const next = fn.answers.shift();
     if (next instanceof Error) throw next;
     return { rows: next || [] };
   };
   fn.calls = calls;
+  fn.answers = answers;
   return fn;
 }
+function answersReset(q, answers) { q.answers = answers; }
 
 const NEW_ROW = {
   id: 3, user_id: 7, session_log_id: 11, project: 'om', stuck: 'S', fix: 'F', next_time: 'N',
@@ -286,8 +331,13 @@ const NEW_ROW = {
 };
 
 describe('GET /api/session/lessons', () => {
-  it('lists my new lessons by default, with no time window', async () => {
+  it('lists my new lessons by default, with no time window, carrying who decided and why', async () => {
     const q = scriptedQuery([[NEW_ROW]]);
+    const r0 = await request(buildApp(q), 'GET', '/api/session/lessons');
+    assert.equal(r0.status, 200);
+    assert.match(q.calls[0].text, /reason, promoted_by/);
+    q.calls.length = 0;
+    answersReset(q, [[NEW_ROW]]);
     const r = await request(buildApp(q), 'GET', '/api/session/lessons');
     assert.equal(r.status, 200);
     assert.deepEqual(r.body, [NEW_ROW]);
@@ -341,9 +391,10 @@ describe('PUT /api/session/lessons/:id/promote', () => {
     assert.equal(insert.values[1], '[om] S');
     assert.equal(insert.values[2], 'Stuck: S\nFix: F\nNext time: N');
     assert.deepEqual(insert.values[3], ['lesson', 'project:om']);
-    assert.deepEqual(insert.values[4], { source: 'session_lesson', lesson_id: 3, session_log_id: 11 });
+    assert.deepEqual(insert.values[4], { source: 'session_lesson', lesson_id: 3, session_log_id: 11, promoted_by: 'console' });
     assert.match(update.text, /status = 'promoted'/);
-    assert.deepEqual(update.values, [99, 3, 7]);
+    // v1.33.0: who promoted it (the console here) and the reason, if any, travel with it.
+    assert.deepEqual(update.values, [99, 'console', null, 3, 7]);
   });
 
   it('refuses a lesson already resolved with 409 and writes nothing', async () => {
@@ -373,6 +424,131 @@ describe('PUT /api/session/lessons/:id/promote', () => {
   });
 });
 
+// ── v1.33.0: the AI decides, the console shows and undoes ─────────────────────────────
+
+describe('PUT /api/session/lessons/:id/set', () => {
+  it('promoted: reuses the promote path for any status but promoted, signed by the MCP as ai_monthly', async () => {
+    const memoryRow = { id: 99, type: 'project', title: '[om] S', content: 'Stuck: S\nFix: F\nNext time: N' };
+    const dismissed = { ...NEW_ROW, status: 'dismissed' };
+    const q = scriptedQuery([[dismissed], [memoryRow], [], [{ ...dismissed, status: 'promoted', memory_id: 99, promoted_by: 'ai_monthly' }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'promoted', reason: '還是真的' }, { 'x-ownmind-tool': 'claude-code' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.lesson.promoted_by, 'ai_monthly');
+    assert.equal(r.body.memory.id, 99);
+    const [, insert, , update] = q.calls;
+    assert.equal(insert.values[4].promoted_by, 'ai_monthly');
+    assert.deepEqual(update.values, [99, 'ai_monthly', '還是真的', 3, 7]);
+  });
+
+  it('promoted from the console (no tool header) is signed console', async () => {
+    const q = scriptedQuery([[NEW_ROW], [{ id: 99 }], [], [{ ...NEW_ROW, status: 'promoted', promoted_by: 'console' }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'promoted' });
+    assert.equal(r.status, 200);
+    assert.equal(q.calls[3].values[1], 'console');
+  });
+
+  it('promoted twice is 409 and writes nothing', async () => {
+    const q = scriptedQuery([[{ ...NEW_ROW, status: 'promoted', memory_id: 99 }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'promoted' });
+    assert.equal(r.status, 409);
+    assert.equal(q.calls.length, 1);
+  });
+
+  it('dismissed: stores the reason on a lesson that is not promoted', async () => {
+    const q = scriptedQuery([[NEW_ROW], [{ ...NEW_ROW, status: 'dismissed', reason: '已經寫進 CLAUDE.md' }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'dismissed', reason: '已經寫進 CLAUDE.md' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.status, 'dismissed');
+    assert.match(q.calls[1].text, /status = 'dismissed'/);
+    assert.match(q.calls[1].text, /reason = \$1/);
+    assert.deepEqual(q.calls[1].values, ['已經寫進 CLAUDE.md', 3, 7]);
+  });
+
+  it('dismissed on a promoted lesson is allowed (the console archives the memory first) and keeps memory_id', async () => {
+    const promoted = { ...NEW_ROW, status: 'promoted', memory_id: 99, promoted_by: 'ai_repeat' };
+    const q = scriptedQuery([[promoted], [{ ...promoted, status: 'dismissed', reason: '從教訓頁收回' }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'dismissed', reason: '從教訓頁收回' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.memory_id, 99);
+    assert.doesNotMatch(q.calls[1].text, /memory_id = NULL/);
+  });
+
+  it('any other status is 400; a lesson that is not mine is 404', async () => {
+    assert.equal((await request(buildApp(scriptedQuery([])), 'PUT', '/api/session/lessons/3/set', { status: 'new' })).status, 400);
+    assert.equal((await request(buildApp(scriptedQuery([[]])), 'PUT', '/api/session/lessons/3/set', { status: 'dismissed', reason: '不是我的' })).status, 404);
+  });
+
+  // Review of v1.33.0: the MCP tool says a dismissal carries its reason; the server has to
+  // mean it, or the console shows `AI 沒留：` with nothing after the colon.
+  it('dismissed without a reason is 400 and writes nothing', async () => {
+    const q = scriptedQuery([[NEW_ROW]]);
+    for (const body of [{ status: 'dismissed' }, { status: 'dismissed', reason: '   ' }, { status: 'dismissed', reason: 7 }]) {
+      const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', body);
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.equal(r.body.error, 'reason is required when dismissing a lesson');
+    }
+    assert.equal(q.calls.length, 0);
+  });
+
+  // The console's 收回 archives the memory and dismisses the lesson; 還是留 must bring that
+  // same memory back, not write a second copy next to the archived one.
+  it('promoted on a lesson whose memory was archived restores that memory instead of making a second one', async () => {
+    const dismissed = { ...NEW_ROW, status: 'dismissed', memory_id: 99, promoted_by: 'ai_repeat', reason: '從教訓頁收回' };
+    const archivedMemory = {
+      id: 99, user_id: 7, type: 'project', title: '[om] S', content: 'Stuck: S\nFix: F\nNext time: N',
+      status: 'archived', archived_at: '2026-10-20T00:00:00Z', archived_reason: '從教訓頁收回',
+    };
+    const restoredMemory = { ...archivedMemory, status: 'active', archived_at: null, archived_reason: null };
+    const q = scriptedQuery([
+      [dismissed], [archivedMemory], [restoredMemory], [],
+      [{ ...dismissed, status: 'promoted', promoted_by: 'console', reason: null }],
+      [{ user_max: '2026-10-21', team_max: '', locale: '' }],
+    ]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'promoted' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.lesson.status, 'promoted');
+    assert.equal(r.body.lesson.memory_id, 99);
+    assert.equal(r.body.lesson.promoted_by, 'console');
+    assert.equal(r.body.memory.id, 99);
+    assert.equal(r.body.memory.status, 'active');
+    assert.equal(typeof r.body.sync_token, 'string', 'the restored row moved the cache fingerprint, so the caller gets a fresh one');
+    assert.ok(!q.calls.some((c) => /INSERT INTO memories/.test(c.text)), 'no second memory is written');
+    const [, lookup, restore, history, update] = q.calls;
+    assert.match(lookup.text, /FROM memories/);
+    assert.deepEqual(lookup.values, [99, 7]);
+    assert.match(restore.text, /status = 'active'/);
+    assert.match(restore.text, /archived_at = NULL/);
+    assert.match(restore.text, /archived_reason = NULL/);
+    assert.match(restore.text, /AND status = 'archived'/);
+    assert.match(history.text, /INSERT INTO memory_history/);
+    assert.match(history.text, /'restore'/);
+    assert.equal(history.values[0], 99);
+    assert.match(update.text, /status = 'promoted'/);
+    assert.deepEqual(update.values, [99, 'console', null, 3, 7]);
+  });
+
+  it('promoted on a lesson whose memory is still active only re-links the lesson', async () => {
+    const dismissed = { ...NEW_ROW, status: 'dismissed', memory_id: 99, promoted_by: 'ai_repeat' };
+    const activeMemory = { id: 99, user_id: 7, type: 'project', title: '[om] S', content: 'c', status: 'active' };
+    const q = scriptedQuery([[dismissed], [activeMemory], [{ ...dismissed, status: 'promoted', promoted_by: 'ai_monthly' }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'promoted' }, { 'x-ownmind-tool': 'claude-code' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.memory.id, 99);
+    assert.equal(q.calls.length, 3);
+    assert.ok(!q.calls.some((c) => /INSERT INTO memories|UPDATE memories/.test(c.text)));
+    assert.deepEqual(q.calls[2].values, [99, 'ai_monthly', null, 3, 7]);
+  });
+
+  it('promoted on a lesson whose memory was disabled or deleted writes a new memory as before', async () => {
+    const dismissed = { ...NEW_ROW, status: 'dismissed', memory_id: 99 };
+    const q = scriptedQuery([[dismissed], [], [{ id: 100 }], [], [{ ...dismissed, status: 'promoted', memory_id: 100 }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/session/lessons/3/set', { status: 'promoted' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.memory.id, 100);
+    assert.match(q.calls[2].text, /INSERT INTO memories/);
+  });
+});
+
 describe('PUT /api/session/lessons/:id/dismiss', () => {
   it('marks a new lesson dismissed', async () => {
     const q = scriptedQuery([[{ ...NEW_ROW, status: 'dismissed' }]]);
@@ -394,16 +570,14 @@ describe('PUT /api/session/lessons/:id/dismiss', () => {
 describe('renderSessionContext — the waiting line', () => {
   const base = { server_version: '1.31.0', profile: null, iron_rules_digest: null, principles: [] };
 
-  it('names the count and the page when lessons wait', () => {
-    const out = renderSessionContext({ ...base, lessons_waiting: 3 });
-    assert.match(out, /## Lessons waiting: 3/);
-    assert.match(out, /\/inbox\/lessons/);   // v1.32.6: 待你處理 › 學到的
-  });
-
-  it('says nothing when none wait, or when the server could not count', () => {
-    for (const n of [0, null, undefined, 'x']) {
+  // v1.33.0: the AI promotes a lesson on its second occurrence or at the monthly pass, so
+  // nothing waits on the console and the session start no longer says it does. The server
+  // keeps sending the count for older hooks; this renderer ignores it whatever it says.
+  it('never points the person at the console, whatever the server counts', () => {
+    for (const n of [3, 0, null, undefined, 'x']) {
       const out = renderSessionContext({ ...base, lessons_waiting: n });
       assert.ok(!/Lessons waiting/.test(out), `lessons_waiting=${n} must print nothing`);
+      assert.doesNotMatch(out, /\/inbox\/lessons/);
     }
   });
 });

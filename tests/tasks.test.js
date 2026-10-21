@@ -52,9 +52,16 @@ describe('normalizeLinks and normalizeTaskDone', () => {
     assert.deepEqual(normalizeLinks(['a']), {});
   });
 
-  it('done needs a result', () => {
+  it('done needs a result and evidence: the verification run and what it printed', () => {
     assert.equal(normalizeTaskDone({}).ok, false);
-    assert.deepEqual(normalizeTaskDone({ result: ' done ', links: { mr: 'u' } }), { ok: true, result: 'done', links: { mr: 'u' } });
+    const noEvidence = normalizeTaskDone({ result: 'done' });
+    assert.equal(noEvidence.ok, false);
+    assert.equal(noEvidence.error, 'evidence is required: the verification you ran and what it printed');
+    assert.equal(normalizeTaskDone({ result: 'done', evidence: 'npm test ok' }).ok, false, 'a method with no output is too short to be evidence');
+    assert.deepEqual(
+      normalizeTaskDone({ result: ' done ', evidence: ' node --test tests/x.test.js → pass 12, fail 0 ', links: { mr: 'u' } }),
+      { ok: true, result: 'done', evidence: 'node --test tests/x.test.js → pass 12, fail 0', links: { mr: 'u' } },
+    );
   });
 
   it('claimNote names the holder and the reason', () => {
@@ -136,11 +143,20 @@ describe('GET /api/tasks', () => {
     assert.deepEqual(q.calls[0].values, [7, 'om']);
   });
 
-  it('mine: owned or held, not closed', async () => {
+  it('mine: owned or held, not closed — and done is closed now', async () => {
     const q = scriptedQuery([[]]);
     await request(buildApp(q), 'GET', '/api/tasks?mine=true');
     assert.match(q.calls[0].text, /t\.user_id = \$1 OR t\.claimed_by = \$1/);
-    assert.match(q.calls[0].text, /NOT IN \('reviewed', 'dropped'\)/);
+    assert.match(q.calls[0].text, /NOT IN \('done', 'reviewed', 'dropped'\)/);
+  });
+
+  it('mine with closed=month: the cards I closed this month, newest first (v1.33.0)', async () => {
+    const q = scriptedQuery([[]]);
+    await request(buildApp(q), 'GET', '/api/tasks?mine=true&full=true&closed=month');
+    assert.match(q.calls[0].text, /t\.status IN \('done', 'reviewed'\)/);
+    assert.match(q.calls[0].text, /to_char\(t\.done_at AT TIME ZONE 'Asia\/Taipei', 'YYYY-MM'\)/);
+    assert.match(q.calls[0].text, /t\.evidence/, 'the console shows the evidence');
+    assert.deepEqual(q.calls[0].values, [7]);
   });
 
   it('all: admin only, never private, and hands the database only the parameters it uses', async () => {
@@ -197,21 +213,32 @@ describe('PUT /api/tasks/:id/claim', () => {
   });
 });
 
+const EVIDENCE = 'node --test tests/tasks.test.js → pass 40, fail 0';
+
 describe('PUT /api/tasks/:id/done and /drop', () => {
-  it('done: only the holder, only while claimed; merges links', async () => {
+  it('done: only the holder, only while claimed; merges links; stores the evidence', async () => {
     const q = scriptedQuery([[{ id: 12, status: 'done' }]]);
-    const r = await request(buildApp(q), 'PUT', '/api/tasks/12/done', { result: 'did it', links: { mr: 'u' } });
+    const r = await request(buildApp(q), 'PUT', '/api/tasks/12/done', { result: 'did it', evidence: EVIDENCE, links: { mr: 'u' } });
     assert.equal(r.status, 200);
     assert.match(q.calls[0].text, /status = 'claimed' AND claimed_by = \$2/);
     assert.match(q.calls[0].text, /links = links \|\| \$4::jsonb/);
-    assert.deepEqual(q.calls[0].values, ['12', 7, 'did it', '{"mr":"u"}']);
+    assert.match(q.calls[0].text, /evidence = \$5/);
+    assert.deepEqual(q.calls[0].values, ['12', 7, 'did it', '{"mr":"u"}', EVIDENCE]);
   });
 
   it('done: 403 for a card held by someone else, 400 without a result', async () => {
     const q = scriptedQuery([[], [{ ...OPEN, status: 'claimed', claimed_by: 2, holder_name: 'Eric' }]]);
-    const r = await request(buildApp(q), 'PUT', '/api/tasks/12/done', { result: 'x' });
+    const r = await request(buildApp(q), 'PUT', '/api/tasks/12/done', { result: 'x', evidence: EVIDENCE });
     assert.equal(r.status, 403);
     assert.equal((await request(buildApp(scriptedQuery([])), 'PUT', '/api/tasks/12/done', {})).status, 400);
+  });
+
+  it('done without evidence is refused before the database, so the card stays claimed', async () => {
+    const q = scriptedQuery([]);
+    const r = await request(buildApp(q), 'PUT', '/api/tasks/12/done', { result: 'did it' });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error, 'evidence is required: the verification you ran and what it printed');
+    assert.equal(q.calls.length, 0);
   });
 
   it('drop: hands the card back with a note naming who and why', async () => {
@@ -236,6 +263,32 @@ describe('PUT /api/tasks/:id/review', () => {
     assert.equal((await request(buildApp(scriptedQuery([[other]]), VIN), 'PUT', '/api/tasks/12/review', {})).status, 403);
     assert.equal((await request(buildApp(scriptedQuery([[other], [{ id: 12 }]]), ERIC), 'PUT', '/api/tasks/12/review', {})).status, 200);
     assert.equal((await request(buildApp(scriptedQuery([[OPEN]]), VIN), 'PUT', '/api/tasks/12/review', {})).status, 409);
+  });
+});
+
+describe('PUT /api/tasks/:id/reopen', () => {
+  it('owner puts a done card back to open with a note, clearing everything the close wrote', async () => {
+    const q = scriptedQuery([[{ ...OPEN, status: 'done' }], [{ id: 12, status: 'open' }]]);
+    const r = await request(buildApp(q), 'PUT', '/api/tasks/12/reopen', { note: 'the evidence was a guess' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.status, 'open');
+    const [, update] = q.calls;
+    assert.match(update.text, /status = 'open'/);
+    assert.match(update.text, /status IN \('done', 'reviewed'\)/);
+    for (const col of ['claimed_by', 'claimed_tool', 'claimed_session', 'claimed_at', 'result', 'evidence', 'done_at', 'reviewed_by', 'reviewed_at']) {
+      assert.match(update.text, new RegExp(`${col} = NULL`), col);
+    }
+    assert.equal(update.values[0], '12');
+    assert.match(update.values[1], /^\n\n\[reopened \d{4}-\d{2}-\d{2}T[^\]]+ by Vin\] the evidence was a guess$/);
+  });
+
+  it('a stranger may not; an admin may; a card that is not closed is 409; a bad id is 404', async () => {
+    const other = { ...OPEN, user_id: 99, status: 'reviewed' };
+    assert.equal((await request(buildApp(scriptedQuery([[other]]), VIN), 'PUT', '/api/tasks/12/reopen', {})).status, 403);
+    assert.equal((await request(buildApp(scriptedQuery([[other], [{ id: 12, status: 'open' }]]), ERIC), 'PUT', '/api/tasks/12/reopen', {})).status, 200);
+    assert.equal((await request(buildApp(scriptedQuery([[OPEN]]), VIN), 'PUT', '/api/tasks/12/reopen', {})).status, 409);
+    assert.equal((await request(buildApp(scriptedQuery([[]]), VIN), 'PUT', '/api/tasks/12/reopen', {})).status, 404);
+    assert.equal((await request(buildApp(scriptedQuery([]), VIN), 'PUT', '/api/tasks/abc/reopen', {})).status, 404);
   });
 });
 
@@ -275,7 +328,9 @@ describe('renderSessionContext — the Task cards block', () => {
     assert.match(out, /- #15 — claimed by Amiee — coupon/);
     assert.match(out, /- #16 — csv/);
     assert.match(out, /ownmind_task_claim/);
-    assert.match(out, /Never mark one reviewed/);
+    // v1.33.0: done closes the card, with evidence; nobody reviews it in the console.
+    assert.match(out, /done needs evidence/);
+    assert.doesNotMatch(out, /Never mark one reviewed/);
   });
 
   it('says nothing without cards', () => {
@@ -317,13 +372,15 @@ describe('every statement the router sends references exactly the parameters it 
     const app = buildApp(q, ERIC);
     await request(app, 'GET', '/api/tasks?project=om');
     await request(app, 'GET', '/api/tasks?mine=true');
+    await request(app, 'GET', '/api/tasks?mine=true&full=true&closed=month');
     await request(app, 'GET', '/api/tasks?all=true');
     await request(app, 'GET', '/api/tasks?all=true&status=open');
     await request(app, 'POST', '/api/tasks', { project: 'om', title: 't' });
     await request(app, 'PUT', '/api/tasks/12/claim', { tool: 'x', session_id: 's' });
-    await request(app, 'PUT', '/api/tasks/12/done', { result: 'r' });
+    await request(app, 'PUT', '/api/tasks/12/done', { result: 'r', evidence: EVIDENCE });
     await request(app, 'PUT', '/api/tasks/12/drop', { reason: 'r' });
     await request(app, 'PUT', '/api/tasks/12/review', {});
+    await request(app, 'PUT', '/api/tasks/12/reopen', { note: 'n' });
     await expireStaleClaims({ query: q });
     check(q.calls);
   });

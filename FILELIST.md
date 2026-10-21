@@ -1,5 +1,59 @@
 # OwnMind 檔案結構
 
+## v1.33.0 修改（2026-10-21，記憶整理交給 AI，後台只看與撤銷）
+
+新增檔：
+```
+db/034_ai_keeps_the_memory.sql                          — 裝 pg_trgm；記憶多「已歸檔」狀態與 archived_at、archived_reason；修改歷史多合併、歸檔、定案、還原四種動作；教訓多 reason、promoted_by；任務卡多 evidence、report_shown_at；新表 consolidation_questions
+src/lib/memory-similarity.js                            — 相似度門檻（一字不差 0.98、很像 0.45、候選 0.6、教訓重複 0.6）與查相似記憶
+src/routes/memory-consolidation.js                      — 每月整理的候選清單、留題、題目已問、月報已顯示四條路由
+src/jobs/memory-consolidation.js                        — 每天 04:10 查這個月有沒有「整理記憶」卡，沒有就替每個有記憶的人開一張；問過兩次沒回的題目把記憶歸檔
+skills/ownmind-consolidate.md                           — AI 做整理卡時的判斷規則：什麼自己做、什麼先查機器、什麼才問人；升級時裝到 ~/.claude/skills/ownmind-consolidate
+mcp/lib/memory-keeping.js                               — 九個新工具的動作表與回給 AI 的那一句「要撤銷跟我說一聲」
+hooks/lib/session-live-state.js                         — 開對話時即時抓待接手交接、合併進快取、回報月報已顯示與題目已問
+hooks/lib/project-aliases.js                            — 目前資料夾名稱加 git 遠端 repo 名稱，拿來比對交接的專案
+client/src/pages/Memory/MemoryArchivedPage.jsx          — 記憶頁「已歸檔」分頁，每條有還原
+client/src/pages/Memory/memory-archived-vm.js           — 已歸檔清單的排序與還原後移除
+client/src/pages/Portal/lessons-vm.js                   — 教訓列的狀態字（AI 留下了／AI 沒留／等月底整理）與按鈕
+client/src/pages/Portal/tasks-vm.js                     — 任務卡兩個清單的路徑、退回後搬回待辦
+client/src/pages/Portal/handoffs-vm.js                  — 交接頁的路徑與待接手、已接走分組
+tests/ai-keeps-the-memory.test.js                       — 真資料庫整條跑：歸檔、還原、合併、定案、存記憶查重複、教訓重複、任務卡驗證輸出、交接重開、整理卡、月報
+tests/memory-similarity.test.js                         — 正式機與測試機只差 IP 的清單不會被併成一條
+tests/mcp-memory-keeping-tools.test.js                  — 九個新工具打的路徑、內文與回話
+tests/session-start-live-state.test.js                  — 開對話時交接比對專案、30 分鐘寬限、兩個回報呼叫
+tests/console-ai-keeps-the-memory.test.js               — 後台四頁的清單邏輯與路徑；還原、收回先拿同步票再送，409 重拿一次
+tests/session-start-marks.test.js                       — 開對話時先輸出內容再送月報已顯示、題目已問兩個標記；resume、compact 不送
+client/src/lib/memory-write.js                          — 後台寫記憶的共用函式：先 GET 同步票再 POST，409 重拿一次再送
+openspec/changes/v1.33.0-ai-keeps-the-memory/           — 提案、規格（API 契約）、任務清單
+docs/proposals/2026-10-21-monthly-consolidation.html    — 給 Vin 看的提案頁第三版
+```
+
+修改檔：
+```
+src/routes/memory.js                                    — 存記憶先查重複（force 可跳過）；/archived、/search 的 include_archived、/merge、/:id/archive|restore|decide；/init 與 /sync-token 多 handoffs 與 consolidation
+src/lib/memory-sync.js                                  — 帶 since 的同步也回 archived_at 之後歸檔的記憶，電腦端才會移除
+src/lib/session-lessons-store.js, src/routes/session.js — 存教訓時查有沒有相似的舊教訓，有就當場併成一條記憶，回 lessons_promoted
+src/routes/session-lessons.js                           — PUT /:id/set 留下或不留（帶原因）；清單回 reason、promoted_by、memory_id
+src/routes/tasks.js, shared/task-body.js                — done 要帶 evidence；PUT /:id/reopen；mine 不含 done；closed=month 列本月結案
+src/routes/handoff.js                                   — PUT /:id/reopen；/pending?with_accepted=7 連最近七天接走的一起回
+src/routes/me-overview.js                               — 待處理數不再算做完等審的卡
+src/app.js, src/index.js                                — 掛 /api/memory/consolidation；啟動每月整理的排程
+mcp/index.js, mcp/lib/memory-search.js                  — 九個新工具；save 的 force 與 saved:false 的回話；search 的 include_archived；task_done 要 evidence；log_session 與 task_done 的說明改寫
+hooks/lib/render-session-context.js                     — 同專案交接直接接手、別專案一行提醒、30 分鐘寬限；整理卡、月報一行、最多三題；拿掉「教訓在後台等」與「不准標審過」
+hooks/lib/sync-memory-files.js                          — 只有使用中的記憶進索引；目前專案的記憶排最前面
+hooks/lib/conditional-sync.js                           — 快取不存 handoffs 與 consolidation，改從同步檢查即時帶
+hooks/ownmind-session-start.js, hooks/lib/session-start-output.js — 接上專案別名、即時狀態與兩個回報呼叫
+hooks/locales/zh.json, en.json, ja.json, *.override.json — 交接與月報四句新文案
+client/src/pages/Portal/LessonsPage.jsx, TasksPage.jsx, HandoffsPage.jsx, client/src/pages/Team/TeamTasksPage.jsx — 三頁改成只看與撤銷
+client/src/components/common/nav-sections.js, client/src/App.jsx — 記憶頁多「已歸檔」分頁
+client/src/i18n/zh.json, en.json, ja.json               — 後台新文案，三種語言鍵一致
+skills/ownmind-memory.md, configs/AGENTS.md, configs/CLAUDE.md, configs/antigravity.md, configs/global_rules.md, configs/ownmind-rules-block.md, docs/task-runner.md — 交接直接接手、教訓與任務卡不等人按的說法
+scripts/update.sh, update.ps1, check-sync.sh, check-sync.ps1 — 一起裝 ownmind-consolidate skill
+CLAUDE.md                                               — 推論 5：維護記憶庫是 AI 的工作
+tests/tasks.test.js, session-lessons.test.js, me-overview.test.js, me-inbox-count.test.js, overview-numbers.test.js, memory-sync-endpoint.test.js, required-skills-route.test.js, session-start-render.test.js, sync-memory-files.test.js, session-context-field-coverage.test.js, console-nav-structure.test.js, mcp-auto-update-cross-platform.test.js — 跟著上面的行為改
+README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md, package.json — 版號 v1.33.0
+```
+
 ## 測試工具修改（2026-10-21，跑測試不會再在 Docker 裡留下沒人用的資料卷）
 
 沒有版號：只動測試工具，使用者看到的東西一個字都沒有變。
