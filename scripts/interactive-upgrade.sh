@@ -423,7 +423,8 @@ else
   install_status=0
   # The key goes through the environment, not the command line (install.sh reads it there
   # when the first argument is empty): `ps` shows every account each command line.
-  OWNMIND_INSTALL_KEY="${API_KEY}" bash install.sh "" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
+  # An upgrade must not pop the "memory has loaded" notification that a first install gets.
+  OWNMIND_SKIP_FIRST_LOAD_WATCH=1 OWNMIND_INSTALL_KEY="${API_KEY}" bash install.sh "" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
   if [ "${install_status}" -eq 0 ]; then
     OK "install" "Setup complete"
   elif [ "${install_status}" -eq 2 ]; then

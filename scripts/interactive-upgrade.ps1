@@ -493,8 +493,10 @@ if (-not (Test-Path $installScript)) {
   # arguments), not the command line. The URL travels the same way, since it is positional.
   $env:OWNMIND_API_KEY = $apiKey
   $env:OWNMIND_API_URL = $apiUrl
+  # An upgrade must not pop the "memory has loaded" notification that a first install gets.
+  $env:OWNMIND_SKIP_FIRST_LOAD_WATCH = '1'
   & powershell -ExecutionPolicy Bypass -File $installScript 2>&1 | Out-File -Append $LogFile -Encoding utf8
-  Remove-Item Env:OWNMIND_API_KEY, Env:OWNMIND_API_URL -ErrorAction SilentlyContinue
+  Remove-Item Env:OWNMIND_API_KEY, Env:OWNMIND_API_URL, Env:OWNMIND_SKIP_FIRST_LOAD_WATCH -ErrorAction SilentlyContinue
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Rollback

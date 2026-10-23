@@ -296,6 +296,10 @@ function Test-ShAvailable {
   return $null
 }
 
+# When this run began: the watcher started at the end asks the server whether memory has loaded
+# since this moment, so a load from before the install never counts as the install working.
+$InstallStartedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+
 # --- 提前建立所有需要的目錄 ---
 $OwnmindDir     = Join-Path $HOME ".ownmind"
 $ClaudeDir       = Join-Path $HOME ".claude"
@@ -942,6 +946,24 @@ if (-not $HasBash) {
 }
 Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
+# zero-touch-install, Task 14: the colleague gets a desktop notification once memory has really
+# loaded. That happens in the next conversation, after this script has exited, so a hidden watcher
+# (scripts\install-helpers\first-load-watch.cjs) waits for it for up to ten minutes. It reads the
+# key from the credentials files itself: nothing secret is in its arguments. The upgraders set
+# OWNMIND_SKIP_FIRST_LOAD_WATCH=1, because an update must not pop a notification.
+if ($env:OWNMIND_SKIP_FIRST_LOAD_WATCH -ne '1') {
+  try {
+    $WatchScript = Join-Path $OwnmindDir 'scripts\install-helpers\first-load-watch.cjs'
+    $WatchNode = $env:OWNMIND_NODE
+    if (-not $WatchNode) {
+      $found = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+      if ($found) { $WatchNode = [string]@($found)[0].Source }
+    }
+    if ($WatchNode -and (Test-Path -LiteralPath $WatchScript)) {
+      Start-Process -WindowStyle Hidden -FilePath $WatchNode -ArgumentList @("`"$WatchScript`"", '--since', $InstallStartedAt)
+    }
+  } catch { }
+}
 # What the AI does next depends on where it is running (zero-touch-install, Task 12):
 #   Claude desktop app (CLAUDE_CODE_ENTRYPOINT=claude-desktop, or CLAUDE_CODE_DESKTOP_APP_VERSION set)
 #     -> NEXT:verify:new-session   the AI opens a verification conversation itself

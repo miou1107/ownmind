@@ -173,7 +173,11 @@ before(async () => {
   // The NEXT line at the end depends on the tool that runs the installer, and its language on
   // the machine's locale; the developer running this suite may be inside either, so both are pinned.
   const r = spawnSync('bash', [path.join(repoRoot, 'install.sh'), API_KEY, world.apiUrl], {
-    env: sandboxEnv({ CLAUDE_CODE_ENTRYPOINT: '', CLAUDE_CODE_DESKTOP_APP_VERSION: '', OWNMIND_LOCALE_FORCE: 'en' }),
+    env: sandboxEnv({
+      CLAUDE_CODE_ENTRYPOINT: '', CLAUDE_CODE_DESKTOP_APP_VERSION: '', OWNMIND_LOCALE_FORCE: 'en',
+      // The end-of-run watcher would keep polling the stub for ten minutes after this test file ends.
+      OWNMIND_SKIP_FIRST_LOAD_WATCH: '1',
+    }),
     encoding: 'utf8',
     timeout: 10 * 60 * 1000,
   });
@@ -236,6 +240,11 @@ test('the last line of a successful install is the NEXT line the AI acts on', ()
   // Run without a terminal and without a Claude entry point: the generic sentence.
   assert.match(last, /^NEXT:verify:manual:OwnMind is installed\. Start a new conversation and your memory will load\.$/);
   assert.doesNotMatch(world.installOut, /ERROR:|ASK:/, 'a clean install prints no ERROR or ASK line');
+});
+
+test('with OWNMIND_SKIP_FIRST_LOAD_WATCH=1 the install leaves no watcher behind', () => {
+  assert.ok(!fs.existsSync(inHome('.ownmind', 'state', 'first-load-watch.pid')), 'no watcher recorded its pid');
+  assert.ok(!fs.existsSync(inHome('.ownmind', 'logs', 'first-load-watch.log')), 'no watcher ran');
 });
 
 test('the tool is registered in the file Claude Code actually reads', () => {

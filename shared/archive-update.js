@@ -397,7 +397,9 @@ export async function runArchiveUpdate({
     ping();
     const timer = setInterval(ping, 60_000);
     if (typeof timer.unref === 'function') timer.unref();
-    const installEnv = { ...childEnv, OWNMIND_INSTALL_KEY: apiKey };
+    // An update re-runs the installer, and the installer's end-of-run watcher would pop a
+    // "memory has loaded" notification for something the colleague did not just install.
+    const installEnv = { ...childEnv, OWNMIND_INSTALL_KEY: apiKey, OWNMIND_SKIP_FIRST_LOAD_WATCH: '1' };
     const privateNode = privateNodeFor(ownmindDir, fileSystem);
     if (privateNode) {
       installEnv.OWNMIND_PRIVATE_NODE = '1';

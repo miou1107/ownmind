@@ -333,7 +333,8 @@ test('no git: the REAL install.sh runs to the end on the unpacked release, and t
     fixture.mode = 'ok';
     fixture.requests = [];
     // npm's download cache only; nothing else of the developer's is reachable.
-    const r = await runBootstrap(mac, { npm_config_cache: path.join(os.homedir(), '.npm') });
+    // OWNMIND_SKIP_FIRST_LOAD_WATCH: the end-of-run watcher would keep polling after this test ends.
+    const r = await runBootstrap(mac, { npm_config_cache: path.join(os.homedir(), '.npm'), OWNMIND_SKIP_FIRST_LOAD_WATCH: '1' });
     const tail = r.out.slice(-6000);
     assert.equal(r.status, 0, tail);
     assert.match(r.out, /OK:unpack:release v9\.9\.9 unpacked/);
@@ -368,6 +369,9 @@ test('no git: the REAL install.sh runs to the end on the unpacked release, and t
     assert.ok(!fs.existsSync(path.join(dir, '.next')) && !fs.existsSync(path.join(dir, '.swap-journal.json')), 'staging and journal are gone');
     assert.ok(!fs.existsSync(`${dir}.prev`), 'the install itself is never renamed');
     assert.ok(!fs.existsSync(path.join(dir, '.reconfigure-pending')), 'the installer re-ran and finished');
+
+    // The update re-ran the real installer: it must not have started a watcher of its own.
+    assert.ok(!fs.existsSync(path.join(dir, 'state', 'first-load-watch.pid')), 'no watcher after an install or an update');
 
     const again = await runNode(mac, [path.join(dir, 'shared', 'archive-update-cli.mjs')]);
     assert.equal(again.stdout.trim(), 'CURRENT v9.9.10', again.out);
