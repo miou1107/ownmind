@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { buildInstallArchive } from '../services/install-archive.js';
+import { isSupportedPlatform } from '../../shared/node-runtime.js';
 import { SERVER_VERSION } from '../utils/server-version.js';
 
 /**
@@ -15,6 +16,9 @@ import { SERVER_VERSION } from '../utils/server-version.js';
  *                                                       without git; behind auth like
  *                                                       /api/version, so a scanner cannot read
  *                                                       the version
+ *   GET /api/install/node?os=&arch=                     the official Node LTS archive for the private
+ *                                                       runtime, cached on the server; 503 tells the
+ *                                                       installer to go to nodejs.org itself
  *   GET /api/install/first-load?since=<ISO>             whether this account's first memory
  *                                                       load (an `init` event from a hook)
  *                                                       arrived after `since`
@@ -26,7 +30,7 @@ import { SERVER_VERSION } from '../utils/server-version.js';
 const DEFAULT_REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TEXT = 'text/plain; charset=utf-8';
 
-export function createInstallRouter({ query, auth, logger = console, repoRoot = DEFAULT_REPO_ROOT }) {
+export function createInstallRouter({ query, auth, logger = console, repoRoot = DEFAULT_REPO_ROOT, nodeArchive }) {
   const router = Router();
 
   // install.ps1 keeps a BOM on disk so `powershell -File` reads it as UTF-8; `irm | iex`
@@ -60,6 +64,28 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
     } catch (err) {
       logger.error('install archive: build failed', { error: err.message });
       res.status(500).json({ error: 'archive_unavailable' });
+    }
+  });
+
+  router.get('/api/install/node', auth, async (req, res) => {
+    const os = typeof req.query.os === 'string' ? req.query.os : '';
+    const arch = typeof req.query.arch === 'string' ? req.query.arch : '';
+    if (!isSupportedPlatform({ os, arch })) {
+      return res.status(400).json({ error: 'unsupported_platform' });
+    }
+    try {
+      if (!nodeArchive) throw new Error('node archive service not configured');
+      const archive = await nodeArchive.getArchive({ os, arch });
+      res.set('X-Node-Version', archive.version);
+      res.set('X-Sha256', archive.sha256);
+      res.set('Content-Type', os === 'win32' ? 'application/zip' : 'application/gzip');
+      res.set('Content-Length', String(fs.statSync(archive.path).size));
+      pipeline(fs.createReadStream(archive.path), res, (err) => {
+        if (err) logger.warn('install node: download interrupted', { error: err.message });
+      });
+    } catch (err) {
+      logger.warn('install node: nodejs.org archive unavailable', { error: err.message });
+      res.status(503).json({ error: 'node_upstream_unavailable' });
     }
   });
 

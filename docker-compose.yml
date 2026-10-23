@@ -7,6 +7,9 @@ services:
       - "127.0.0.1:3100:3000"
     env_file:
       - .env
+    volumes:
+      # Node LTS archives the server hands to new installs (see src/services/node-archive.js)
+      - ownmind_install_cache:/var/cache/ownmind-install
     depends_on:
       db:
         condition: service_healthy
@@ -40,3 +43,4 @@ services:
 
 volumes:
   ownmind_data:
+  ownmind_install_cache:

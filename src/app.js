@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { tmpdir } from 'os';
 import logger from './utils/logger.js';
 import { CONTENT_SECURITY_POLICY } from './utils/content-security-policy.js';
 
@@ -93,7 +94,15 @@ const installLimiter = rateLimit({
   message: { error: '請求太頻繁，請稍後再試' },
 });
 app.use(['/install.sh', '/install.ps1', '/install-manual.md', '/api/install'], installLimiter);
-app.use(createInstallRouter({ query, auth, logger }));
+app.use(createInstallRouter({
+  query, auth, logger,
+  nodeArchive: createNodeArchiveService({
+    fetch: globalThis.fetch,
+    cacheDir: process.env.INSTALL_CACHE_DIR || join(tmpdir(), 'ownmind-install'),
+    now: Date.now,
+    logger,
+  }),
+}));
 app.use('/api', apiLimiter);
 
 // v1.19.8: first-run redirect middleware
@@ -173,6 +182,7 @@ import { createActivityTouchRouter } from './routes/activity-touch.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { createReleaseRouter } from './routes/release.js';
 import { createInstallRouter } from './routes/install.js'; // zero-touch install
+import { createNodeArchiveService } from './services/node-archive.js';
 import handoffRoutes from './routes/handoff.js';
 import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';
