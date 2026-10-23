@@ -29,6 +29,10 @@ tests/bootstrap-archive-mode-ps1.e2e.mjs                — Windows only (skips 
 scripts/install-helpers/node-command.cjs                — the two shapes of a generated node command (bare `node "<script>"`, or `"<abs>/node" "<script>"` for the private runtime): nodeInvocation, parseNodeCommand, isOwnNodeCommand, isCurrentNodeCommand, effectiveNodeBin (only a node under .ownmind/runtime/ or the requested nodeBin is ours; such an entry stays while that node exists, and a rewrite without nodeBin keeps it; a Windows nodeBin is written with forward slashes, one with a double quote is refused)
 tests/private-node-config-shapes.test.js                — byte-for-byte snapshot of every generated command and settings.json without nodeBin; quoted absolute node with nodeBin (spaced and non-ASCII paths) that round-trips through JSON; both shapes count as ours; needsRewrite never flips a working entry; install-artifacts runs the node the MCP entry names; every entry script and commit hook prepends runtime/current before its first node call; installers pass --node-bin only with OWNMIND_PRIVATE_NODE=1
 tests/installer-archive-install-skips-git-update.test.js — static: install.sh and install.ps1 check for an archive install (.release, no .git) before, and instead of, the "Updating OwnMind" branch
+shared/archive-update.js                                — runArchiveUpdate: an archive install (.release, no .git) asks HEAD /api/install/archive for the server's release, downloads and unpacks it to ~/.ownmind.next, carries over the runtime state (credentials, cache, state, logs, reports, git-hooks, bin, judge.json, queue.jsonl, top-level dotfiles, runtime/ with runtime/current re-linked), npm install --ignore-scripts plus the root deps update.sh names, swaps (old tree to ~/.ownmind.prev) and re-runs the installer; nothing in the live tree changes before the swap; EBUSY/EPERM on the swap writes .swap-pending and the next run only swaps; a failed installer run writes .reconfigure-pending and is retried
+shared/archive-update-cli.mjs                           — the shell side: prints UPDATED vX / CURRENT vX / FAILED <reason> (takes the update lock), or with --check in_sync / behind / unknown for check-sync's L1 line
+tests/archive-update-shared.test.js                     — injected fetch/execFile/fs with the real tar: CLEAN without download, APPLIED with .prev, state and a still-linked runtime/current, npm/download/unpack failures leave the live tree alone, EBUSY then swap-only retry, installer retry, an absolute runtime link never deleted
+tests/check-sync-archive-mode.test.js                   — the real check-sync.sh on an archive install against a local server: in_sync / behind / error with release=, never not_git; update-to-release.mjs --print prints .release; static check of the .ps1 branch
 ```
 
 修改檔：
@@ -68,6 +72,14 @@ hooks/ownmind-git-pre-commit, ownmind-git-post-commit, ownmind-git-pre-merge-com
 install.sh, install.ps1                                 — an archive install (.release, no .git) skips the "Updating OwnMind" branch and prints "[INFO] Archive install vX.Y.Z; updates come from the OwnMind server"; the rest of the install is unchanged
 tests/bootstrap-archive-mode.e2e.mjs                    — new scenario: the REAL install.sh runs to "OwnMind installation complete" on an archive built from the tree under test, on a clean Mac with node but no git
 .github/workflows/test.yml                              — bootstrap-archive-mode.e2e.mjs timeout raised to 15 minutes (it now runs npm install)
+shared/auto-update.js                                   — an archive install (.release, no .git) is no longer skipped as no_git_dir: under the same lock and daily marker it delegates to runArchiveUpdate (credentials from readCredentials when the caller has none); a blocked swap is retried next run without a banner
+src/routes/install.js                                   — HEAD /api/install/archive answers X-OwnMind-Release without building or sending the archive
+scripts/check-sync.sh, scripts/check-sync.ps1           — L1 on an archive install: in_sync release=vX / behind release=vX server=vY / error release=vX reason=<code>, from archive-update-cli.mjs --check
+scripts/install-helpers/update-to-release.mjs           — on an archive install --print prints the .release value and a move is refused
+skills/ownmind-upgrade.md                               — mode A: the L1 lines with release= are a healthy archive install
+tests/auto-update-shared.test.js                        — archive install delegation: same deps, stamp on clean, banner on applied/failed, none on swap_pending, credentials read when absent
+tests/install-routes.test.js                            — HEAD on the archive: 401 without a key, release header and no body with one
+tests/bootstrap-archive-mode.e2e.mjs                    — the real-install scenario continues: the server ships v9.9.10, archive-update-cli.mjs swaps it in (logs and opt-out kept, root js-yaml installed, installer re-run), a second run says CURRENT; the archive includes new untracked files of the working tree
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

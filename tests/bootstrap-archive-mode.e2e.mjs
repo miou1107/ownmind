@@ -26,7 +26,7 @@ const bootstrap = path.join(repoRoot, 'scripts', 'bootstrap.sh');
 const KEY = 'archive-mode-test-key-0123456789';
 const skip = process.platform === 'win32' ? 'bootstrap.sh is a bash script; Windows has bootstrap.ps1' : false;
 
-const fixture = { server: null, url: '', dir: '', archive: null, githubArchive: null, realArchive: null, serveReal: false, mode: 'ok', requests: [] };
+const fixture = { server: null, url: '', dir: '', archive: null, githubArchive: null, realArchive: null, realRelease: 'v9.9.9', serveReal: false, mode: 'ok', requests: [] };
 
 /** A tar.gz holding a release: .release, an install.sh stub that records it ran, and one script. */
 function buildArchive(workDir, name, { top = '', release } = {}) {
@@ -64,7 +64,9 @@ before(async () => {
     if (req.url === '/api/install/archive') {
       if (fixture.mode !== 'ok') return send(500, 'server error');
       if (req.headers.authorization !== `Bearer ${KEY}`) return send(401, 'unauthorized');
-      res.writeHead(200, { 'content-type': 'application/gzip', 'x-ownmind-release': 'v9.9.9' });
+      res.writeHead(200, { 'content-type': 'application/gzip', 'x-ownmind-release': fixture.serveReal ? fixture.realRelease : 'v9.9.9' });
+      // HEAD (an archive update asking which release is current) gets the header alone.
+      if (req.method === 'HEAD') return res.end();
       return res.end(fixture.serveReal ? fixture.realArchive : fixture.archive);
     }
     // The real install.sh reports to the server along the way (beacons, the first memory load).
@@ -259,13 +261,14 @@ test('server failing without a forced source falls back to GitHub, newest tag, f
 
 /**
  * The release archive built from the tree under test, the way tests/install-clean-machine.e2e.mjs
- * seeds ~/.ownmind: the tracked files copied out of the working tree (so a local run tests the
- * edit just made, not the last commit), plus .release, plus `.no-usage-scanner` so the real
- * installer leaves the machine's scheduler alone (see that file for why).
+ * seeds ~/.ownmind: the files of the working tree (tracked, plus new ones not yet added and not
+ * ignored, so a local run tests the edit just made, not the last commit), plus .release, plus
+ * `.no-usage-scanner` so the real installer leaves the machine's scheduler alone (see that file
+ * for why).
  */
-function buildRealArchive(workDir) {
-  const src = path.join(workDir, 'src-real');
-  const files = execFileSync('git', ['-C', repoRoot, 'ls-files', '-z'], {
+function buildRealArchive(workDir, release = 'v9.9.9') {
+  const src = path.join(workDir, `src-real-${release}`);
+  const files = execFileSync('git', ['-C', repoRoot, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
   }).split('\0').filter(Boolean);
   assert.ok(files.length > 100, `only ${files.length} tracked files found; the archive would be empty`);
@@ -278,12 +281,25 @@ function buildRealArchive(workDir) {
     fs.copyFileSync(from, to);
     fs.chmodSync(to, fs.statSync(from).mode);
   }
-  fs.writeFileSync(path.join(src, '.release'), 'v9.9.9\n');
+  fs.writeFileSync(path.join(src, '.release'), `${release}\n`);
   fs.writeFileSync(path.join(src, '.no-usage-scanner'), '');
-  const out = path.join(workDir, 'real.tar.gz');
+  const out = path.join(workDir, `real-${release}.tar.gz`);
   const r = spawnSync('tar', ['-czf', out, '-C', src, ...fs.readdirSync(src)], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   return fs.readFileSync(out);
+}
+
+/** Runs node with `args` on the simulated Mac; resolves with stdout and all output. */
+function runNode(mac, args, extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('node', args, { cwd: mac.home, env: { ...mac.env, ...extraEnv } });
+    let stdout = '';
+    let out = '';
+    child.stdout.on('data', (c) => { stdout += c; out += c; });
+    child.stderr.on('data', (c) => { out += c; });
+    child.once('error', reject);
+    child.once('close', (status) => resolve({ status, stdout, out }));
+  });
 }
 
 /** node and npm on the simulated PATH: a Mac with Node but without git. */
@@ -294,7 +310,7 @@ function linkNode(mac) {
   fs.symlinkSync(fs.realpathSync(npm), path.join(mac.binDir, 'npm'));
 }
 
-test('no git: the REAL install.sh runs to the end on the unpacked release', { skip, timeout: 15 * 60 * 1000 }, async () => {
+test('no git: the REAL install.sh runs to the end on the unpacked release, and the archive update moves it to the next one', { skip, timeout: 15 * 60 * 1000 }, async () => {
   const mac = makeCleanMac();
   try {
     linkNode(mac);
@@ -315,8 +331,29 @@ test('no git: the REAL install.sh runs to the end on the unpacked release', { sk
     assert.ok(!fs.existsSync(path.join(dir, '.git')), 'an archive install has no .git');
     assert.ok(fs.existsSync(path.join(dir, 'mcp', 'node_modules')), 'npm install ran in mcp/');
     assert.ok(fs.existsSync(path.join(mac.home, '.claude', 'settings.json')), 'Claude Code was configured');
+
+    // The server now ships a newer release: the archive update downloads it, swaps it in and
+    // re-runs the real installer, with no git anywhere.
+    fs.writeFileSync(path.join(dir, 'logs', 'before-update.log'), 'kept\n');
+    fixture.realArchive = buildRealArchive(fixture.dir, 'v9.9.10');
+    fixture.realRelease = 'v9.9.10';
+    const update = await runNode(mac, [path.join(dir, 'shared', 'archive-update-cli.mjs')], { npm_config_cache: path.join(os.homedir(), '.npm') });
+    assert.equal(update.status, 0, update.out.slice(-4000));
+    assert.equal(update.stdout.trim(), 'UPDATED v9.9.10', update.out.slice(-4000));
+    assert.equal(fs.readFileSync(path.join(dir, '.release'), 'utf8').trim(), 'v9.9.10');
+    assert.equal(fs.readFileSync(path.join(`${dir}.prev`, '.release'), 'utf8').trim(), 'v9.9.9');
+    assert.equal(fs.readFileSync(path.join(dir, 'logs', 'before-update.log'), 'utf8'), 'kept\n', 'logs survive the swap');
+    assert.ok(fs.existsSync(path.join(dir, '.no-usage-scanner')), 'the opt-out survives the swap');
+    assert.ok(fs.existsSync(path.join(dir, 'mcp', 'node_modules')), 'dependencies are in the new tree');
+    assert.ok(fs.existsSync(path.join(dir, 'node_modules', 'js-yaml', 'package.json')), 'the root js-yaml the skill sync needs is installed');
+    assert.ok(!fs.existsSync(`${dir}.next`) && !fs.existsSync(`${dir}.next.partial`));
+    assert.ok(!fs.existsSync(path.join(dir, '.reconfigure-pending')), 'the installer re-ran and finished');
+
+    const again = await runNode(mac, [path.join(dir, 'shared', 'archive-update-cli.mjs')]);
+    assert.equal(again.stdout.trim(), 'CURRENT v9.9.10', again.out);
   } finally {
     fixture.serveReal = false;
+    fixture.realRelease = 'v9.9.9';
     mac.cleanup();
   }
 });

@@ -37,7 +37,17 @@ CLAUDE_DIR_WIN="$(to_win_path "${CLAUDE_DIR}")"
 # ============================================================
 L1="unknown"
 L1_DETAIL=""
-if [ -d "${OWNMIND_DIR}/.git" ]; then
+if [ ! -e "${OWNMIND_DIR}/.git" ] && [ -f "${OWNMIND_DIR}/.release" ]; then
+  # An archive install (bootstrap without git): compared with the release the OwnMind server
+  # ships, which is what shared/archive-update.js updates it to. The helper prints
+  # `in_sync release=vX`, `behind release=vX server=vY` or `unknown release=vX reason=<code>`.
+  ARCHIVE_L1=$(node "${OWNMIND_DIR_WIN}/shared/archive-update-cli.mjs" --dir "${OWNMIND_DIR_WIN}" --check 2>/dev/null)
+  case "${ARCHIVE_L1}" in
+    "in_sync "*|"behind "*) L1="${ARCHIVE_L1%% *}"; L1_DETAIL="${ARCHIVE_L1#* }" ;;
+    "unknown "*) L1="error"; L1_DETAIL="${ARCHIVE_L1#* }" ;;
+    *) L1="error"; L1_DETAIL="release=$(head -n 1 "${OWNMIND_DIR}/.release" | tr -d '[:space:]') reason=helper_failed" ;;
+  esac
+elif [ -d "${OWNMIND_DIR}/.git" ]; then
   if command -v git >/dev/null 2>&1; then
     # v1.30.48: compared with the newest release tag on main, which is what updates install,
     # not with main's tip; a machine is in sync once it has that release (or is ahead of it).

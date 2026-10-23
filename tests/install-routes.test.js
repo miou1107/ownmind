@@ -107,6 +107,15 @@ describe('install routes', () => {
     assert.equal(r.status, 401);
   });
 
+  it('HEAD on the archive answers the release without a body, behind the key', async () => {
+    const anon = await fetch(`${srv.url}/api/install/archive`, { method: 'HEAD' });
+    assert.equal(anon.status, 401);
+    const r = await fetch(`${srv.url}/api/install/archive`, { method: 'HEAD', headers: { authorization: `Bearer ${KEY}` } });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('x-ownmind-release'), `v${PKG_VERSION}`);
+    assert.equal((await r.arrayBuffer()).byteLength, 0);
+  });
+
   it('serves the archive with a key, tagged with the release version', async () => {
     const r = await fetch(`${srv.url}/api/install/archive`, { headers: { authorization: `Bearer ${KEY}` } });
     assert.equal(r.status, 200);

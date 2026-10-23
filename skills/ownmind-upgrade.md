@@ -40,6 +40,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME\.ownmind\scripts\check-sync.ps1"
 輸出格式（每行 `KEY:value`）：
 ```
 L1_REMOTE:in_sync | behind count=N | not_git | error
+L1_REMOTE:in_sync release=vX.Y.Z | behind release=vX.Y.Z server=vA.B.C | error release=vX.Y.Z reason=<code>
 L2_SERVER:in_sync version=X.Y.Z | outdated client=X.Y.Z server=A.B.C | ahead ... | error ...
 L3_DEPLOY:in_sync | drifted count=N
 L3_DRIFT_FILE:<path>
@@ -48,6 +49,8 @@ OVERALL:in_sync | needs_upgrade
 ```
 
 **回報 user 的邏輯**：
+- 第二行 `L1_REMOTE`（帶 `release=`）是沒有 git、從壓縮檔裝的機器，跟 git 安裝一樣是正常狀態：
+  `in_sync release=…` 就是最新，`behind release=… server=…` 跟 `behind count=N` 一樣處理。
 - `L4_STANDARDS:never_synced` 或 `unreadable` → 回「這台機器還沒把你的規範抓下來，掛勾現在
   什麼都檢查不了；開一個新對話就會抓」。
   **如果 L1／L2／L3 都是 in_sync，到這裡就停，不要問要不要升級、也不要走模式 B。**

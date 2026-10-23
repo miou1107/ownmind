@@ -16,7 +16,8 @@ import { SERVER_VERSION } from '../utils/server-version.js';
  *                                                       what Windows PowerShell can unpack), for a
  *                                                       machine without git; behind auth like
  *                                                       /api/version, so a scanner cannot read
- *                                                       the version
+ *                                                       the version. HEAD answers only the
+ *                                                       X-OwnMind-Release header (archive updates)
  *   GET /api/install/node?os=&arch=                     the official Node LTS archive for the private
  *                                                       runtime, cached on the server; 503 tells the
  *                                                       installer to go to nodejs.org itself
@@ -50,6 +51,15 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
   router.get('/install.sh', sendText('install.sh'));
   router.get('/install.ps1', sendText('install.ps1', { stripBom: true }));
   router.get('/install-manual.md', sendText('docs/ai-install-runbook.md'));
+
+  // HEAD answers which release the archive holds without building or sending it: an archive
+  // install asks this to decide whether it has anything to download (shared/archive-update.js).
+  // Express would otherwise run the GET handler for a HEAD and build the archive to answer it.
+  router.head('/api/install/archive', auth, (req, res) => {
+    res.set('X-OwnMind-Release', `v${SERVER_VERSION}`);
+    res.set('Content-Type', req.query.format === 'zip' ? 'application/zip' : 'application/gzip');
+    res.status(200).end();
+  });
 
   router.get('/api/install/archive', auth, async (req, res) => {
     const format = req.query.format === undefined || req.query.format === '' ? 'tar.gz' : req.query.format;
