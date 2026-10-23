@@ -29,8 +29,8 @@ COPY scripts/bootstrap.ps1 ./scripts/bootstrap.ps1
 # 錯誤。一行 COPY 換掉一個地雷。它在映像裡只會發現 build 已經在了、然後立刻結束。
 COPY scripts/ensure-console-build.js ./scripts/ensure-console-build.js
 # Zero-touch install: GET /api/install/archive packs these from the container's own
-# filesystem (src/services/install-archive.js), and /install.sh, /install.ps1 and
-# /install-manual.md are read from here. The archive leaves out src/, db/, tests/ and
+# filesystem (src/services/install-archive.js), and /install.sh and /install.ps1 are
+# read from here. The archive leaves out src/, db/, tests/ and
 # node_modules, so those need no entry. Everything the client installs from has to be
 # listed; a path missing here is missing from every no-git install.
 COPY scripts/ ./scripts/
@@ -39,7 +39,6 @@ COPY mcp/ ./mcp/
 COPY hooks/ ./hooks/
 COPY skills/ ./skills/
 COPY configs/ ./configs/
-COPY docs/ai-install-runbook.md ./docs/ai-install-runbook.md
 # shared/ 被 server 端多個模組 import（events.js 需要 id-helper，若未來也可能需要
 # helpers.js 等）。scanners/ 內有 base.js / id-helper.js / claude-code.js / codex.js
 # / opencode.js / vscode-telemetry.js / cursor.js / antigravity.js；id-helper 是

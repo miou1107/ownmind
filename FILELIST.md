@@ -12,7 +12,7 @@ tests/install-routes.test.js                            — 路由與壓縮檔�
 修改檔：
 ```
 src/app.js                                              — 安裝路徑掛在 apiLimiter 之前，自己一分鐘 30 次
-Dockerfile, .dockerignore                               — 映像裡放進 scripts/、install.sh、install.ps1、mcp/、hooks/、skills/、configs/、docs/ai-install-runbook.md
+Dockerfile, .dockerignore                               — 映像裡放進 scripts/、install.sh、install.ps1、mcp/、hooks/、skills/、configs/
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
