@@ -33,7 +33,7 @@ export const DEFAULT_KEEP = [
   'basename', 'env', 'printf', 'touch', 'find', 'xargs', 'osascript', 'mktemp', 'sw_vers', 'id',
   'whoami', 'tee', 'sort', 'uniq', 'readlink', 'stat', 'df',
   // Stock macOS ships both; the installer warns when it cannot find them.
-  'sqlite3', 'launchctl',
+  'sqlite3', 'launchctl', 'shasum',
 ];
 
 /** Where a stock macOS keeps these tools. Searched in this order, never through the caller's PATH. */

@@ -17,6 +17,8 @@ docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md — 零接觸�
 scripts/install-helpers/fetch-release.sh                — ownmind_download_archive（先連伺服器，再連 GitHub；key 走 curl -K - 不上指令列）與 ownmind_unpack_release（解到 .partial，檢查 .release 和 install.sh 後才改名）；bootstrap.sh 內嵌同一份
 tests/bootstrap-archive-mode.test.js                    — bootstrap.sh 沒有 git 時的靜態檢查：不再因缺 git 結束、FIX／ASK 行、內嵌函式與 fetch-release.sh 逐字相同
 tests/bootstrap-archive-mode.e2e.mjs                    — 乾淨 Mac 加本機假伺服器：下載解壓、清掉半途的 .partial、install.sh 失敗後續跑、連不上時的 ASK:no_network、退回 GitHub（CI 的 install 工作點名執行）
+scripts/install-helpers/ensure-node-runtime.sh          — ownmind_ensure_node：系統 node 20 以上就直接用；沒有或太舊，就從伺服器（失敗再從 nodejs.org）下載官方 Node 壓縮檔，shasum 驗證後解到 ~/.ownmind/runtime/node-<版本>/，current 連結指過去，寫入 .node-path
+tests/node-runtime-mac.test.js                          — 私有 Node 的靜態檢查（壓縮檔名稱與 shared/node-runtime.js 一致、preflight 在 Mac 不把缺 node 當失敗）和乾淨 Mac 的實測：沒有 node、node 18、node 22、伺服器 503、檢查碼不符
 ```
 
 修改檔：
@@ -26,7 +28,10 @@ src/routes/install.js                                   — 新增 GET /api/inst
 docker-compose.yml, .env.example                        — api 容器掛上 ownmind_install_cache 到 /var/cache/ownmind-install，並在 compose 直接設定 INSTALL_CACHE_DIR（正式機的 .env 沒有這個變數）；.env.example 只留說明
 Dockerfile, .dockerignore                               — 映像裡放進 scripts/、install.sh、install.ps1、mcp/、hooks/、skills/、configs/
 scripts/bootstrap.sh                                    — 沒有 git 時不再結束，改走壓縮檔安裝（INFO:archive_mode）；有 .release 沒有 .git 的資料夾視為完好的壓縮檔安裝，重跑 install.sh；解壓完、跑 install.sh 之前留一個等 ensure-node-runtime.sh 的入口
-tests/helpers/clean-mac-sim.mjs                         — 保留的系統工具多了 sqlite3、launchctl；新增 xcodeStub 選項，模擬 macOS 內建的 git 替身
+tests/helpers/clean-mac-sim.mjs                         — 保留的系統工具多了 sqlite3、launchctl、shasum；新增 xcodeStub 選項，模擬 macOS 內建的 git 替身
+install.sh                                              — macOS 沒有可用的 node（沒有或低於 20）時，改用 ensure-node-runtime.sh 下載私有 Node，不再 brew install node；第一次安裝要等 clone 完才有這支檔案，所以延到 clone 後再跑；Linux、Windows 的提示不變
+scripts/install-helpers/preflight.sh                    — macOS 缺 node 或太舊時列出「private runtime will be installed (no action needed)」且不算失敗，npm 也不再追問；沒有 .git 的壓縮檔安裝，缺 git 也不算失敗；Linux 維持原樣
+tests/install-prerequisite-auto-install.test.js         — 原本斷言 install.sh 會 brew install node，改成斷言它改走私有 Node 且不再出現 brew install node
 scripts/install-helpers/preflight.sh                      — 新增 ownmind_git_usable：macOS 內建的 /usr/bin/git 只是會跳出安裝視窗的替身，要 xcode-select -p 成功才算有 git；檢查 git 的地方都改用它，bootstrap.sh 內嵌同一份
 tests/clean-mac-sim.test.js                             — 多測 xcodeStub 選項（有 git 替身、xcode-select 回 2、跑過會留標記檔）
 tests/installer-preflight.test.js                       — bootstrap.sh 沒有 git 時不再停下來，原本斷言「停下來」的兩處改成斷言新行為（沒帶 key 時回 missing_args、什麼都不建）

@@ -21,6 +21,9 @@
 # install.ps1 has enforced since v1.17.76. Raise it here and the check follows.
 OWNMIND_NODE_FLOOR=20
 
+# The remedy column of a line that is only informational; ownmind_preflight_assert skips it.
+OWNMIND_PREFLIGHT_NO_ACTION='(no action needed)'
+
 # BEGIN git-usable
 # Is there a git that works? `command -v git` is not enough on a Mac: macOS ships /usr/bin/git
 # as a stub that opens the "install the developer tools" dialog when run. The stub is told
@@ -60,27 +63,44 @@ ownmind_preflight_failures() {
     printf 'git\tgit is not on PATH; OwnMind is installed and updated with it\t%s\n' "$remedy_git"
   fi
 
+  # On a Mac a missing or old node is not something the person has to fix: the installer puts
+  # a private Node in ~/.ownmind/runtime (ensure-node-runtime.sh). It is still listed, with
+  # "(no action needed)" as the remedy, so the report says what is about to happen; the assert
+  # below does not count it. npm comes with that Node, so it is not asked about either.
+  local node_private=0 raw major is_mac=0
+  [ "$(uname -s 2>/dev/null)" = "Darwin" ] && is_mac=1
   if ! command -v node >/dev/null 2>&1; then
-    printf 'node\tnode is not on PATH; the memory server, the self-check and the error reporter all run on it\t%s\n' "$remedy_node"
+    if [ "$is_mac" = "1" ]; then
+      printf 'node\tprivate runtime will be installed\t%s\n' "$OWNMIND_PREFLIGHT_NO_ACTION"
+      node_private=1
+    else
+      printf 'node\tnode is not on PATH; the memory server, the self-check and the error reporter all run on it\t%s\n' "$remedy_node"
+    fi
   else
-    local raw major
     raw=$(node --version 2>/dev/null)
     # Strip the leading v, then everything from the first dot. A node that answers nothing
-    # leaves this empty, which the -gt below cannot compare, so it is treated as unusable.
+    # leaves this empty, which the -lt below cannot compare, so it is treated as unusable.
     major=${raw#v}
     major=${major%%.*}
-    if ! printf '%s' "$major" | grep -Eq '^[0-9]+$'; then
-      printf 'node\tnode is on PATH but did not answer --version, so it cannot be used\t%s\n' "$remedy_node"
-    elif [ "$major" -lt "$OWNMIND_NODE_FLOOR" ]; then
-      printf 'node\tnode %s is below the oldest version OwnMind is tested on (%s)\t%s\n' \
-        "$major" "$OWNMIND_NODE_FLOOR" "$remedy_node"
+    if ! printf '%s' "$major" | grep -Eq '^[0-9]+$' || [ "$major" -lt "$OWNMIND_NODE_FLOOR" ]; then
+      if [ "$is_mac" = "1" ]; then
+        printf 'node\tprivate runtime will be installed\t%s\n' "$OWNMIND_PREFLIGHT_NO_ACTION"
+        node_private=1
+      elif ! printf '%s' "$major" | grep -Eq '^[0-9]+$'; then
+        printf 'node\tnode is on PATH but did not answer --version, so it cannot be used\t%s\n' "$remedy_node"
+      else
+        printf 'node\tnode %s is below the oldest version OwnMind is tested on (%s)\t%s\n' \
+          "$major" "$OWNMIND_NODE_FLOOR" "$remedy_node"
+      fi
     fi
   fi
 
   # npm ships with node, so node present and npm absent means a partial install — or a shim
   # that resolves and does not run, which is why it is asked for a version rather than merely
   # looked up.
-  if ! command -v npm >/dev/null 2>&1; then
+  if [ "$node_private" = "1" ]; then
+    :
+  elif ! command -v npm >/dev/null 2>&1; then
     printf 'npm\tnpm is not on PATH; the memory server installs its dependencies with it\t%s\n' "$remedy_node"
   elif ! npm --version >/dev/null 2>&1; then
     printf 'npm\tnpm is on PATH but does not run\t%s\n' "$remedy_node"
@@ -92,8 +112,13 @@ ownmind_preflight_failures() {
 # from an upgrade.
 ownmind_preflight_assert() {
   local stage="${1:-install}" failures count
-  failures=$(ownmind_preflight_failures)
-  [ -n "$failures" ] || return 0
+  failures=$(ownmind_preflight_failures | awk -F'\t' -v skip="$OWNMIND_PREFLIGHT_NO_ACTION" '$3 != skip')
+  # git is how a checkout is updated. An install from the release archive has no .git and never
+  # calls git, so for it a missing git is not a failure.
+  if [ ! -d "${OWNMIND_DIR:-$HOME/.ownmind}/.git" ]; then
+    failures=$(printf '%s\n' "$failures" | awk -F'\t' '$1 != "git"')
+  fi
+  [ -n "$(printf '%s' "$failures" | tr -d '[:space:]')" ] || return 0
 
   count=$(printf '%s\n' "$failures" | grep -c . )
   printf '\n'

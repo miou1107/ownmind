@@ -101,53 +101,72 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; t
   echo "[INFO] Detected Windows environment (Git Bash)"
 fi
 
-# --- node 偵測 + 自動安裝（v1.17.76, 回報者 vin-windows-test）---
-# v1.17.75 之前：完全沒查 node，直到下面 npm install 才神秘失敗。
-# 現在：mac 用 brew 自動裝、linux 提示 apt/dnf 指令、windows 改走 install.ps1。
-if ! command -v node >/dev/null 2>&1; then
-  echo "[WARN] Node.js not found (required by OwnMind)"
-  case "$OSTYPE" in
-    darwin*)
-      if command -v brew >/dev/null 2>&1; then
-        echo "       Attempting: brew install node"
-        if brew install node; then
-          echo "[ OK ] Node.js installed"
-        else
-          echo "[ERROR] brew install node failed. Install Node.js v20+ manually (https://nodejs.org/) and retry"
-          exit 1
-        fi
-      else
-        echo "[ERROR] Homebrew not installed. Choose one:"
-        echo "        1. Download Node.js v20+ LTS from https://nodejs.org/"
-        echo "        2. Install Homebrew (https://brew.sh/) and re-run this script"
-        exit 1
-      fi
-      ;;
-    linux*)
-      echo "[ERROR] Linux: install Node.js v20+ manually and re-run:"
-      echo "        Debian/Ubuntu: sudo apt install nodejs npm"
-      echo "        Fedora/RHEL:   sudo dnf install nodejs npm"
-      echo "        Or via nvm (recommended for version flexibility): https://github.com/nvm-sh/nvm"
-      exit 1
-      ;;
-    msys*|cygwin*|win32*)
-      echo "[ERROR] Windows: run install.ps1 instead (it auto-installs Node.js via winget)"
-      exit 1
-      ;;
-    *)
-      echo "[ERROR] Unknown OS ($OSTYPE); install Node.js v20+ manually and retry"
-      exit 1
-      ;;
-  esac
-fi
+# --- Node.js (>= v20; required by the scanner and the MCP server) ---
+# macOS: a machine with no usable node gets a private Node in ~/.ownmind/runtime, downloaded
+# by scripts/install-helpers/ensure-node-runtime.sh with no password and no dialog. That helper
+# lives in the OwnMind checkout, which on a first install is cloned further down; in that case
+# the step is deferred until the clone is there (NODE_STEP_PENDING).
+# Linux and Windows keep the manual remedies below.
+ownmind_node_usable() {
+  local v
+  v=$(node --version 2>/dev/null) || return 1
+  v=${v#v}
+  v=${v%%.*}
+  case "$v" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$v" -ge 20 ]
+}
 
-# Node version check (>= v20, required by scanner / mcp)
-NODE_VER=$(node --version 2>/dev/null | sed 's/^v//')
-NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
-if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
-  echo "[ERROR] Node.js too old (v$NODE_VER); OwnMind requires v20+. Upgrade and retry"
-  exit 1
-fi
+NODE_HELPER="$HOME/.ownmind/scripts/install-helpers/ensure-node-runtime.sh"
+NODE_STEP_PENDING=0
+run_node_step() {
+  # shellcheck disable=SC1090
+  . "$NODE_HELPER"
+  ownmind_ensure_node "$API_URL" "$API_KEY" || exit 1
+  NODE_STEP_PENDING=0
+}
+
+case "$OSTYPE" in
+  darwin*)
+    if [ -f "$NODE_HELPER" ]; then
+      run_node_step
+    elif ownmind_node_usable || [ ! -d "$HOME/.ownmind" ]; then
+      NODE_STEP_PENDING=1
+    else
+      echo "[ERROR] Node.js is missing or too old, and this OwnMind checkout is too old to install one."
+      echo "        Install Node.js v20+ LTS from https://nodejs.org/ and retry"
+      exit 1
+    fi
+    ;;
+  *)
+    if ! command -v node >/dev/null 2>&1; then
+      echo "[WARN] Node.js not found (required by OwnMind)"
+      case "$OSTYPE" in
+        linux*)
+          echo "[ERROR] Linux: install Node.js v20+ manually and re-run:"
+          echo "        Debian/Ubuntu: sudo apt install nodejs npm"
+          echo "        Fedora/RHEL:   sudo dnf install nodejs npm"
+          echo "        Or via nvm (recommended for version flexibility): https://github.com/nvm-sh/nvm"
+          exit 1
+          ;;
+        msys*|cygwin*|win32*)
+          echo "[ERROR] Windows: run install.ps1 instead (it auto-installs Node.js via winget)"
+          exit 1
+          ;;
+        *)
+          echo "[ERROR] Unknown OS ($OSTYPE); install Node.js v20+ manually and retry"
+          exit 1
+          ;;
+      esac
+    fi
+    # Node version check (>= v20, required by scanner / mcp)
+    NODE_VER=$(node --version 2>/dev/null | sed 's/^v//')
+    NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
+    if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
+      echo "[ERROR] Node.js too old (v$NODE_VER); OwnMind requires v20+. Upgrade and retry"
+      exit 1
+    fi
+    ;;
+esac
 
 # --- 1. Clone MCP Server ---
 OWNMIND_DIR="$HOME/.ownmind"
@@ -197,6 +216,8 @@ else
     echo "[ERROR] git clone failed (network or GitHub access)"
     exit 1
   fi
+  # The node step deferred above needs the clone, and the release lookup below needs node.
+  [ "$NODE_STEP_PENDING" = "1" ] && [ -f "$NODE_HELPER" ] && run_node_step
   # A fresh clone is main's tip; step back to the newest release. Nothing local to lose.
   if RELEASE=$(cd "$OWNMIND_DIR" && node "$RELEASE_HELPER" --print) \
      && case "$RELEASE" in v[0-9]*) true ;; *) false ;; esac; then
@@ -205,6 +226,9 @@ else
     echo "[WARN] No release found (${RELEASE:-helper failed}); installing main's latest commit"
   fi
 fi
+# An existing checkout that was too old to carry the node helper has just been updated and now
+# does; a checkout that still lacks it (and a node that works) simply carries on.
+[ "$NODE_STEP_PENDING" = "1" ] && [ -f "$NODE_HELPER" ] && run_node_step
 maybe_load_report_error
 
 # Stderr from every step below goes here, never to /dev/null. `set -e` plus a discarded

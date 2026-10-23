@@ -88,15 +88,15 @@ describe('install.ps1 — missing prerequisites must not just error-exit', () =>
   });
 });
 
-describe('install.sh — missing node: mac uses brew, linux uses apt/dnf', () => {
+describe('install.sh — missing node: mac downloads a private runtime, linux uses apt/dnf', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.sh'), 'utf8');
 
-  it('when node is missing on mac, tries brew install node', () => {
-    assert.match(
-      content,
-      /command -v node[\s\S]*?brew\s+install\s+node/,
-      'mac without node should attempt `brew install node` (fall back to manual hint)'
-    );
+  it('when node is missing or old on mac, installs the private runtime instead of brew', () => {
+    // Replaced the brew install node block: a Mac with no node and no admin rights could not
+    // follow it. tests/node-runtime-mac.test.js runs the real helper.
+    assert.match(content, /ensure-node-runtime\.sh/);
+    assert.match(content, /ownmind_ensure_node "\$API_URL" "\$API_KEY"/);
+    assert.doesNotMatch(content, /brew\s+install\s+node/);
   });
 
   it('when node is missing on linux, prints apt / dnf install commands', () => {

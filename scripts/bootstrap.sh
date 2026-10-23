@@ -204,7 +204,8 @@ install_from_archive() {
   ownmind_download_archive "$key" "$api" "$partial/archive.tar.gz" || { rm -rf "$partial"; exit 1; }
   ownmind_unpack_release "$partial/archive.tar.gz" "$partial" "$OWNMIND_DIR" || exit 1
   cd "$OWNMIND_DIR"
-  # Private Node runtime (installed by a later step; the guard keeps this script shippable alone).
+  # Private Node runtime when this machine has no usable node. The file exists in every release
+  # that has this feature; the guard lets an older release without it still install.
   if [ -f "$OWNMIND_DIR/scripts/install-helpers/ensure-node-runtime.sh" ]; then
     . "$OWNMIND_DIR/scripts/install-helpers/ensure-node-runtime.sh"
     ownmind_ensure_node "${api%/}" "$key" || exit 1
