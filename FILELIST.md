@@ -171,6 +171,15 @@ docs/ai-install-runbook.md                              — a note that the desk
 README.md, docs/README.zh-TW.md, docs/README.ja.md       — System Requirements: macOS and Windows need nothing installed beforehand (the installer brings its own Node.js and installs without Git); Linux still needs Node.js 20+ and Git 2.30+
 docs/superpowers/specs/2026-10-23-zero-touch-install-design.md, docs/superpowers/plans/2026-10-23-zero-touch-install.md, tests/admin-users-last-load.test.js, tests/team-last-load-state.test.js — colleague names and machine names replaced with neutral labels
 README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md, package.json — version v1.33.3
+scripts/bootstrap.sh, scripts/bootstrap.ps1                — a run that carries the key and URL on an existing install re-runs install.sh / install.ps1 (which installs Node) and prints NEXT, instead of handing an unfinished first install to the upgrader; a no-argument run still upgrades; a git checkout is fast-forwarded first when git is usable
+tests/bootstrap-archive-mode.e2e.mjs                    — the fixture release carries an upgrader marked ARCHIVE_MODE like the real one; the resume case requires install.sh with the arguments and a final NEXT line; a no-argument run goes to the upgrader
+Dockerfile, tests/dockerfile-ships-client-tree.test.js  — the image copies mods/, so no-git installs get both mods; the test fails when a tracked top-level entry is neither copied into the image nor listed as server-only
+scripts/install-helpers/fetch-release.ps1, scripts/bootstrap.ps1, scripts/install-helpers/ensure-node-runtime.ps1 — Move-OwnMindItemRetry: the move after an unpack is tried five times, two seconds apart, unless the disk is full
+scripts/install-helpers/first-load-watch.cjs, tests/first-load-watch.test.js — no clock correction: the hook stamps each load with the colleague's own clock, the same clock `since` comes from
+src/services/install-archive.js, tests/install-archive-zip.test.js — .env, .env.* (not .env.example) and *.pem are never packed
+src/app.js                                              — /api/install/first-load has its own limit per account key; the address-wide install limit skips it
+shared/archive-update.js, tests/archive-update-shared.test.js — shared/, src/ and mcp/ are swapped before the other entries
+docs/ai-install-runbook.md                              — troubleshooting row: a run that prints no prefixed line
 ```
 
 ## v1.33.2 修改（2026-10-23，規矩內文猜錯技能名字的誤報，#197）

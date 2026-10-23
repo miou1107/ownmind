@@ -370,7 +370,7 @@ function Ensure-OwnMindNode {
   $dest = Join-Path $runtime "node-$version"
   Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
   try {
-    Move-Item -LiteralPath $inner[0].FullName -Destination $dest -ErrorAction Stop
+    Move-OwnMindItemRetry -Path $inner[0].FullName -Destination $dest
   } catch {
     $stopError = $_
     Restore-OwnMindCurrent -Current $current -Previous $prev

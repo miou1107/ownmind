@@ -17,8 +17,8 @@
  * Command line (always exits 0; the outcome goes to ~/.ownmind/logs/first-load-watch.log):
  *   node first-load-watch.cjs --since <ISO> [--locale xx] [--timeout-ms N] [--interval-ms N] [--child]
  * Without --child it starts itself again (with --child) in its own session and exits at once.
- * Clock skew: the first answer's Date header is compared with the local clock; a gap over 30
- * seconds shifts `since` by that gap, so a wrong clock on this computer cannot hide a load.
+ * A wrong clock on this computer needs no correction: the SessionStart hook stamps each memory
+ * load with this same clock, and `since` comes from it too, so the server compares like with like.
  * The API URL and key come from resolve-credentials.cjs, never from the arguments: the arguments
  * are the process's command line, which any account can read with `ps`.
  *
@@ -34,25 +34,6 @@ const { spawn, spawnSync, execFileSync } = require('node:child_process');
 const DEFAULT_TIMEOUT_MS = 600_000;
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
-// A local clock this far from the server's is corrected for; a smaller gap is just latency.
-const SKEW_TOLERANCE_MS = 30_000;
-
-/**
- * The `since` to send, corrected for a local clock that disagrees with the server's: the install
- * start was read from the colleague's clock, the server compares it with its own. Returns null
- * when the response has no usable Date header or the two clocks agree within SKEW_TOLERANCE_MS.
- */
-function skewCorrectedSince(res, since, now) {
-  let header = null;
-  try { header = res && res.headers && typeof res.headers.get === 'function' ? res.headers.get('date') : null; } catch { header = null; }
-  const serverNow = header ? Date.parse(header) : NaN;
-  const sinceMs = Date.parse(since);
-  if (Number.isNaN(serverNow) || Number.isNaN(sinceMs)) return null;
-  const offset = serverNow - now();
-  if (Math.abs(offset) <= SKEW_TOLERANCE_MS) return null;
-  return new Date(sinceMs + offset).toISOString();
-}
-
 /**
  * Polls until the server reports a load or the time runs out.
  * @param {object} o
@@ -76,22 +57,11 @@ async function watchFirstLoad({
   const headers = { Authorization: `Bearer ${apiKey}` };
   const say = (kind) => { try { notify(kind); } catch { /* a missing notification service must not end the watch */ } };
   const startedAt = now();
-  let effectiveSince = since;
-  let skewChecked = false;
-  const ask = () => fetch(`${base}${encodeURIComponent(effectiveSince)}`, { headers, signal: AbortSignal.timeout(requestTimeoutMs) });
+  const ask = () => fetch(`${base}${encodeURIComponent(since)}`, { headers, signal: AbortSignal.timeout(requestTimeoutMs) });
 
   for (;;) {
     try {
-      let res = await ask();
-      if (!skewChecked) {
-        // The first answer, whatever its status, carries the server's clock.
-        skewChecked = true;
-        const corrected = skewCorrectedSince(res, since, now);
-        if (corrected) {
-          effectiveSince = corrected;
-          res = await ask();
-        }
-      }
+      const res = await ask();
       if (res && res.status === 200) {
         const body = await res.json();
         if (body && body.loaded === true) {
@@ -251,8 +221,8 @@ async function main(argv) {
 }
 
 module.exports = {
-  watchFirstLoad, replaceRunningWatcher, commandOfProcess, detachedEnv, skewCorrectedSince,
-  DEFAULT_TIMEOUT_MS, DEFAULT_INTERVAL_MS, DEFAULT_REQUEST_TIMEOUT_MS, SKEW_TOLERANCE_MS,
+  watchFirstLoad, replaceRunningWatcher, commandOfProcess, detachedEnv,
+  DEFAULT_TIMEOUT_MS, DEFAULT_INTERVAL_MS, DEFAULT_REQUEST_TIMEOUT_MS,
 };
 
 if (require.main === module) {

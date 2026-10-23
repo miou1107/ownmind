@@ -162,118 +162,29 @@ describe('watchFirstLoad', () => {
 });
 
 describe('watchFirstLoad: a wrong clock on the colleague\'s computer', () => {
-  // The server's clock reads S0. The install began 60 s ago by the colleague's clock, and the
-  // memory load happened 30 s ago by the server's clock, so the load is after the install.
-  const S0 = Date.parse('2026-10-23T08:10:00Z');
-  const LOAD_AT = S0 - 30_000;
-
-  /** A server that answers loaded only when the since it is sent is earlier than the load. */
-  function serverAt(serverNow, { date = new Date(serverNow).toUTCString() } = {}) {
-    const asked = [];
-    return {
-      asked,
-      fetch: async (url) => {
-        const since = Date.parse(new URL(url).searchParams.get('since'));
-        asked.push(since);
-        return answer(200, since < LOAD_AT ? { loaded: true, at: new Date(LOAD_AT).toISOString() } : { loaded: false, at: null }, date);
-      },
-    };
+  // The SessionStart hook stamps the memory load with the colleague's own clock, and the install
+  // start comes from the same clock, so a clock five minutes off changes nothing: `since` goes out
+  // as it was taken, whatever time the server's Date header shows.
+  for (const [label, offset] of [['ahead of', 5 * 60_000], ['behind', -5 * 60_000]]) {
+    it(`a colleague clock 5 minutes ${label} the server: since is sent unchanged and the load is seen`, async () => {
+      const serverNow = Date.parse('2026-10-23T08:10:00Z');
+      const localNow = serverNow + offset;
+      const installStartedLocal = localNow - 60_000;
+      const loadStampedLocal = localNow - 30_000;
+      const asked = [];
+      const { promise, notes } = watch({
+        since: new Date(installStartedLocal).toISOString(),
+        fetch: async (url) => {
+          const since = Date.parse(new URL(url).searchParams.get('since'));
+          asked.push(since);
+          return answer(200, since < loadStampedLocal ? { loaded: true, at: new Date(loadStampedLocal).toISOString() } : { loaded: false, at: null }, new Date(serverNow).toUTCString());
+        },
+      }, localNow);
+      assert.equal(await promise, 'loaded');
+      assert.deepEqual(notes, ['loaded']);
+      assert.deepEqual(asked, [installStartedLocal], 'one request, with the since the install took');
+    });
   }
-
-  it('a colleague clock 5 minutes ahead of the server still sees "loaded" (the first request is sent again with a corrected since)', async () => {
-    const ahead = 5 * 60_000;
-    const localNow = S0 + ahead;
-    const installStartedLocal = localNow - 60_000;
-    const server = serverAt(S0);
-    const { promise, notes } = watch({ since: new Date(installStartedLocal).toISOString(), fetch: server.fetch }, localNow);
-    assert.equal(await promise, 'loaded');
-    assert.deepEqual(notes, ['loaded']);
-    assert.equal(server.asked.length, 2, 'the first answer revealed the gap, so it asked once more');
-    assert.equal(server.asked[0], installStartedLocal, 'the first request carries the uncorrected since');
-    assert.equal(server.asked[1], installStartedLocal - ahead, 'the second carries since shifted by the gap');
-  });
-
-  it('a colleague clock behind the server by 5 minutes is corrected the other way', async () => {
-    const behind = 5 * 60_000;
-    const localNow = S0 - behind;
-    const installStartedLocal = localNow - 60_000;
-    const server = serverAt(S0);
-    const { promise } = watch({ since: new Date(installStartedLocal).toISOString(), fetch: server.fetch }, localNow);
-    assert.equal(await promise, 'loaded');
-    assert.equal(server.asked[server.asked.length - 1], installStartedLocal + behind);
-  });
-
-  it('keeps the corrected since for every later poll, and corrects only once', async () => {
-    const ahead = 5 * 60_000;
-    const localNow = S0 + ahead;
-    const installStartedLocal = localNow - 60_000;
-    const asked = [];
-    const { promise } = watch({
-      since: new Date(installStartedLocal).toISOString(),
-      timeoutMs: 45_000,
-      fetch: async (url) => {
-        asked.push(Date.parse(new URL(url).searchParams.get('since')));
-        return answer(200, { loaded: false, at: null }, new Date(S0).toUTCString());
-      },
-    }, localNow);
-    await promise;
-    assert.equal(asked[0], installStartedLocal);
-    assert.ok(asked.length > 3);
-    assert.ok(asked.slice(1).every((s) => s === installStartedLocal - ahead), 'every request after the first is corrected');
-  });
-
-  it('a gap within 30 seconds is not corrected', async () => {
-    const localNow = S0 + 20_000;
-    const installStartedLocal = localNow - 60_000;
-    const server = serverAt(S0);
-    const { promise } = watch({ since: new Date(installStartedLocal).toISOString(), fetch: server.fetch }, localNow);
-    await promise;
-    assert.ok(server.asked.every((s) => s === installStartedLocal));
-  });
-
-  it('a missing Date header means no correction', async () => {
-    const localNow = S0 + 5 * 60_000;
-    const installStartedLocal = localNow - 60_000;
-    const asked = [];
-    const { promise, notes } = watch({
-      since: new Date(installStartedLocal).toISOString(),
-      timeoutMs: 30_000,
-      fetch: async (url) => { asked.push(Date.parse(new URL(url).searchParams.get('since'))); return answer(200, { loaded: false, at: null }); },
-    }, localNow);
-    assert.equal(await promise, 'not_loaded');
-    assert.deepEqual(notes, ['not_loaded']);
-    assert.ok(asked.every((s) => s === installStartedLocal));
-    assert.equal(asked.length, 3, 'one request per poll, no extra one');
-  });
-
-  it('an unparseable Date header means no correction', async () => {
-    const localNow = S0 + 5 * 60_000;
-    const installStartedLocal = localNow - 60_000;
-    const server = serverAt(S0, { date: 'not a date' });
-    const { promise } = watch({ since: new Date(installStartedLocal).toISOString(), timeoutMs: 30_000, fetch: server.fetch }, localNow);
-    assert.equal(await promise, 'not_loaded');
-    assert.ok(server.asked.every((s) => s === installStartedLocal));
-  });
-
-  it('the gap is read from the first answer even when it is an error status', async () => {
-    const ahead = 5 * 60_000;
-    const localNow = S0 + ahead;
-    const installStartedLocal = localNow - 60_000;
-    let n = 0;
-    const asked = [];
-    const { promise } = watch({
-      since: new Date(installStartedLocal).toISOString(),
-      fetch: async (url) => {
-        n += 1;
-        const since = Date.parse(new URL(url).searchParams.get('since'));
-        asked.push(since);
-        if (n <= 2) return answer(500, { error: 'first_load_unavailable' }, new Date(S0).toUTCString());
-        return answer(200, { loaded: since < LOAD_AT, at: null }, new Date(S0).toUTCString());
-      },
-    }, localNow);
-    assert.equal(await promise, 'loaded');
-    assert.equal(asked[asked.length - 1], installStartedLocal - ahead);
-  });
 });
 
 describe('replaceRunningWatcher (one watcher at a time)', () => {

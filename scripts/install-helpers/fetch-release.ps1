@@ -124,6 +124,23 @@ function Test-OwnMindDiskFull {
   return $false
 }
 
+# Move-OwnMindItemRetry -Path FROM -Destination TO
+# Antivirus often holds a freshly unpacked file (node.exe above all) for a few seconds while it
+# scans it, so the rename fails with access denied and then succeeds. Up to five tries, two seconds
+# apart; a full disk does not get better by waiting, so that error is thrown at once.
+function Move-OwnMindItemRetry {
+  param([string]$Path, [string]$Destination)
+  for ($try = 1; $try -le 5; $try++) {
+    try {
+      Move-Item -LiteralPath $Path -Destination $Destination -ErrorAction Stop
+      return
+    } catch {
+      if ($try -eq 5 -or (Test-OwnMindDiskFull $_)) { throw }
+      Start-Sleep -Seconds 2
+    }
+  }
+}
+
 # Write-OwnMindStopWrite -Code CODE -Message TEXT -ErrorRecord $_
 # A step that writes to disk failed. A full disk is something only the person can fix (ASK);
 # anything else is worth one more run (FIX).
@@ -347,7 +364,7 @@ function Expand-OwnMindRelease {
     if ($parent -and -not (Test-Path -LiteralPath $parent)) {
       New-Item -ItemType Directory -Force -Path $parent -ErrorAction Stop | Out-Null
     }
-    Move-Item -LiteralPath $root -Destination $Final -ErrorAction Stop
+    Move-OwnMindItemRetry -Path $root -Destination $Final
   } catch {
     Write-OwnMindStopWrite -Code unpack -Message "Could not move the unpacked files into $Final" -ErrorRecord $_
     return $false

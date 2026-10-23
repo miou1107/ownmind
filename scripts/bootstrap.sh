@@ -52,6 +52,11 @@ ownmind_print_next() {
   if [ -s "$OWNMIND_NEXT_FILE" ]; then cat "$OWNMIND_NEXT_FILE"; fi
   rm -f "$OWNMIND_NEXT_FILE" 2>/dev/null || true
 }
+# Prints 1 when this run carries the key and URL (the install message), nothing otherwise. The
+# no-argument run is the upgrade the ownmind-upgrade skill starts.
+ownmind_install_args() {
+  if [ -n "${1:-${OWNMIND_INSTALL_KEY:-}}" ] && [ -n "${2:-}" ]; then echo 1; fi
+}
 # The server address the FIX lines name; the arguments are KEY URL.
 OWNMIND_FIX_API="${2:-${OWNMIND_API_URL:-}}"
 OWNMIND_FIX_API="${OWNMIND_FIX_API%/}"
@@ -344,7 +349,11 @@ fi
 # Branch 2: no .git. With .release and install.sh this is a healthy archive install; otherwise it is broken.
 # A swap journal without .release is an archive update stopped part-way, not a broken directory.
 if [ ! -d "$OWNMIND_DIR/.git" ] && { [ -f "$OWNMIND_DIR/.release" ] || [ -f "$OWNMIND_DIR/.swap-journal.json" ]; } && [ -f "$OWNMIND_DIR/install.sh" ]; then
-  if grep -q 'ARCHIVE_MODE' "$OWNMIND_DIR/scripts/interactive-upgrade.sh" 2>/dev/null; then
+  # A run that carries the key and URL is the install message pasted again, usually after a FIX
+  # or ASK stopped the first install part-way (no Node yet, no credentials written, npm failed).
+  # The upgrader cannot finish that: it reads the credentials from settings and never installs
+  # Node. install.sh does both, so it runs here; the upgrader is for the no-argument upgrade.
+  if [ -z "$(ownmind_install_args "$@")" ] && grep -q 'ARCHIVE_MODE' "$OWNMIND_DIR/scripts/interactive-upgrade.sh" 2>/dev/null; then
     log_info upgrade "Archive install found; delegating to interactive-upgrade.sh"
     exec bash "$OWNMIND_DIR/scripts/interactive-upgrade.sh"
   fi
@@ -381,6 +390,22 @@ if [ ! -d "$OWNMIND_DIR/.git" ]; then
   cd "$OWNMIND_DIR"
   bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }
   log_ok done "Repair complete (old data preserved at $BAK; backups older than 7 days are swept on next upgrade)"
+  ownmind_print_next
+  exit 0
+fi
+
+# Branch 3 with the key and URL: the install message pasted on a machine that already has a git
+# checkout (a first install that stopped after the clone, or a reinstall). The upgrader would skip
+# install.sh when no credentials were written yet, so the checkout is brought up to date when it
+# can be (a fast-forward only; local changes are left alone) and install.sh runs with the arguments.
+if [ -n "$(ownmind_install_args "$@")" ]; then
+  log_info reinstall "Installed (git); re-running install.sh with the key and URL"
+  cd "$OWNMIND_DIR"
+  if [ "$HAS_GIT" = "1" ] && ! git pull --ff-only --quiet 2>/dev/null; then
+    log_info reinstall "Could not fast-forward the checkout; installing the code that is here"
+  fi
+  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }
+  log_ok done "Install checked"
   ownmind_print_next
   exit 0
 fi

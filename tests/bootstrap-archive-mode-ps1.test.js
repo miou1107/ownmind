@@ -143,8 +143,11 @@ test('a failed download removes the partial directory; unpack goes through unpac
   assert.match(bootstrap, /\$dl = @\(Get-OwnMindArchive -Key \$key -Api \$api -Dest \(Join-Path \$partial 'archive\.zip'\)\) \| Select-Object -Last 1\n\s+if \(\$null -eq \$dl\) \{\n\s+Remove-Item -LiteralPath \$partial -Recurse -Force -ErrorAction SilentlyContinue\n\s+exit 1/);
   const unpack = embeddedBlock(bootstrap, 'fetch-release');
   assert.match(unpack, /\$unpack = Join-Path \$Partial 'unpack'/);
-  assert.match(unpack, /Move-Item -LiteralPath \$root -Destination \$Final/);
-  assert.ok(unpack.indexOf('Expand-Archive') < unpack.indexOf('Move-Item'), 'nothing is moved into place before the unpack finished');
+  assert.match(unpack, /Move-OwnMindItemRetry -Path \$root -Destination \$Final/);
+  assert.ok(unpack.indexOf('Expand-Archive') < unpack.indexOf('Move-OwnMindItemRetry -Path $root'), 'nothing is moved into place before the unpack finished');
+  // The move is retried while antivirus holds a freshly unpacked file, but not on a full disk.
+  assert.match(unpack, /for \(\$try = 1; \$try -le 5; \$try\+\+\)/);
+  assert.match(unpack, /if \(\$try -eq 5 -or \(Test-OwnMindDiskFull \$_\)\) \{ throw \}/);
   assert.match(unpack, /The archive is missing \.release or install\.ps1/);
   assert.match(unpack, /\[System\.IO\.File\]::WriteAllText\(\(Join-Path \$root '\.release'\)/);
 });

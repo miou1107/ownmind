@@ -46,6 +46,11 @@ function makeFixtureRoot() {
   put('client/src/main.jsx', 'x');
   put('client/package.json', '{}');
   put('.git/HEAD', 'ref');
+  // Secrets a server started from a working copy can hold.
+  put('.env', 'DB_PASSWORD=secret\n');
+  put('.env.production', 'DB_PASSWORD=secret\n');
+  put('.env.example', 'DB_PASSWORD=\n');
+  put('mcp/server.pem', 'placeholder certificate body\n');
   return root;
 }
 
@@ -145,6 +150,9 @@ describe('the archive in zip format', () => {
     }
     assert.ok(!names.includes('src/app.js'));
     assert.ok(!names.some((n) => n.split('/').includes('node_modules')));
+    for (const secret of ['.env', '.env.production', 'mcp/server.pem']) {
+      assert.ok(!names.includes(secret), `${secret} must never reach a client`);
+    }
   });
 
   it('the default stays tar.gz, and an empty format means the default', async () => {

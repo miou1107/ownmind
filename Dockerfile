@@ -39,6 +39,9 @@ COPY mcp/ ./mcp/
 COPY hooks/ ./hooks/
 COPY skills/ ./skills/
 COPY configs/ ./configs/
+# The release archive for machines without git is packed from this image, and install.sh
+# installs the two mods from mods/; without this line those machines silently get neither.
+COPY mods/ ./mods/
 # shared/ 被 server 端多個模組 import（events.js 需要 id-helper，若未來也可能需要
 # helpers.js 等）。scanners/ 內有 base.js / id-helper.js / claude-code.js / codex.js
 # / opencode.js / vscode-telemetry.js / cursor.js / antigravity.js；id-helper 是

@@ -181,6 +181,23 @@ function Test-OwnMindDiskFull {
   return $false
 }
 
+# Move-OwnMindItemRetry -Path FROM -Destination TO
+# Antivirus often holds a freshly unpacked file (node.exe above all) for a few seconds while it
+# scans it, so the rename fails with access denied and then succeeds. Up to five tries, two seconds
+# apart; a full disk does not get better by waiting, so that error is thrown at once.
+function Move-OwnMindItemRetry {
+  param([string]$Path, [string]$Destination)
+  for ($try = 1; $try -le 5; $try++) {
+    try {
+      Move-Item -LiteralPath $Path -Destination $Destination -ErrorAction Stop
+      return
+    } catch {
+      if ($try -eq 5 -or (Test-OwnMindDiskFull $_)) { throw }
+      Start-Sleep -Seconds 2
+    }
+  }
+}
+
 # Write-OwnMindStopWrite -Code CODE -Message TEXT -ErrorRecord $_
 # A step that writes to disk failed. A full disk is something only the person can fix (ASK);
 # anything else is worth one more run (FIX).
@@ -404,7 +421,7 @@ function Expand-OwnMindRelease {
     if ($parent -and -not (Test-Path -LiteralPath $parent)) {
       New-Item -ItemType Directory -Force -Path $parent -ErrorAction Stop | Out-Null
     }
-    Move-Item -LiteralPath $root -Destination $Final -ErrorAction Stop
+    Move-OwnMindItemRetry -Path $root -Destination $Final
   } catch {
     Write-OwnMindStopWrite -Code unpack -Message "Could not move the unpacked files into $Final" -ErrorRecord $_
     return $false
@@ -485,6 +502,11 @@ Log-Info detect "Checking OwnMind installation ($OwnmindDir)"
 # `$env:OWNMIND_API_KEY=... iwr | iex` patterns work.
 $InstallArgs = $args
 
+# True when this run carries the key and URL (the install message: positional KEY URL, or the two
+# variables it sets). The no-argument run is the upgrade the ownmind-upgrade skill starts.
+$positionalArgs = @($InstallArgs | Where-Object { $_ -and ("$_" -notlike '-*') })
+$HasInstallArgs = ($positionalArgs.Count -ge 2) -or (($env:OWNMIND_API_KEY -or $env:OWNMIND_INSTALL_KEY) -and $env:OWNMIND_API_URL)
+
 # Branch 1: no install
 if (-not (Test-Path "$OwnmindDir")) {
   if (-not $HasGit) {
@@ -513,8 +535,11 @@ if (-not (Test-Path "$OwnmindDir")) {
 # A swap journal without .release is an archive update stopped part-way, not a broken directory.
 if (-not (Test-Path "$OwnmindDir\.git") -and ((Test-Path -LiteralPath "$OwnmindDir\.release") -or (Test-Path -LiteralPath "$OwnmindDir\.swap-journal.json")) -and (Test-Path -LiteralPath "$OwnmindDir\install.ps1")) {
   $upgrader = "$OwnmindDir\scripts\interactive-upgrade.ps1"
-  # a later task adds an archive branch to the upgrader and marks it with this literal
-  if ((Test-Path -LiteralPath $upgrader) -and (Select-String -LiteralPath $upgrader -Pattern 'ARCHIVE_MODE' -SimpleMatch -Quiet)) {
+  # The upgrader's archive branch is marked with this literal. A run that carries the key and URL
+  # is the install message pasted again, usually after a FIX or ASK stopped the first install
+  # part-way (no Node yet, no credentials written, npm failed). The upgrader cannot finish that: it
+  # reads the credentials from settings and never installs Node; install.ps1 does both.
+  if ((-not $HasInstallArgs) -and (Test-Path -LiteralPath $upgrader) -and (Select-String -LiteralPath $upgrader -Pattern 'ARCHIVE_MODE' -SimpleMatch -Quiet)) {
     Log-Info upgrade "Archive install found; delegating to interactive-upgrade.ps1"
     & powershell -ExecutionPolicy Bypass -File $upgrader
     exit $LASTEXITCODE
@@ -555,6 +580,24 @@ if (-not (Test-Path "$OwnmindDir\.git")) {
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"; exit 1 }
   Log-Ok done "Repair complete (old data preserved at $Bak; backups older than 7 days are swept on next upgrade)"
+  Write-OwnMindNext
+  exit 0
+}
+
+# Branch 3 with the key and URL: the install message pasted on a machine that already has a git
+# checkout (a first install that stopped after the clone, or a reinstall). The upgrader would skip
+# install.ps1 when no credentials were written yet, so the checkout is brought up to date when it
+# can be (a fast-forward only; local changes are left alone) and install.ps1 runs with the arguments.
+if ($HasInstallArgs) {
+  Log-Info reinstall "Installed (git); re-running install.ps1 with the key and URL"
+  Set-Location "$OwnmindDir"
+  if ($HasGit) {
+    & git pull --ff-only --quiet 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { Log-Info reinstall "Could not fast-forward the checkout; installing the code that is here" }
+  }
+  & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
+  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"; exit 1 }
+  Log-Ok done "Install checked"
   Write-OwnMindNext
   exit 0
 }

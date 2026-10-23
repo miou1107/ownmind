@@ -44,7 +44,13 @@ function isExcluded(rel) {
   if (!rel.includes('/') && isStateName(rel)) return true;
   // Under src/ only utils/ is kept (src/ itself stays so that utils/ has a parent).
   if (rel.startsWith('src/') && rel !== 'src/utils' && !rel.startsWith('src/utils/')) return true;
-  return rel.split('/').some((part) => EXCLUDED_NAMES.has(part));
+  return rel.split('/').some((part) => EXCLUDED_NAMES.has(part) || isSecretName(part));
+}
+
+// Secrets a server checkout can hold (the Docker image already leaves .env out through
+// .dockerignore; a server started from a working copy does not). Never shipped to a client.
+function isSecretName(name) {
+  return name === '.env' || (name.startsWith('.env.') && name !== '.env.example') || name.endsWith('.pem');
 }
 
 function tarCreate(archivePath, cwd, entries) {

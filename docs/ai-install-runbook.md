@@ -95,6 +95,7 @@ Each shape below is a known failure, and the action for it. All of them end the 
 | `ASK:disk_full` | The disk has no room. | Say the sentence and stop. Nothing is partly installed that a re-run cannot repair. |
 | `ERROR:missing_args`, `FIX:rerun_with_args` | The key or URL was left out of the command. | Use the key and URL from the install message. |
 | Your tool shows a prompt, or says it may not run commands | A permission, not an installer problem. | See Permissions below. |
+| The command printed nothing, or only a `curl:` / `irm` error, and no line with one of the six prefixes | The installer itself never downloaded (the server was unreachable, or refused too many requests at once), so nothing ran and nothing changed. | Wait one minute and run the one-liner once more. If it again prints no prefixed line, tell the user the OwnMind server could not be reached from this computer and stop. |
 
 ### Permissions
 

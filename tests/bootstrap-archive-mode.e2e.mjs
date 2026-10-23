@@ -47,6 +47,17 @@ function buildArchive(workDir, name, { top = '', release } = {}) {
     '',
   ].join('\n'));
   fs.writeFileSync(path.join(root, 'scripts', 'marker.sh'), '# present\n');
+  // Shaped like the real release: its upgrader carries the ARCHIVE_MODE literal bootstrap looks
+  // for. This stub records that it ran and fails the way the real one does on a machine whose
+  // first install stopped before Node or the credentials were in place.
+  fs.writeFileSync(path.join(root, 'scripts', 'interactive-upgrade.sh'), [
+    '#!/bin/sh',
+    '# ARCHIVE_MODE',
+    ': > "$HOME/upgrader-ran"',
+    'echo "ERROR:archive_update:Archive update failed (no output); nothing was changed."',
+    'exit 1',
+    '',
+  ].join('\n'));
   const out = path.join(workDir, `${name}.tar.gz`);
   const entries = top ? [top] : fs.readdirSync(src);
   const r = spawnSync('tar', ['-czf', out, '-C', src, ...entries], { encoding: 'utf8' });
@@ -226,6 +237,25 @@ test('install.sh failing after a full unpack leaves a healthy archive install th
     assert.doesNotMatch(second.out, /archive_mode|broken|\.broken\./);
     assert.equal(fixture.requests.length, 0, 'a healthy archive install must not be downloaded again');
     assert.deepEqual(fs.readdirSync(mac.home).filter((n) => n.includes('.broken.')), []);
+    // The install message carries the key and URL, so install.sh runs, not the upgrader (which
+    // cannot finish a first install), and the run ends on the NEXT line.
+    assert.ok(!fs.existsSync(path.join(mac.home, 'upgrader-ran')), second.out);
+    assert.deepEqual(fs.readFileSync(path.join(mac.home, 'install-stub-args'), 'utf8').trim().split('\n'), [KEY, fixture.url]);
+    assert.match(second.stdout.trim().split('\n').pop(), /^NEXT:verify:/);
+  } finally {
+    mac.cleanup();
+  }
+});
+
+test('an archive install run with no arguments is an upgrade: bootstrap hands it to the upgrader', { skip }, async () => {
+  const mac = makeCleanMac();
+  try {
+    fixture.mode = 'ok';
+    const first = await runBootstrap(mac);
+    assert.equal(first.status, 0, first.out);
+    const second = await runBootstrap(mac, {}, []);
+    assert.match(second.out, /INFO:upgrade:Archive install found; delegating to interactive-upgrade\.sh/);
+    assert.ok(fs.existsSync(path.join(mac.home, 'upgrader-ran')), second.out);
   } finally {
     mac.cleanup();
   }

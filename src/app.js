@@ -92,8 +92,22 @@ const installLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '請求太頻繁，請稍後再試' },
+  // first-load has its own per-account limit below: an office where several colleagues install
+  // at once shares one address, and each install's watcher asks four times a minute.
+  skip: (req) => req.originalUrl.startsWith('/api/install/first-load'),
 });
 app.use(['/install.sh', '/install.ps1', '/install-manual.md', '/api/install'], installLimiter);
+const firstLoadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // The key is the account's own key (the route requires it), so colleagues behind one
+  // address do not share a budget. A request without one is refused by auth anyway.
+  keyGenerator: (req) => req.headers.authorization || 'no-key',
+  message: { error: '請求太頻繁，請稍後再試' },
+});
+app.use('/api/install/first-load', firstLoadLimiter);
 app.use(createInstallRouter({
   query, auth, logger,
   nodeArchive: createNodeArchiveService({

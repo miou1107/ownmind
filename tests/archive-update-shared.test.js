@@ -375,21 +375,22 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
     assert.deepEqual(leftovers(), []);
   });
 
-  it('EBUSY on the third entry: a journal, entries 1-2 new and the rest old; the next run finishes without a download', async () => {
+  it('EBUSY on the fourth entry: a journal, entries 1-3 new and the rest old; the next run finishes without a download', async () => {
     seedInstall();
     const before = stateSnapshot();
-    // Entries in order: .gitignore, install.ps1, install.sh, mcp, package.json, scripts, .release.
+    // Entries in order: mcp (an imported folder goes first), .gitignore, install.ps1, install.sh,
+    // package.json, scripts, .release.
     const busy = failingRename((a) => path.resolve(a) === path.resolve(live('install.sh')));
     const first = await opts({ fetch: fakeFetch().fetch, execFile: fakeExec().execFile, fileSystem: busy.fileSystem }).run();
     assert.equal(first.outcome, FAILED);
     assert.equal(first.reason, 'swap_pending');
     const journal = JSON.parse(read(dir, '.swap-journal.json'));
-    assert.deepEqual(journal.entries, ['.gitignore', 'install.ps1', 'install.sh', 'mcp', 'package.json', 'scripts', '.release']);
-    assert.deepEqual(journal.done, ['.gitignore', 'install.ps1']);
-    assert.equal(read(dir, '.gitignore'), 'node_modules/\n', 'entry 1 is new');
-    assert.equal(read(dir, 'install.ps1'), '# installer\n', 'entry 2 is new');
-    assert.equal(read(dir, 'install.sh'), '#!/bin/sh\n', 'entry 3 is still the old one');
-    assert.equal(read(dir, 'mcp', 'index.js'), '// v1.0.0\n');
+    assert.deepEqual(journal.entries, ['mcp', '.gitignore', 'install.ps1', 'install.sh', 'package.json', 'scripts', '.release']);
+    assert.deepEqual(journal.done, ['mcp', '.gitignore', 'install.ps1']);
+    assert.equal(read(dir, 'mcp', 'index.js'), '// v1.1.0\n', 'the imported folder is new before anything else');
+    assert.equal(read(dir, '.gitignore'), 'node_modules/\n', 'entry 2 is new');
+    assert.equal(read(dir, 'install.ps1'), '# installer\n', 'entry 3 is new');
+    assert.equal(read(dir, 'install.sh'), '#!/bin/sh\n', 'entry 4 is still the old one');
     assert.equal(read(dir, '.release').trim(), 'v1.0.0', '.release changes last');
     assert.equal(read(dir, '.next', 'install.sh'), '#!/bin/sh\nexit 0\n', 'the new copy waits in .next');
 
@@ -496,10 +497,10 @@ describe('helpers', () => {
     assert.equal(compareReleases('v0.0.1', 'main'), 1);
   });
 
-  it('codeEntries puts .release last and throws on a runtime-state name', () => {
+  it('codeEntries swaps the imported folders first, .release last, and throws on a runtime-state name', () => {
     const d = tempDir('ownmind-archive-entries-');
-    writeTree(d, { '.release': 'v1\n', 'mcp/x': '', 'install.sh': '', '.gitignore': '' });
-    assert.deepEqual(codeEntries(fs, d), ['.gitignore', 'install.sh', 'mcp', '.release']);
+    writeTree(d, { '.release': 'v1\n', 'mcp/x': '', 'install.sh': '', '.gitignore': '', 'hooks/h.js': '', 'shared/s.js': '', 'src/utils/u.js': '' });
+    assert.deepEqual(codeEntries(fs, d), ['shared', 'src', 'mcp', '.gitignore', 'hooks', 'install.sh', '.release']);
     for (const name of ['runtime', 'credentials', 'cache', 'state', 'logs', 'reports', '.node-path', '.no-usage-scanner',
       'judge.json', '.swap-pending', '.prev', '.next', '.no-anything-new', '.last-whatever']) {
       assert.ok(isStateEntry(name), name);

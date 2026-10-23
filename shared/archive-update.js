@@ -193,9 +193,16 @@ function copyEntry(fileSystem, from, to) {
   });
 }
 
+// Swapped before everything else: the folders the hooks, the MCP server and the scripts import
+// from. If a rename stops part-way (antivirus holding a file on Windows), the hooks left running
+// until the next update then still load the code they expect, not a newer hook against an older
+// shared/.
+const SWAP_FIRST = ['shared', 'src', 'mcp'];
+
 /**
- * The code entries of a staged release: its top-level entries, `.release` last. Throws (code
- * `state_collision`) when one of them is a name the client keeps its runtime state under.
+ * The code entries of a staged release: its top-level entries, the imported folders first and
+ * `.release` last. Throws (code `state_collision`) when one of them is a name the client keeps
+ * its runtime state under.
  */
 export function codeEntries(fileSystem, nextDir) {
   const names = fileSystem.readdirSync(nextDir).sort();
@@ -205,7 +212,9 @@ export function codeEntries(fileSystem, nextDir) {
     err.code = 'state_collision';
     throw err;
   }
-  return [...names.filter((n) => n !== '.release'), ...(names.includes('.release') ? ['.release'] : [])];
+  const first = SWAP_FIRST.filter((n) => names.includes(n));
+  const rest = names.filter((n) => n !== '.release' && !SWAP_FIRST.includes(n));
+  return [...first, ...rest, ...(names.includes('.release') ? ['.release'] : [])];
 }
 
 /** Has `dir` everything an unpacked release must have? */
