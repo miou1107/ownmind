@@ -1,5 +1,17 @@
 # OwnMind 檔案結構
 
+## v1.33.2 修改（2026-10-23，規矩內文猜錯技能名字的誤報，#197）
+
+修改檔：
+```
+shared/required-skills.js                               — 名字要緊接 skill／技能或調用類動詞才算技能，帶外掛名稱的名字都算；用「例如」舉出來的、否定句裡的不算；跳過自動產生的起源段落；自動猜的清單一律照現在的猜法重算；送回的 auto 清單不會變成手動清單
+src/routes/memory.js                                    — /init 把跟新猜法不一致的自動清單寫回資料庫，只在資料庫還是讀到的那份舊清單時才寫，手動清單不動，updated_at 不變
+mcp/index.js                                            — ownmind_save 的 metadata 說明改成新的猜法，並寫明送回 auto 清單仍算猜測
+tests/required-skills.test.js                           — 四種誤報各一個重現案例，加上清單、例句、否定句、粗體引號、長空白速度的案例
+tests/required-skills-route.test.js                     — 舊版存的自動清單在 /init 重算並寫回，手動清單不動
+README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md, package.json — 版號 v1.33.2
+```
+
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
 
 修改檔：

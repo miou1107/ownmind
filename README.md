@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **Website**: https://miou1107.github.io/ownmind/
 
-**Current version: v1.33.1** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.33.2** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 

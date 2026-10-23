@@ -566,7 +566,7 @@ const TOOLS = [
         },
         metadata: {
           type: "object",
-          description: "Additional metadata (optional). For an iron_rule, `required_skills` lists the skills the rule tells the AI to use (e.g. [\"zh-tw-doc-copy\"]); each machine that loads the rule says so when one is not installed there. Leave it out and OwnMind fills it from backticked names in a rule that mentions skills; the response carries required_skills_note when it did. [] means the rule needs no skill.",
+          description: "Additional metadata (optional). For an iron_rule, `required_skills` lists the skills the rule tells the AI to use (e.g. [\"zh-tw-doc-copy\"]); each machine that loads the rule says so when one is not installed there. Leave it out and OwnMind guesses it from backticked names the rule calls skills or calls up (\"use skill `x`\", \"調用 `x`\"); the response carries required_skills_note when it did. [] means the rule needs no skill. Sending metadata back with required_skills_source: \"auto\" keeps the list a guess; to set your own list, leave that key out.",
         },
         // v1.18.2: iron_rule only — AI fills in time-and-place context
         origin_event: {
