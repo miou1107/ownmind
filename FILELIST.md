@@ -11,6 +11,9 @@ shared/node-runtime.js                                  — 安裝腳本與伺�
 src/services/node-archive.js                            — createNodeArchiveService：找出最新的 22.x，從 nodejs.org 下載並對照 SHASUMS256.txt，通過後存進快取資料夾，之後直接從快取提供；nodejs.org 的版本清單連不上時，提供快取裡最新的一版
 tests/node-archive.test.js                              — GET /api/install/node 的 400、503、兩個標頭、第二次不連網，以及 24 小時內只查一次 index.json
 tests/node-runtime-shared.test.js                       — 四種壓縮檔名稱、下載網址，以及 verifySha256 檢查碼對與不對
+tests/helpers/clean-mac-sim.mjs                         — makeCleanMac：模擬乾淨 Mac 的測試助手，空的暫時 HOME 加上只放系統工具的 PATH（沒有 git、node、npm、brew）
+tests/clean-mac-sim.test.js                             — 乾淨 Mac 助手的自測：git、node 找不到，curl、tar 找得到，HOME 是空的，真實的 HOME 和 CLAUDECODE 不會漏進來
+docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md — 零接觸安裝的實測紀錄：新開的 claude 行程讀不讀得到剛裝好的 OwnMind（驗收時再補）
 ```
 
 修改檔：
