@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **ウェブサイト**：https://miou1107.github.io/ownmind/
 
-**現在のバージョン：v1.33.2** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.33.3** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -298,9 +298,9 @@ graph LR
 
 ## システム要件
 
-- **クライアント**：Node.js 20+、Git 2.30+
+- **クライアント**：macOS と Windows では事前の準備は不要で、足りないものはインストーラーが用意します。Linux では Node.js 20+ と Git 2.30+ を先にインストールしてください。
 - **サーバー**：セルフホスト（Docker Compose ワンクリックデプロイ提供）、または認可ホスト型サービス利用
-- **対応プラットフォーム**：macOS / Linux / Windows（Windows ユーザーは Git for Windows フルインストーラ必要、Git hook が sh.exe を使用）
+- **対応プラットフォーム**：macOS / Linux / Windows（Windows の Git hook には Git for Windows フルインストーラの sh.exe が必要です。Git がないパソコンでは Git hook を省略します）
 - **対応 AI ツール**：Claude Code、Codex CLI、Cursor、Copilot、OpenCode、Windsurf、Gemini CLI など MCP（Model Context Protocol：AI と外部ツールの統合標準）またはフックを読めるクライアント
 
 ---

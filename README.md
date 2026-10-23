@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **Website**: https://miou1107.github.io/ownmind/
 
-**Current version: v1.33.2** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.33.3** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -299,9 +299,9 @@ Because static rule files are fragile — AI hallucinations bypass them silently
 
 ## System Requirements
 
-- **Client**: Node.js 20+, Git 2.30+
+- **Client**: on macOS and Windows, nothing needs to be installed first; the installer brings whatever is missing. Linux needs Node.js 20+ and Git 2.30+ installed first.
 - **Server**: Self-host (Docker Compose one-click deploy provided) or use a licensed hosted service
-- **Platforms**: macOS / Linux / Windows (Windows users need full Git for Windows installer for sh.exe used by Git hooks)
+- **Platforms**: macOS / Linux / Windows (on Windows the Git hooks need sh.exe from the full Git for Windows installer; a machine without Git skips the Git hooks)
 - **Supported AI tools**: Claude Code, Codex CLI, Cursor, Copilot, OpenCode, Windsurf, Gemini CLI, or any client that reads MCP (Model Context Protocol: standard for AI ↔ external tool integration) or hooks
 
 ---

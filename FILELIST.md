@@ -168,6 +168,9 @@ tests/install-clean-machine.e2e.mjs, tests/bootstrap-archive-mode.e2e.mjs — ru
 scripts/install-helpers/first-load-watch.cjs            — corrects `since` by the gap between the server's Date header and the local clock (over 30 s), times out each request after 10 s, prints the sentence on Linux, and detaches itself into its own session (--child) without the key in its environment
 install.sh, install.ps1                                 — call the watcher in the foreground (it detaches itself); no nohup or disown
 docs/ai-install-runbook.md                              — a note that the desktop notification may not appear (a Mac attributes it to Script Editor) and the verification session is the real proof
+README.md, docs/README.zh-TW.md, docs/README.ja.md       — System Requirements: macOS and Windows need nothing installed beforehand (the installer brings its own Node.js and installs without Git); Linux still needs Node.js 20+ and Git 2.30+
+docs/superpowers/specs/2026-10-23-zero-touch-install-design.md, docs/superpowers/plans/2026-10-23-zero-touch-install.md, tests/admin-users-last-load.test.js, tests/team-last-load-state.test.js — colleague names and machine names replaced with neutral labels
+README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md, package.json — version v1.33.3
 ```
 
 ## v1.33.2 修改（2026-10-23，規矩內文猜錯技能名字的誤報，#197）

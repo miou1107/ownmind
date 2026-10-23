@@ -66,11 +66,11 @@ describe('lastLoadState — green', () => {
 
 describe('lastLoadState — yellow', () => {
   it('installed but never loaded: pill text and 機器，M/D 裝的', () => {
-    const s = lastLoadState(row({ first_install_at: at(10, 22, 11, 0), last_machine: 'DESKTOP-UOTCNN6' }), NOW);
+    const s = lastLoadState(row({ first_install_at: at(10, 22, 11, 0), last_machine: 'DESKTOP-TEST01' }), NOW);
     assert.equal(s.light, 'yellow');
     assert.equal(s.labelKey, 'team.load.never');
     assert.equal(s.pill, true);
-    assert.deepEqual(s.detail, { key: 'team.load.never_detail', params: { machine: 'DESKTOP-UOTCNN6', date: '10/22' } });
+    assert.deepEqual(s.detail, { key: 'team.load.never_detail', params: { machine: 'DESKTOP-TEST01', date: '10/22' } });
     assert.equal(s.tipKey, 'team.load.tip.yellow');
   });
 

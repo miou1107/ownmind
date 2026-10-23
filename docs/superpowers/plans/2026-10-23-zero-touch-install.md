@@ -277,7 +277,7 @@ git commit -am "feat(install): hooks and MCP use the private Node runtime when t
 - Modify: `client/src/i18n/*.json` (`team.col.last_load`, `team.load.green`, `team.load.yellow`, `team.load.red` tooltips; zh first)
 - Test: `tests/admin-users-last-load.test.js` (server: seeded rows → the three fields; a user with no rows → nulls); client test beside the existing TeamPage tests for the light mapping: loaded < 24 h → green, never → yellow, error after last load → red
 
-- [ ] **Step 0: Mockup first.** Build a static HTML mockup of the table with the new column (three example rows: Emily green, Morishita yellow, Frank red), publish as an Artifact, get Vin's OK. Do not start Step 1 before that.
+- [ ] **Step 0: Mockup first.** Build a static HTML mockup of the table with the new column (three example rows: colleague B green, colleague C yellow, colleague A red), publish as an Artifact, get Vin's OK. Do not start Step 1 before that.
 - [ ] Steps: failing tests → implement → `npm test` → commit `feat(console): team page shows each member's last memory load`.
 
 ---
@@ -299,4 +299,4 @@ git commit -am "feat(install): hooks and MCP use the private Node runtime when t
 - [ ] **Step 3:** `superpowers:requesting-code-review`; address with `superpowers:receiving-code-review`.
 - [ ] **Step 4:** PR against `main` (no generated-with line), merge, tag `v1.34.0`.
 - [ ] **Step 5:** Deploy: on the production host `git pull && docker compose build --no-cache && docker compose up -d`; confirm `GET /install.sh` from outside and `GET /api/install/node?os=darwin&arch=arm64` with Vin's key returns 200.
-- [ ] **Step 6:** Re-run the Mac acceptance (Task 16 Step 1) against production. Tell Vin: the new prompt is in the console's copy action; Frank, Emily and Morishita can re-run it to move onto the archive/private-runtime layout, or stay as they are.
+- [ ] **Step 6:** Re-run the Mac acceptance (Task 16 Step 1) against production. Tell Vin: the new prompt is in the console's copy action; colleagues A, B and C can re-run it to move onto the archive/private-runtime layout, or stay as they are.

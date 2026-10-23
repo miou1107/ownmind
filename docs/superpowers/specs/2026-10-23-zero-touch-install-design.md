@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-23
 **Status**: Approved by Vin 2026-10-23 (chat: "OK" after the manual and permission additions)
-**Origin**: On 2026-10-22 Vin installed OwnMind for three colleagues (Frank, Emily, Morishita).
+**Origin**: On 2026-10-22 Vin installed OwnMind for three colleagues (colleagues A, B and C).
 None of the three machines had git, Node.js or the Xcode command line tools. Vin had to sit at
 each machine, run the missing installers by hand, re-run OwnMind's installer, and then explain
 that Claude has to be fully restarted before OwnMind works. Vin's requirement on 2026-10-23,
@@ -73,7 +73,7 @@ actually loaded, and the admin can see from the console that the machine is live
   inside the one command lives there; the AI runs a second command only in the rare cases
   the `FIX:` grammar names.
 - "Install complete" printed while memories never load. The 2026-10-22 broadcast already
-  showed Emily's and Morishita's machines in that state. The success claim must come from a
+  showed colleague B's and colleague C's machines in that state. The success claim must come from a
   real session load, not from the installer's last line.
 - Closing the colleague's application without asking. The user's own rule (an iron rule:
   before closing an application the user is working in, ask a yes/no question first) stands.
@@ -363,11 +363,11 @@ before it is coded.
 
 ### 7. What the colleague experiences
 
-Emily opens the Claude desktop app, pastes Vin's message, presses Enter, clicks "allow" once
+Colleague B opens the Claude desktop app, pastes Vin's message, presses Enter, clicks "allow" once
 when the app asks whether the command may run. The AI narrates a few steps for about two
 minutes. The AI says OwnMind is installed and a verification conversation is opening. A new
 session appears in the sidebar; its first lines show her memories loading and it says so. A
-desktop notification says OwnMind is working. Vin, at his desk, sees Emily's row on the team
+desktop notification says OwnMind is working. Vin, at his desk, sees colleague B's row on the team
 page turn green.
 
 If her company network blocks GitHub, she sees nothing different: the download came from

@@ -33,14 +33,14 @@ function call(rowsFromDb, { fail = false } = {}) {
 }
 
 const BASE = {
-  name: 'Emily', role: 'user', api_key_prefix: 'om_3f8a1', must_change_password: false,
+  name: 'Member B', role: 'user', api_key_prefix: 'om_3f8a1', must_change_password: false,
   created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', deactivated_at: null,
 };
 
 describe('GET /users last-load fields', () => {
   it('passes the four fields through for a member who has loaded memories', async () => {
     const seeded = [{
-      ...BASE, id: 1, email: 'emily@x',
+      ...BASE, id: 1, email: 'member-b@x',
       last_memory_load_at: '2026-10-23T01:12:00Z', last_machine: 'iMac.local',
       first_install_at: '2026-10-22T05:00:00Z', last_install_error_at: null,
     }];

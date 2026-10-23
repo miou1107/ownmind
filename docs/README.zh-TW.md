@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **網站**：https://miou1107.github.io/ownmind/
 
-**目前版本：v1.33.2** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.33.3** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -297,9 +297,9 @@ graph LR
 
 ## 系統需求
 
-- **客戶端**：Node.js 20+、Git 2.30+
+- **客戶端**：macOS 與 Windows 不用先準備任何軟體，缺少的部分安裝程式會自己補齊。Linux 要先裝好 Node.js 20+ 與 Git 2.30+。
 - **伺服器端**：自架（提供 Docker Compose 一鍵部署）或使用授權主辦方提供的服務
-- **支援平台**：macOS / Linux / Windows（Windows 用戶需安裝完整版 Git for Windows、提供 sh.exe 給 Git hook 使用）
+- **支援平台**：macOS / Linux / Windows（Windows 的 Git hook 需要完整版 Git for Windows 提供的 sh.exe；沒有 Git 的電腦會略過 Git hook）
 - **支援的 AI 工具**：Claude Code、Codex CLI、Cursor、Copilot、OpenCode、Windsurf、Gemini CLI 等任何能讀 MCP（Model Context Protocol：AI 跟外部工具的標準對接協議）或 hook 的客戶端
 
 ---
