@@ -369,10 +369,14 @@ describe('checkMemoryLoad — right after an install (trigger post_install)', ()
   };
 
   it('warns, says memories load in the next conversation, and offers no remedy', async () => {
+    // The hook file has to exist: a missing one is a reason it cannot load, which still fails.
+    // A file of its own, so the test does not depend on what this computer's home holds.
+    const hook = path.join(tempDir('ownmind-sc-hook-'), 'ownmind-session-start.sh');
+    fs.writeFileSync(hook, '#!/bin/bash\n');
     const r = await checkMemoryLoad({
       apiUrl: 'https://x', apiKey: 'k', trigger: 'post_install',
       fetchSelfCheck: never,
-      settingsPath: settings('bash ~/.claude/hooks/ownmind-session-start.sh'),
+      settingsPath: settings(`bash ${hook}`),
       resolveBinary: () => '/bin/bash',
     });
     assert.equal(r.status, 'warn');

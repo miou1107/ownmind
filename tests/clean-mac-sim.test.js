@@ -17,7 +17,9 @@ test('git, node, npm and brew are not found; curl and tar are', () => {
     for (const tool of ['git', 'node', 'npm', 'brew']) {
       assert.notEqual(inMac(mac, `command -v ${tool}`).status, 0, `${tool} must not be on the simulated PATH`);
     }
-    for (const tool of ['curl', 'tar', 'bash', 'osascript']) {
+    // osascript exists only on a real Mac; the Linux CI runner simulates the rest of the machine.
+    const present = process.platform === 'darwin' ? ['curl', 'tar', 'bash', 'osascript'] : ['curl', 'tar', 'bash'];
+    for (const tool of present) {
       assert.equal(inMac(mac, `command -v ${tool}`).status, 0, `${tool} must be on the simulated PATH`);
     }
   } finally {

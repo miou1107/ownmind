@@ -180,6 +180,10 @@ src/services/install-archive.js, tests/install-archive-zip.test.js — .env, .en
 src/app.js                                              — /api/install/first-load: 30 a minute per account key plus 240 a minute per address; the general install limit skips it
 shared/archive-update.js, tests/archive-update-shared.test.js — shared/, src/ and mcp/ are swapped before the other entries
 docs/ai-install-runbook.md                              — troubleshooting row: a run that prints no prefixed line
+scripts/install-helpers/preflight.sh                    — the failure list is filtered with the shell's own read, not awk: a missing tool in the pipeline used to empty the list and report the machine ready
+tests/first-load-watch.test.js                          — the hanging-request case holds a timer open, so Node 20 does not see an empty event loop and cancel the rest of the file
+tests/self-check-memory-load.test.js                    — the post_install case writes its own hook file instead of relying on the developer's home
+tests/clean-mac-sim.test.js                             — osascript is required only when the test runs on a Mac
 ```
 
 ## v1.33.2 修改（2026-10-23，規矩內文猜錯技能名字的誤報，#197）

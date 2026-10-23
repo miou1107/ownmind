@@ -111,13 +111,20 @@ ownmind_preflight_failures() {
 # $1 is the stage name, which goes into the report kind so the console can tell an install
 # from an upgrade.
 ownmind_preflight_assert() {
-  local stage="${1:-install}" failures count
-  failures=$(ownmind_preflight_failures | awk -F'\t' -v skip="$OWNMIND_PREFLIGHT_NO_ACTION" '$3 != skip')
+  local stage="${1:-install}" failures count skip_git=0
   # git is how a checkout is updated. An install from the release archive has no .git and never
   # calls git, so on a Mac a missing git is not a failure there. Linux keeps its old behaviour.
   if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ ! -d "${OWNMIND_DIR:-$HOME/.ownmind}/.git" ]; then
-    failures=$(printf '%s\n' "$failures" | awk -F'\t' '$1 != "git"')
+    skip_git=1
   fi
+  # Filtered with the shell's own `read`, not an external tool: when a pipeline stage is missing
+  # (a stripped PATH, a broken install) its output is empty, and an empty list reads as "ready".
+  failures=$(ownmind_preflight_failures | while IFS=$'\t' read -r name problem remedy; do
+    [ -n "$name" ] || continue
+    [ "$remedy" = "${OWNMIND_PREFLIGHT_NO_ACTION:-}" ] && continue
+    [ "$skip_git" = "1" ] && [ "$name" = "git" ] && continue
+    printf '%s\t%s\t%s\n' "$name" "$problem" "$remedy"
+  done)
   [ -n "$(printf '%s' "$failures" | tr -d '[:space:]')" ] || return 0
 
   count=$(printf '%s\n' "$failures" | grep -c . )

@@ -126,6 +126,10 @@ describe('watchFirstLoad', () => {
 
   it('gives every request an abort signal, and a request that never answers counts as a failed poll', async () => {
     const signals = [];
+    // A real request holds a socket open while it waits; this fake holds nothing, and the
+    // timer behind AbortSignal.timeout does not keep Node running. Without this handle Node 20
+    // sees an empty event loop mid-test and cancels the rest of the file.
+    const keepAlive = setInterval(() => {}, 1000);
     const { promise, notes, requests } = watch({
       timeoutMs: 100, intervalMs: 40, requestTimeoutMs: 20,
       // Never answers on its own: it settles only when the watcher aborts it.
@@ -134,7 +138,7 @@ describe('watchFirstLoad', () => {
         init.signal.addEventListener('abort', () => reject(init.signal.reason));
       }),
     });
-    assert.equal(await promise, 'not_loaded');
+    try { assert.equal(await promise, 'not_loaded'); } finally { clearInterval(keepAlive); }
     assert.deepEqual(notes, ['not_loaded']);
     assert.ok(signals.length >= 2, 'it kept asking after the first request hung');
     assert.ok(signals.every((s) => s instanceof AbortSignal));
