@@ -14,6 +14,8 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 
 $TaskName = 'OwnMind Usage Scanner'
 $OwnMindDir = Join-Path $env:USERPROFILE '.ownmind'
+# A machine with no Node of its own runs the private one in runtime\current; no other PATH has it.
+if (Test-Path "$OwnmindDir\runtime\current\node.exe") { $env:Path = "$OwnmindDir\runtime\current;$env:Path" }
 $ScannerJs = Join-Path $OwnMindDir 'hooks\ownmind-usage-scanner.js'
 $LogDir = Join-Path $OwnMindDir 'logs'
 $NodePathCache = Join-Path $OwnMindDir '.node-path'

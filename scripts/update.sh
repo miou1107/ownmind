@@ -21,6 +21,8 @@ ownmind_curl_auth() {
 }
 
 OWNMIND_DIR="$HOME/.ownmind"
+# A machine with no Node of its own runs the private one in runtime/current; no other PATH has it.
+if [ -d "$OWNMIND_DIR/runtime/current/bin" ]; then PATH="$OWNMIND_DIR/runtime/current/bin:$PATH"; export PATH; fi
 
 # v1.17.81 — load report-error helper.
 if [ -f "$OWNMIND_DIR/scripts/install-helpers/report-error.sh" ]; then

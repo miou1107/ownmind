@@ -23,6 +23,8 @@ HOME="${HOME:-$(eval echo ~)}"
 
 MIN_NODE_MAJOR="${OWNMIND_MIN_NODE_MAJOR:-20}"
 OWNMIND_DIR="${OWNMIND_DIR:-$HOME/.ownmind}"
+# A machine with no Node of its own runs the private one in runtime/current; no other PATH has it.
+if [ -d "$OWNMIND_DIR/runtime/current/bin" ]; then PATH="$OWNMIND_DIR/runtime/current/bin:$PATH"; export PATH; fi
 
 # Runtime opt-out: the user can create ~/.ownmind/.no-usage-scanner to disable the scanner
 # immediately (no launchctl unload / systemctl disable needed; the next cron firing skips it).

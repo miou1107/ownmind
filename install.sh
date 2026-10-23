@@ -464,12 +464,20 @@ fi
 # reports a failed install. The CLI exits 0 even when it cannot register, so this step
 # never aborts an otherwise good installation — but a missing node would still exit
 # non-zero, and "MCP not registered" must not be reported as "your install failed".
+#
+# A Mac whose only Node is the private runtime (OWNMIND_PRIVATE_NODE=1, set by
+# ensure-node-runtime.sh) has no `node` on the PATH Claude Code starts the server with, so the
+# entry names that runtime by its absolute path. Every other machine keeps bare `node`, which
+# is what lets an nvm user switch versions without re-installing.
 REGISTER_MCP_CLI_WIN="$(to_win_path "$OWNMIND_DIR/scripts/install-helpers/register-mcp-cli.cjs")"
 if [ "$IS_WINDOWS" = true ]; then
   MCP_COMMAND='cmd.exe'
   MCP_CLI_ARGS=(--arg '/c' --arg "$START_CMD_WIN")
 else
   MCP_COMMAND='node'
+  if [ "${OWNMIND_PRIVATE_NODE:-}" = 1 ] && [ -n "${OWNMIND_NODE:-}" ]; then
+    MCP_COMMAND="$OWNMIND_NODE"
+  fi
   MCP_CLI_ARGS=(--arg "$MCP_ENTRY_PATH_WIN")
 fi
 MCP_REG_OUT=$(MSYS_NO_PATHCONV=1 node "$REGISTER_MCP_CLI_WIN" \
@@ -496,11 +504,20 @@ else
   OWNMIND_DIR_FOR_HOOK="$OWNMIND_DIR"
 fi
 
+# Shared by §2.1, §2.2, §4c-1 and §4c-2: on a machine whose only Node is the private runtime,
+# the hook helpers write its absolute path in front of each hook instead of bare `node`.
+# Expanded as ${NODE_BIN_ARGS[@]+"${NODE_BIN_ARGS[@]}"} because bash 3.2 treats an empty
+# array as unbound under `set -u`.
+NODE_BIN_ARGS=()
+if [ "${OWNMIND_PRIVATE_NODE:-}" = 1 ] && [ -n "${OWNMIND_NODE:-}" ]; then
+  NODE_BIN_ARGS=(--node-bin "$OWNMIND_NODE")
+fi
+
 # --- 2.1 v1.17.71 OwnMind 在場感：加 PostToolUse hook 把 banner 印到 user terminal ---
 # helper 是 idempotent，已加過會回 skipped；既有 user 設定必保留 + atomic write + backup
 ADD_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-post-tool-use-hook.cjs"
 if [ -f "$ADD_HOOK_HELPER" ]; then
-  HOOK_RESULT=$(node "$ADD_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" 2>&1)
+  HOOK_RESULT=$(node "$ADD_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" ${NODE_BIN_ARGS[@]+"${NODE_BIN_ARGS[@]}"} 2>&1)
   echo "   PostToolUse banner hook：$HOOK_RESULT"
 else
   echo "[WARN] add-post-tool-use-hook.cjs 不存在（升級殘留？）— 跳過 PostToolUse hook 註冊"
@@ -510,7 +527,7 @@ fi
 # 每輪 AI 回話結束自動掃中英混雜 + 行話沒附白話說明、違反就印 banner 到 terminal
 ADD_STOP_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-stop-hook.cjs"
 if [ -f "$ADD_STOP_HOOK_HELPER" ]; then
-  STOP_HOOK_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" 2>&1)
+  STOP_HOOK_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" ${NODE_BIN_ARGS[@]+"${NODE_BIN_ARGS[@]}"} 2>&1)
   echo "   Stop reply-lint hook：$STOP_HOOK_RESULT"
 else
   echo "[WARN] add-stop-hook.cjs 不存在（升級殘留？）— 跳過 Stop hook 註冊"
@@ -659,7 +676,7 @@ if [ -f "$ENSURE_PRE_HOOK" ]; then
   # System32\bash.exe is the WSL launcher, so the registered `bash …ownmind-iron-rule-check.sh`
   # died with a WSL relay error on every tool call and the gate was silently off. The helper
   # decides now — see buildPreCmd in ensure-pretooluse-hooks.cjs.
-  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" 2>&1); then
+  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" ${NODE_BIN_ARGS[@]+"${NODE_BIN_ARGS[@]}"} 2>&1); then
     echo "[ OK ] PreToolUse iron-rule hook: $pre_hook_result"
   else
     echo "[FAIL] PreToolUse iron-rule hook: $pre_hook_result"
@@ -671,7 +688,7 @@ fi
 # --- 4c-2. SessionStart hook (v1.26.86, delegated to the shared implementation) ---
 ENSURE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-session-hook.cjs"
 if [ -f "$ENSURE_HOOK" ]; then
-  if hook_result=$(node "$ENSURE_HOOK" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+  if hook_result=$(node "$ENSURE_HOOK" --ownmind-dir "$OWNMIND_DIR" ${NODE_BIN_ARGS[@]+"${NODE_BIN_ARGS[@]}"} 2>&1); then
     echo "[ OK ] SessionStart hook: $hook_result"
   else
     echo "[FAIL] SessionStart hook: $hook_result"

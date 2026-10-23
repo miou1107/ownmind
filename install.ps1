@@ -430,11 +430,17 @@ if (-not (Test-Path $RegisterCli)) {
   }
 }
 
+# Shared by 2.1, 2.2 and 4c: on a machine whose only Node is the private runtime
+# (ensure-node-runtime.ps1 sets OWNMIND_PRIVATE_NODE=1), the hook helpers write its absolute
+# path in front of each hook. Nothing else on the machine has that runtime on its PATH.
+$NodeBinArgs = @()
+if ($env:OWNMIND_PRIVATE_NODE -eq '1' -and $env:OWNMIND_NODE) { $NodeBinArgs = @('--node-bin', $env:OWNMIND_NODE) }
+
 # --- 2.1 v1.17.71 OwnMind 在場感：加 PostToolUse hook 把 banner 印到 user terminal ---
 # 用同一支跨平台 Node helper（idempotent + backup + atomic）。
 $AddHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\add-post-tool-use-hook.cjs"
 if (Test-Path $AddHookHelper) {
-  $hookResult = & node $AddHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  $hookResult = & node $AddHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   Write-Host "   PostToolUse banner hook：$hookResult"
 }
 
@@ -442,7 +448,7 @@ if (Test-Path $AddHookHelper) {
 # 每輪 AI 回話結束自動掃中英混雜 + 行話沒附白話說明、違反就印 banner 到 terminal
 $AddStopHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\add-stop-hook.cjs"
 if (Test-Path $AddStopHookHelper) {
-  $stopHookResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  $stopHookResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   Write-Host "   Stop reply-lint hook：$stopHookResult"
 }
 
@@ -556,7 +562,7 @@ $HookCmdHelper = Join-Path $OwnmindDir "scripts\install-helpers\session-hook-com
 # helper edits settings.json on disk, which is why nothing below re-writes a stale snapshot.
 $PreHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\ensure-pretooluse-hooks.cjs"
 if (Test-Path $PreHookHelper) {
-  $preHookResult = & node $PreHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  $preHookResult = & node $PreHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   Write-Host "   PreToolUse iron-rule hook: $preHookResult"
 } else {
   Write-Host "[WARN] ensure-pretooluse-hooks.cjs not found (stale upgrade?) — skipped PreToolUse hook registration" -ForegroundColor Yellow
@@ -575,7 +581,7 @@ if (Test-Path $PreHookHelper) {
 # is why the ordering constraint that used to be spelled out here no longer has a subject.
 $EnsureHook = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-session-hook.cjs'
 if (Test-Path $EnsureHook) {
-  $hookResult = & node $EnsureHook --ownmind-dir $OwnmindDir 2>&1
+  $hookResult = & node $EnsureHook --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   if ($LASTEXITCODE -eq 0) {
     Write-Host "[ OK ] SessionStart hook: $hookResult"
   } else {

@@ -29,6 +29,8 @@
 // Node needs no such detection. OwnMind already requires Node 20+, the installer resolves
 // and caches it, and an absolute path leaves nothing for a shell to reinterpret.
 
+const { nodeInvocation, parseNodeCommand, isCurrentNodeCommand } = require('./node-command.cjs');
+
 const MATCHERS = ['startup', 'resume', 'clear', 'compact'];
 const HOOK_TIMEOUT_SECONDS = 10;
 
@@ -43,9 +45,13 @@ const UNIX_COMMAND = 'bash ~/.claude/hooks/ownmind-session-start.sh';
  * @param {object}  opts
  * @param {string}  opts.platform  process.platform value ('win32' | 'darwin' | 'linux')
  * @param {string} [opts.hookDir]  absolute path of ~/.claude/hooks — required on Windows
+ * @param {string} [opts.nodeBin]  absolute path of the private Node runtime, only on a machine
+ *                                 that has no other Node. Windows then runs the hook with it;
+ *                                 the Unix command is unchanged because the bash hook puts
+ *                                 ~/.ownmind/runtime/current/bin on PATH itself.
  * @returns {string}
  */
-function sessionStartCommand({ platform, hookDir, ownmindDir } = {}) {
+function sessionStartCommand({ platform, hookDir, ownmindDir, nodeBin } = {}) {
   if (platform !== 'win32') return UNIX_COMMAND;
 
   // v1.26.85 — run the copy under ~/.ownmind/hooks, never the one under ~/.claude/hooks.
@@ -66,7 +72,7 @@ function sessionStartCommand({ platform, hookDir, ownmindDir } = {}) {
       .replace(/\/\.claude\/hooks$/, '/.ownmind/hooks');
   // Quoted because a Windows home directory routinely contains a space
   // ("C:\Users\Jane Doe\"), and unquoted it would arrive as two arguments.
-  return `node "${base}/ownmind-session-start.js"`;
+  return `${nodeInvocation(nodeBin)} "${base}/ownmind-session-start.js"`;
 }
 
 /**
@@ -96,7 +102,7 @@ function isOwnmindSessionEntry(entry) {
  * — the fix would ship and change nothing on a single affected machine.
  *
  * @param {Array}  existingEntries  the SessionStart entries that are ours
- * @param {object} opts             { platform, hookDir }
+ * @param {object} opts             { platform, hookDir, ownmindDir, nodeBin }
  */
 function needsRewrite(existingEntries, opts) {
   if (!existingEntries || existingEntries.length === 0) return false;
@@ -117,8 +123,10 @@ function needsRewrite(existingEntries, opts) {
 
   const desired = sessionStartCommand(opts);
   const hasAllMatchers = MATCHERS.every((m) => existingEntries.some((e) => e.matcher === m));
+  // An entry that runs our hook with an absolute Node is current while that Node exists and
+  // no nodeBin was asked for: an upgrade must not flip a working entry into the other shape.
   const allCommandsCurrent = existingEntries.every(
-    (e) => e.hooks?.every((h) => h.command === desired),
+    (e) => e.hooks?.every((h) => isCurrentNodeCommand(h.command, desired, { nodeBin: opts?.nodeBin })),
   );
   return !hasAllMatchers || !allCommandsCurrent;
 }
@@ -147,14 +155,15 @@ function isGeneratedCommand(command) {
   // space ("C:\Users\Jane Doe"), and an unquoted command with a space is still just our
   // hook. The basename check below still rejects deliberate edits — trailing arguments
   // make the last path segment stop being exactly our filename.
-  const m = c.match(/^(node|bash)\s+(?:"([^"]+)"|'([^']+)'|(.+))$/);
+  //
+  // The runtime may also be a quoted absolute path to node / node.exe: that is the shape the
+  // installer writes on a machine whose only Node is the private one (node-command.cjs).
+  const viaNode = parseNodeCommand(c);
+  if (viaNode) return viaNode.target.split(/[/\\]/).pop() === 'ownmind-session-start.js';
+  const m = c.match(/^bash\s+(?:"([^"]+)"|'([^']+)'|(.+))$/);
   if (!m) return false;
-  const runtime = m[1];
-  const target = m[2] || m[3] || m[4];
-  const file = target.split(/[/\\]/).pop();
-  return runtime === 'node'
-    ? file === 'ownmind-session-start.js'
-    : file === 'ownmind-session-start.sh';
+  const target = m[1] || m[2] || m[3];
+  return target.split(/[/\\]/).pop() === 'ownmind-session-start.sh';
 }
 
 module.exports = {

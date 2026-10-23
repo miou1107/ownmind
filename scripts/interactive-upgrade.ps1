@@ -18,6 +18,8 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 }
 
 $OwnMindDir = Join-Path $HOME ".ownmind"
+# A machine with no Node of its own runs the private one in runtime\current; no other PATH has it.
+if (Test-Path "$OwnmindDir\runtime\current\node.exe") { $env:Path = "$OwnmindDir\runtime\current;$env:Path" }
 $Ts = Get-Date -Format "yyyyMMdd-HHmmss"
 $BackupDir = Join-Path $HOME ".ownmind.bak.$Ts"
 # v1.26.98 — the log lives OUTSIDE $OwnMindDir, matching interactive-upgrade.sh (bug #15).

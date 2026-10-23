@@ -21,6 +21,8 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 }
 
 $OwnMindDir = Join-Path $HOME ".ownmind"
+# A machine with no Node of its own runs the private one in runtime\current; no other PATH has it.
+if (Test-Path "$OwnmindDir\runtime\current\node.exe") { $env:Path = "$OwnmindDir\runtime\current;$env:Path" }
 $ErrLog = Join-Path $OwnMindDir "logs\update-errors.log"
 New-Item -ItemType Directory -Force -Path (Split-Path $ErrLog) | Out-Null
 

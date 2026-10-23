@@ -738,7 +738,7 @@ function collectMemoryLoadEvidence({ settingsPath, resolveBinary }) {
 
   try {
     evidence.bash_path = resolveBinary('bash');
-    evidence.node_path = resolveBinary('node');
+    evidence.node_path = configuredNodePath({ settingsPath, command: cmd }) || resolveBinary('node');
   } catch { /* resolution failures are reported as null, not as a crash */ }
 
   // System32\bash.exe is Windows' WSL entry point. Present, runnable, and pointed at a
@@ -750,6 +750,28 @@ function collectMemoryLoadEvidence({ settingsPath, resolveBinary }) {
   if (evidence.bash_path) evidence.bash_path = sanitizePath(evidence.bash_path);
   if (evidence.node_path) evidence.node_path = sanitizePath(evidence.node_path);
   return evidence;
+}
+
+/**
+ * The Node the configuration names by absolute path, or null when it relies on PATH.
+ *
+ * On a machine whose only Node is the private runtime, the SessionStart command (Windows) or
+ * the MCP entry names that runtime directly, and it is the Node Claude Code will actually run.
+ * Reporting whatever `which node` finds instead would describe a different program — or none,
+ * since the private runtime is on no PATH but the installer's own.
+ */
+function configuredNodePath({ settingsPath, command }) {
+  try {
+    const { parseNodeCommand } = require('./node-command.cjs');
+    const parsed = command ? parseNodeCommand(command) : null;
+    if (parsed && parsed.absolute) return parsed.runtime;
+    // <home>/.claude/settings.json -> <home>, so a test's settings file keeps this hermetic.
+    const home = path.dirname(path.dirname(settingsPath));
+    const { configuredNodes } = require('./install-artifacts.cjs');
+    return configuredNodes({ home })[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 function defaultResolveBinary(bin) {

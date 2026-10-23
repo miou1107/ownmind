@@ -21,7 +21,11 @@
  * add-post-tool-use-hook.cjs so the two read the same way.
  *
  * Usage:
- *   node ensure-pretooluse-hooks.cjs <settings.json path> --ownmind-dir <path>
+ *   node ensure-pretooluse-hooks.cjs <settings.json path> --ownmind-dir <path> [--node-bin <path>]
+ *
+ *   --node-bin: absolute path of the private Node runtime. The installers pass it only on a
+ *   machine that has no other Node; the commands then start with that path, quoted, instead of
+ *   bare `node` (see node-command.cjs).
  *
  * Exit codes:
  *   0  — success (any mix of added / repaired / unchanged)
@@ -35,6 +39,7 @@ const path = require('path');
 // v1.26.131 - os.homedir() as the last resort: HOME is unset on Windows, and the two
 // expressions this replaced produced a relative path and a TypeError respectively.
 const os = require('os');
+const { nodeInvocation, isCurrentNodeCommand } = require('./node-command.cjs');
 
 // The command carries no marker field, so identity is the substring — same convention as
 // add-post-tool-use-hook.cjs, and the reason a stale command is recognisable at all.
@@ -55,7 +60,8 @@ const MATCHERS = [
  * exits with ERR_MODULE_NOT_FOUND before reading a byte of the payload. In ~/.ownmind, shared/
  * and hooks/ sit where the imports expect.
  */
-function buildPreCmd(ownmindDir) {
+function buildPreCmd(ownmindDir, nodeBin) {
+  if (ownmindDir && typeof ownmindDir === 'object') ({ ownmindDir, nodeBin } = ownmindDir);
   // One command, every platform. There is no bash form any more.
   //
   // v1.30.15 stopped registering the .sh anywhere: install.ps1 had known since v1.26.80 that
@@ -74,7 +80,7 @@ function buildPreCmd(ownmindDir) {
   // because a bash script cannot import evaluateGate.
   const hookPath = path.join(ownmindDir, 'hooks', 'ownmind-iron-rule-check.js').replace(/\\/g, '/');
   // The directory string may contain whitespace → quote it so the shell parses one argument.
-  return `node "${hookPath}"`;
+  return `${nodeInvocation(nodeBin)} "${hookPath}"`;
 }
 
 // v1.26.165 — the prompt hook has no .sh twin. It is pure node on every platform, so unlike
@@ -88,9 +94,10 @@ const INJECT_IDENTIFIER_SUBSTR = 'ownmind-prompt-inject';
  * hook imports ./lib/enforcement-cache.js, and only the .ownmind tree has the siblings those
  * imports expect.
  */
-function buildInjectCmd(ownmindDir) {
+function buildInjectCmd(ownmindDir, nodeBin) {
+  if (ownmindDir && typeof ownmindDir === 'object') ({ ownmindDir, nodeBin } = ownmindDir);
   const hookPath = path.join(ownmindDir, 'hooks', 'ownmind-prompt-inject.js').replace(/\\/g, '/');
-  return `node "${hookPath}"`;
+  return `${nodeInvocation(nodeBin)} "${hookPath}"`;
 }
 
 /**
@@ -100,9 +107,12 @@ function buildInjectCmd(ownmindDir) {
  * already had, rather than a second implementation of it that drifts. `matcher` is null for
  * events that do not take one.
  *
+ * An entry that runs the same script with an absolute Node is left alone while that Node exists
+ * and no nodeBin was asked for — see node-command.cjs for the rule.
+ *
  * @returns {{action: 'added'|'repaired'|'unchanged', from?: string}}
  */
-function ensureEntry(list, matcher, identifier, command) {
+function ensureEntry(list, matcher, identifier, command, { nodeBin } = {}) {
   const belongsToUs = (group) => {
     if (!group || !Array.isArray(group.hooks)) return false;
     if (matcher !== null && group.matcher !== matcher) return false;
@@ -122,7 +132,7 @@ function ensureEntry(list, matcher, identifier, command) {
   const stale = entry.hooks.filter(
     (h) => h && typeof h.command === 'string'
       && h.command.includes(identifier)
-      && h.command !== command,
+      && !isCurrentNodeCommand(h.command, command, { nodeBin }),
   );
   if (stale.length === 0) return { action: 'unchanged' };
 
@@ -134,8 +144,8 @@ function ensureEntry(list, matcher, identifier, command) {
 /**
  * @returns {{ status: 'ok' | 'error', message?: string, results?: Array<{matcher: string, action: 'added'|'repaired'|'unchanged', from?: string}> }}
  */
-function ensureHooks(settingsPath, ownmindDir) {
-  const preCmd = buildPreCmd(ownmindDir);
+function ensureHooks(settingsPath, ownmindDir, { nodeBin } = {}) {
+  const preCmd = buildPreCmd(ownmindDir, nodeBin);
 
   let raw = '';
   let existed = false;
@@ -170,7 +180,7 @@ function ensureHooks(settingsPath, ownmindDir) {
   let changed = false;
 
   for (const matcher of MATCHERS) {
-    const r = ensureEntry(settings.hooks.PreToolUse, matcher, HOOK_IDENTIFIER_SUBSTR, preCmd);
+    const r = ensureEntry(settings.hooks.PreToolUse, matcher, HOOK_IDENTIFIER_SUBSTR, preCmd, { nodeBin });
     results.push({ matcher, ...r });
     if (r.action !== 'unchanged') changed = true;
   }
@@ -180,7 +190,8 @@ function ensureHooks(settingsPath, ownmindDir) {
   // the upgrade path picks it up too — a hook file that ships without a settings entry is a
   // hook that never runs, and every test of its logic keeps passing.
   const injected = ensureEntry(
-    settings.hooks.UserPromptSubmit, null, INJECT_IDENTIFIER_SUBSTR, buildInjectCmd(ownmindDir),
+    settings.hooks.UserPromptSubmit, null, INJECT_IDENTIFIER_SUBSTR, buildInjectCmd(ownmindDir, nodeBin),
+    { nodeBin },
   );
   results.push({ matcher: 'UserPromptSubmit', ...injected });
   if (injected.action !== 'unchanged') changed = true;
@@ -222,11 +233,13 @@ if (require.main === module) {
   let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE || os.homedir(), '.ownmind');
   const idx = args.indexOf('--ownmind-dir');
   if (idx >= 0 && args[idx + 1]) ownmindDir = args[idx + 1];
+  const nodeIdx = args.indexOf('--node-bin');
+  const nodeBin = nodeIdx >= 0 && args[nodeIdx + 1] ? args[nodeIdx + 1] : undefined;
   // `--bash` is accepted and ignored. An upgrade runs the new copy of this file from a shell
   // script that may still be the old one on disk for the length of that run; erroring on the
   // flag would fail the very upgrade that removes it.
 
-  const result = ensureHooks(settingsPath, ownmindDir);
+  const result = ensureHooks(settingsPath, ownmindDir, { nodeBin });
   if (result.status === 'error') {
     console.error(`[ensure-pretooluse-hooks] ERROR: ${result.message}`);
     process.exit(1);

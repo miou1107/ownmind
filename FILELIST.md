@@ -26,6 +26,8 @@ scripts/install-helpers/ensure-node-runtime.ps1         — Ensure-OwnMindNode: 
 tests/bootstrap-archive-mode-ps1.test.js                — static checks for bootstrap.ps1 without git: no stop on missing git, FIX/ASK sentences identical to the shell side, embedded block identical to fetch-release.ps1, healthy-archive branch, ARCHIVE_MODE check, PowerShell 5.1 syntax limits, ASCII without BOM
 tests/install-ps1-private-node.test.js                  — static checks: install.ps1 no longer installs git or Node with winget and calls Ensure-OwnMindNode, start.cmd tries runtime\current\node.exe first, preflight.ps1 reports a missing node as "no action needed", helper agrees with shared/node-runtime.js
 tests/bootstrap-archive-mode-ps1.e2e.mjs                — Windows only (skips elsewhere): bootstrap.ps1 and Ensure-OwnMindNode under Windows PowerShell with no git or node on PATH against a local fixture server; the Windows leg of the CI install job runs it by name
+scripts/install-helpers/node-command.cjs                — the two shapes of a generated node command (bare `node "<script>"`, or `"<abs>/node" "<script>"` for the private runtime): nodeInvocation, parseNodeCommand, isCurrentNodeCommand (an absolute-node entry stays while that node exists and no nodeBin is asked for)
+tests/private-node-config-shapes.test.js                — byte-for-byte snapshot of every generated command and settings.json without nodeBin; quoted absolute node with nodeBin (spaced and non-ASCII paths) that round-trips through JSON; both shapes count as ours; needsRewrite never flips a working entry; install-artifacts runs the node the MCP entry names; every entry script and commit hook prepends runtime/current before its first node call; installers pass --node-bin only with OWNMIND_PRIVATE_NODE=1
 ```
 
 修改檔：
@@ -55,6 +57,13 @@ tests/install-prerequisite-auto-install.test.js         — the install.ps1 asse
 tests/installer-preflight.test.js                       — bootstrap.ps1 without git no longer stops with preflight_missing_git (asserts missing_args and nothing created); the shared-prefix test no longer lists bootstrap.ps1
 .github/workflows/test.yml                              — install job also runs tests/bootstrap-archive-mode-ps1.e2e.mjs (skips itself off Windows)
 tests/install-e2e-is-actually-run.test.js               — also checks that bootstrap-archive-mode-ps1.e2e.mjs exists, skips itself off Windows, and is named by an unconditional step of the install job
+scripts/install-helpers/session-hook-command.cjs        — sessionStartCommand takes nodeBin (Windows: `"<nodeBin>" "<hook>"`; Mac/Linux command unchanged); isGeneratedCommand and needsRewrite accept a quoted absolute node
+scripts/install-helpers/ensure-session-hook.cjs, ensure-pretooluse-hooks.cjs, add-stop-hook.cjs, add-post-tool-use-hook.cjs — new --node-bin option; without it the output is unchanged, and an existing absolute-node entry is kept while that node exists
+scripts/install-helpers/install-artifacts.cjs           — new configured_node artifact: every absolute node named by the MCP entry or an OwnMind hook must answer --version (only on machines that name one); exports configuredNodes
+scripts/install-helpers/self-check.cjs                  — memory_load evidence reports the node the configuration names (SessionStart command, then MCP entry) before falling back to PATH
+install.sh, install.ps1                                 — pass --node-bin to the four hook helpers only when OWNMIND_PRIVATE_NODE=1; on a Mac with only the private runtime the MCP entry's command is its absolute path
+hooks/ownmind-session-start.sh, scripts/install-helpers/run-scanner.sh, scripts/check-sync.sh, scripts/interactive-upgrade.sh, scripts/update.sh, scripts/check-sync.ps1, scripts/interactive-upgrade.ps1, scripts/update.ps1, scripts/windows/register-scanner-task.ps1 — prepend ~/.ownmind/runtime/current (bin on Mac) to PATH before the first node call
+hooks/ownmind-git-pre-commit, ownmind-git-post-commit, ownmind-git-pre-merge-commit, ownmind-git-commit-msg — the same PATH prepend (bin on Mac, node.exe on Windows), so commits are not blocked on a machine whose only Node is the private one
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

@@ -18,6 +18,8 @@ $ClaudeDir  = if ($env:CLAUDE_DIR)  { $env:CLAUDE_DIR }  else { Join-Path $HOME 
 # script is being fixed for.
 if (-not [System.IO.Path]::IsPathRooted($OwnmindDir)) { $OwnmindDir = Join-Path (Get-Location).Path $OwnmindDir }
 if (-not [System.IO.Path]::IsPathRooted($ClaudeDir))  { $ClaudeDir  = Join-Path (Get-Location).Path $ClaudeDir }
+# A machine with no Node of its own runs the private one in runtime\current; no other PATH has it.
+if (Test-Path "$OwnmindDir\runtime\current\node.exe") { $env:Path = "$OwnmindDir\runtime\current;$env:Path" }
 
 function Write-Tag([string]$line) { Write-Output $line }
 

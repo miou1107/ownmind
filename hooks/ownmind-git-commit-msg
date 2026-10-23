@@ -30,6 +30,10 @@ fi
 
 # Rule evaluation is skipped when the script is absent rather than treated as a failure:
 # a missing or half-installed client must not become the reason somebody cannot commit.
+# A machine with no Node of its own runs the private one in ~/.ownmind/runtime/current; no other
+# PATH has it (node.exe sits at its top on Windows, where this hook runs under Git's own sh).
+if [ -d "$HOME/.ownmind/runtime/current/bin" ]; then PATH="$HOME/.ownmind/runtime/current/bin:$PATH"; export PATH;
+elif [ -f "$HOME/.ownmind/runtime/current/node.exe" ]; then PATH="$HOME/.ownmind/runtime/current:$PATH"; export PATH; fi
 HOOK_JS="$HOME/.ownmind/hooks/ownmind-git-commit-msg.js"
 if [ -f "$HOOK_JS" ]; then
   set +e

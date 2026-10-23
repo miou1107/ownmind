@@ -15,7 +15,11 @@
  * Before write, backup to settings.json.bak.<ts>; rollback on failure.
  *
  * Usage:
- *   node add-stop-hook.cjs <settings.json path> [--ownmind-dir <path>]
+ *   node add-stop-hook.cjs <settings.json path> [--ownmind-dir <path>] [--node-bin <path>]
+ *
+ *   --node-bin: absolute path of the private Node runtime, passed by the installers only on a
+ *   machine that has no other Node; the command then starts with it, quoted. An entry that is
+ *   already present is left as it is, in either shape (node-command.cjs).
  *
  * Exit codes:
  *   0  — success (including skipped)
@@ -29,16 +33,17 @@ const path = require('path');
 // v1.26.131 - os.homedir() as the last resort: HOME is unset on Windows, and the two
 // expressions this replaced produced a relative path and a TypeError respectively.
 const os = require('os');
+const { nodeInvocation } = require('./node-command.cjs');
 
 // Identify whether the hook already exists by looking for 'ownmind-reply-lint' in the command string.
 const HOOK_IDENTIFIER_SUBSTR = 'ownmind-reply-lint';
 
-function buildHookEntry(ownmindDir) {
+function buildHookEntry(ownmindDir, nodeBin) {
   // Use an absolute path and invoke node directly — avoids PATH resolution issues.
   // The directory string may contain whitespace → wrap in double quotes.
   // Stop hook spec: no matcher (Stop doesn't attach to a tool).
   const hookPath = path.join(ownmindDir, 'hooks', 'ownmind-reply-lint.js');
-  const cmd = `node "${hookPath}"`;
+  const cmd = `${nodeInvocation(nodeBin)} "${hookPath}"`;
   return {
     hooks: [
       { type: 'command', command: cmd },
@@ -49,8 +54,8 @@ function buildHookEntry(ownmindDir) {
 /**
  * @returns {{ status: 'created' | 'added' | 'skipped' | 'error', message?: string }}
  */
-function addHook(settingsPath, ownmindDir) {
-  const entry = buildHookEntry(ownmindDir);
+function addHook(settingsPath, ownmindDir, { nodeBin } = {}) {
+  const entry = buildHookEntry(ownmindDir, nodeBin);
   let raw = '';
   let existed = false;
   try {
@@ -126,8 +131,10 @@ if (require.main === module) {
   let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE || os.homedir(), '.ownmind');
   const idx = args.indexOf('--ownmind-dir');
   if (idx >= 0 && args[idx + 1]) ownmindDir = args[idx + 1];
+  const nodeIdx = args.indexOf('--node-bin');
+  const nodeBin = nodeIdx >= 0 && args[nodeIdx + 1] ? args[nodeIdx + 1] : undefined;
 
-  const result = addHook(settingsPath, ownmindDir);
+  const result = addHook(settingsPath, ownmindDir, { nodeBin });
   if (result.status === 'error') {
     console.error(`[add-stop-hook] ERROR: ${result.message}`);
     process.exit(1);
