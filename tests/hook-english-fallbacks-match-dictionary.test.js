@@ -71,6 +71,17 @@ const HARD_CODED = {
     'compliance.notChecked.signedOut',
     'compliance.off.server',
   ],
+  // The installer's ASK: and NEXT: sentences. bootstrap runs before any node exists on the
+  // machine, so the scripts carry the English themselves (tests/install-messages.test.js
+  // also checks every ASK literal against en.json).
+  'scripts/bootstrap.sh': ['install.ask.no_network', 'install.ask.disk_full'],
+  'scripts/bootstrap.ps1': ['install.ask.no_network', 'install.ask.disk_full'],
+  'scripts/install-helpers/fetch-release.sh': ['install.ask.no_network', 'install.ask.disk_full'],
+  'scripts/install-helpers/fetch-release.ps1': ['install.ask.no_network', 'install.ask.disk_full'],
+  'scripts/install-helpers/ensure-node-runtime.sh': ['install.ask.node_download', 'install.ask.disk_full'],
+  'scripts/install-helpers/ensure-node-runtime.ps1': ['install.ask.node_download', 'install.ask.disk_full'],
+  'install.sh': ['install.ask.no_network', 'install.ask.disk_full', 'install.next.verify_manual_terminal', 'install.next.verify_manual_generic'],
+  'install.ps1': ['install.ask.no_network', 'install.next.verify_manual_terminal', 'install.next.verify_manual_generic'],
 };
 
 /**

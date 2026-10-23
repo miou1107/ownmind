@@ -329,7 +329,7 @@ describe('private Node runtime: ensure_node on a simulated clean Mac', () => {
       const r = await runEnsure(mac, { OWNMIND_NODE_SOURCE: 'server' });
       assert.equal(r.status, 1, r.out);
       assert.match(r.out, /ERROR:node_download:/);
-      assert.match(r.out, /ASK:no_network:The installer could not download Node\.js from the OwnMind server or nodejs\.org/);
+      assert.match(r.out, /ASK:node_download:The installer could not download Node\.js from the OwnMind server or nodejs\.org/);
       assert.ok(!fs.existsSync(path.join(mac.home, '.ownmind', 'runtime', 'current')));
       assert.ok(!fs.existsSync(path.join(mac.home, '.ownmind', 'runtime', '.partial')));
       assert.ok(!fs.existsSync(path.join(mac.home, '.ownmind', '.node-path')));
@@ -364,7 +364,7 @@ describe('private Node runtime: ensure_node on a simulated clean Mac', () => {
       assert.equal(r.status, 1, r.out);
       assert.match(r.out, /INFO:node:The OwnMind server did not deliver Node\.js; trying nodejs\.org/);
       assert.ok(fixture.requests.some((q) => q.url === '/dist/index.json'), 'the nodejs.org fallback must have been tried');
-      assert.match(r.out, /ASK:no_network:/);
+      assert.match(r.out, /ASK:node_download:/);
     } finally {
       mac.cleanup();
       fixture.mode = 'ok';

@@ -122,8 +122,10 @@ OK:done:首次安裝完成
 依 prefix 回應 user：
 - `INFO:<code>:<msg>` — 「正在做：${msg}」
 - `OK:<code>:<msg>` — 「${msg}」
-- `ERROR:<code>:<msg>` — 立即停止、轉述錯誤 + 建議修復（下面錯誤碼表）
-- `ASK:<code>:<msg>` — 等 user 回答
+- `ERROR:<code>:<msg>` — 立即停止、轉述錯誤 + 建議修復（下面錯誤碼表）；後面跟著 `FIX:` 就照「安裝 OwnMind」一節處理
+- `FIX:<code>:<command>` — 可以自己跑的修復指令，跑完重跑一次安裝（最多三輪）
+- `ASK:<code>:<sentence>` — 把句子原文轉給 user，然後停下，不要重試
+- `NEXT:<kind>[:<detail>]` — 安裝成功後的下一步，照「安裝 OwnMind」一節處理
 
 ### Step 3：成功後 dismiss 升級廣播（v1.17.18 起改由腳本自動處理）
 
@@ -138,6 +140,56 @@ OK:done:首次安裝完成
 
 唯一例外：user 主動說「暫緩升級」走 snooze 模式時，仍要呼叫 `/api/broadcast/dismiss`
 帶 `snooze_hours`（見下方 Snooze 段落）。
+
+---
+
+## 安裝 OwnMind（AI 替同事安裝時照這一節）
+
+Audience: the AI that runs the OwnMind installer on a colleague's computer. This section is self-contained; read it top to bottom before the first command.
+
+### What to do
+
+1. Read the manual first: `<API_URL>/install-manual.md` (anonymous, English; `<API_URL>` is the URL in the install message the colleague pasted). Then run the one-liner from that message once. Read every line of its output.
+2. Every line the installer prints starts with one of six prefixes:
+
+| Prefix | Meaning | What you do |
+|---|---|---|
+| `INFO:<code>:<text>` | progress | nothing |
+| `OK:<code>:<text>` | a step finished | nothing |
+| `ERROR:<code>:<text>` | a stop | look for the `FIX:` or `ASK:` line next to it |
+| `FIX:<code>:<command>` | a repair you may run yourself | run it, then run the one-liner again |
+| `ASK:<code>:<sentence>` | a stop only the person can resolve | say the sentence, then stop |
+| `NEXT:<kind>[:<detail>]` | what to do after a successful install | see "After a successful install" |
+
+3. `ERROR:` followed by `FIX:`: run the fix, then run the one-liner again. At most three rounds. After the third, tell the user what the last `ERROR:` line said and stop.
+   `<same one-liner>` inside a fix means the exact install command you already ran.
+
+   | `FIX:` code | What to run |
+   |---|---|
+   | `retry_install` | the same one-liner again (a download or unpack was cut off; the installer clears its own leftovers) |
+   | `rerun_with_args` | the one-liner again, this time with the API key and URL the colleague gave you |
+   | `use_fallback_source` | the one-liner with the environment variable `OWNMIND_SOURCE=github` (PowerShell: `$env:OWNMIND_SOURCE='github'`) |
+   | `clear_partial` | the command printed after the code (removes the unfinished download folder), then the one-liner again |
+
+4. `ASK:<code>:<sentence>`: say the sentence to the user exactly as printed (it is already in the user's language: `no_network`, `node_download`, `disk_full`), then stop. Do not retry, do not add advice of your own.
+5. Never suggest installing git, Node.js, Homebrew, the Xcode command line tools or winget. The installer brings its own runtime; a machine on which it could not is an `ASK:` case, not a chore for the user.
+6. Permissions. When your tool or the operating system refuses something the install needs, that is the one question you may ask your owner during the install. Name the permission, say what it is for and what they will see after granting it, in their language, one step at a time, naming the button or setting as it appears on screen. Then carry on with the install. Do not stop at "I do not have permission".
+
+### After a successful install
+
+The last line of the output is a `NEXT:` line.
+
+- `NEXT:verify:new-session` (you are running inside the Claude desktop app): tell the user OwnMind is installed and that a verification conversation is opening. Then start a new session with the desktop app's own session tool (`mcp__ccd_session__start_session`). Give it the title returned by `node ~/.ownmind/scripts/install-helpers/install-messages.cjs say install.verify.session_title` (the installer ships this lookup; the English title is "OwnMind install check"). The brief for that session is:
+  1. Confirm the OwnMind context appeared at your start.
+  2. Call `ownmind_search` once.
+  3. Check the OwnMind status button in the input bar.
+  4. Save one memory and find it again.
+  5. Report one line per item.
+- `NEXT:verify:manual:<sentence>` (a terminal or any other tool): say the sentence to the user as printed (it is already in their language). Nothing else to do.
+
+### Report to the user
+
+In the user's language, three sentences at most: it is installed, what happens next, and what the user should do (usually nothing). Do not list commands, file names or codes.
 
 ---
 

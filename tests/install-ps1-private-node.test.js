@@ -91,8 +91,8 @@ test('ensure-node-runtime.ps1: same decisions, codes and sentences as the shell 
   assert.match(ensureSh, /log_ok node "private Node \$version installed"/);
   assert.match(ensurePs1, /Log-Err node_download "Could not download Node\.js from the OwnMind server or nodejs\.org"/);
   // the ASK sentences the person reads are byte-identical
-  const asks = [...ensureSh.matchAll(/ASK:no_network:[^"\n]*\./g)].map((m) => m[0]);
-  assert.equal(asks.length, 2);
+  const asks = [...ensureSh.matchAll(/ASK:(?:node_download|disk_full):[^"\n]*\./g)].map((m) => m[0]);
+  assert.equal(asks.length, 4, 'two node_download and two disk_full sentences');
   for (const sentence of asks) {
     assert.ok(ensurePs1.includes(sentence), `ensure-node-runtime.ps1 is missing: ${sentence}`);
   }

@@ -81,14 +81,18 @@ ownmind_node_check_file() {
 # Streams the archive from the OwnMind server. Sets OWNMIND_NODE_VERSION and
 # OWNMIND_NODE_SHA from the response headers (X-Node-Version, X-Sha256).
 ownmind_node_from_server() {
-  local api="${1%/}" key="$2" arch="$3" dest="$4" hdrs
+  local api="${1%/}" key="$2" arch="$3" dest="$4" hdrs rc
   [ -n "$api" ] && [ -n "$key" ] || return 1
   hdrs="$dest.headers"
   rm -f "$dest" "$hdrs"
   log_info node "Downloading Node.js from $api"
+  rc=0
   # shellcheck disable=SC2086 — $OWNMIND_CURL_FLAGS is a fixed list of curl options, split on purpose
-  if ! ownmind_curl_auth "$key" | curl -K - -fsSL $OWNMIND_CURL_FLAGS -D "$hdrs" -o "$dest" \
-      "$api/api/install/node?os=darwin&arch=$arch"; then
+  ownmind_curl_auth "$key" | curl -K - -fsSL $OWNMIND_CURL_FLAGS -D "$hdrs" -o "$dest" \
+      "$api/api/install/node?os=darwin&arch=$arch" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # curl exit 23 is "could not write the file": a full disk, not a network problem.
+    [ "$rc" -eq 23 ] && OWNMIND_NODE_DISK_FULL=1
     rm -f "$dest" "$hdrs"
     return 1
   fi
@@ -108,7 +112,7 @@ ownmind_node_from_server() {
 # ownmind_node_from_nodejs ARCH FILE
 # Newest v22.x.y from nodejs.org's index, its archive, and the checksum from SHASUMS256.txt.
 ownmind_node_from_nodejs() {
-  local arch="$1" dest="$2" dist="${OWNMIND_NODE_DIST:-https://nodejs.org/dist}" index version name sums sha
+  local arch="$1" dest="$2" dist="${OWNMIND_NODE_DIST:-https://nodejs.org/dist}" index version name sums sha rc
   dist="${dist%/}"
   rm -f "$dest"
   log_info node "Downloading Node.js from $dist"
@@ -125,8 +129,14 @@ ownmind_node_from_nodejs() {
   sums=$(curl -fsSL $OWNMIND_CURL_FLAGS "$dist/$version/SHASUMS256.txt" 2>/dev/null) || return 1
   sha=$(printf '%s\n' "$sums" | awk -v n="$name" '$2 == n { print $1 }' | head -n 1)
   [ -n "$sha" ] || return 1
+  rc=0
   # shellcheck disable=SC2086
-  curl -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$dist/$version/$name" || { rm -f "$dest"; return 1; }
+  curl -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$dist/$version/$name" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -eq 23 ] && OWNMIND_NODE_DISK_FULL=1
+    rm -f "$dest"
+    return 1
+  fi
   OWNMIND_NODE_VERSION="$version"
   OWNMIND_NODE_SHA="$sha"
   ownmind_node_check_file "$dest" "$sha"
@@ -154,7 +164,8 @@ ownmind_ensure_node() {
   local runtime="$base/runtime"
   local partial="$runtime/.partial"
   local source="${OWNMIND_NODE_SOURCE:-}"
-  local sys_node sys_major sys_ver priv_ver arch version prev got ok
+  local sys_node sys_major sys_ver priv_ver arch version prev got ok tar_out
+  OWNMIND_NODE_DISK_FULL=0
 
   case "$source" in
     ""|server|nodejs) ;;
@@ -207,16 +218,27 @@ ownmind_ensure_node() {
   fi
   if [ "$ok" != "1" ]; then
     rm -rf "$partial"
+    if [ "${OWNMIND_NODE_DISK_FULL:-0}" = "1" ]; then
+      log_err node_download "Could not save the Node.js download (the disk is full)"
+      ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+      return 1
+    fi
     log_err node_download "Could not download Node.js from the OwnMind server or nodejs.org"
-    echo "ASK:no_network:The installer could not download Node.js from the OwnMind server or nodejs.org. Check that this computer is online, then paste the same install message to the AI again."
+    ownmind_ask_line node_download "ASK:node_download:The installer could not download Node.js from the OwnMind server or nodejs.org. Check that this computer is online, then paste the same install message to the AI again."
     return 1
   fi
   version="$OWNMIND_NODE_VERSION"
 
   mkdir -p "$partial/unpack" || return 1
-  if ! tar -xzf "$partial/node.tar.gz" -C "$partial/unpack" --strip-components=1; then
+  if ! tar_out=$(tar -xzf "$partial/node.tar.gz" -C "$partial/unpack" --strip-components=1 2>&1); then
     rm -rf "$partial"
-    log_err node_download "Could not unpack the Node.js archive (it may be damaged)"
+    if ownmind_says_disk_full "$tar_out"; then
+      log_err node_download "Could not unpack the Node.js archive (the disk is full)"
+      ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+    else
+      log_err node_download "Could not unpack the Node.js archive (it may be damaged)"
+      echo "FIX:retry_install:bash <same one-liner>"
+    fi
     return 1
   fi
 
@@ -235,7 +257,7 @@ ownmind_ensure_node() {
     rm -rf "$runtime/node-$version" "$partial"
     if [ -n "$prev" ]; then ln -sfn "$prev" "$runtime/current"; else rm -f "$runtime/current"; fi
     log_err node_download "The downloaded Node.js did not run (expected $version, got ${got:-nothing})"
-    echo "ASK:no_network:The installer could not download a working Node.js. Check that this computer is online, then paste the same install message to the AI again."
+    ownmind_ask_line node_download "ASK:node_download:The installer could not download Node.js from the OwnMind server or nodejs.org. Check that this computer is online, then paste the same install message to the AI again."
     return 1
   fi
   rm -rf "$partial"

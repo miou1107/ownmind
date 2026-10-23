@@ -61,6 +61,56 @@ function Enable-OwnMindTls12 {
   } catch { }
 }
 
+# Write-OwnMindAsk -Code CODE -Literal "ASK:CODE:<English sentence>"
+# Prints an ASK line the AI relays to the person. When this computer already has a node and the
+# OwnMind checkout's install-messages.cjs, the sentence comes out in the person's own language
+# (the Windows UI culture picks it); otherwise (bootstrap runs before any node is on the
+# machine) the English literal is printed. The literal must equal hooks/locales/en.json:
+# tests/install-messages.test.js checks that.
+function Write-OwnMindAsk {
+  param(
+    [Parameter(Mandatory = $true)][string]$Code,
+    [Parameter(Mandatory = $true)][string]$Literal
+  )
+  $line = ''
+  try {
+    $dir = Join-Path $env:USERPROFILE '.ownmind'
+    if ($env:OWNMIND_DIR) { $dir = $env:OWNMIND_DIR }
+    $helper = Join-Path $dir 'scripts\install-helpers\install-messages.cjs'
+    $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+    if ($node -and (Test-Path -LiteralPath $helper)) {
+      $argv = @($helper, 'ask', $Code)
+      if (-not $env:OWNMIND_LOCALE_FORCE) { $argv += @('--locale', (Get-Culture).Name) }
+      $previous = [Console]::OutputEncoding
+      try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $exe = [string]@($node)[0].Source
+        $out = & $exe @argv 2>$null
+      } finally {
+        [Console]::OutputEncoding = $previous
+      }
+      if ($LASTEXITCODE -eq 0 -and $out) { $line = ("$out").Trim() }
+    }
+  } catch { }
+  if (-not $line) { $line = $Literal }
+  Write-Host $line
+}
+
+# Whether an error from a download or an unpack says the disk is full (Windows error 112,
+# or 39 when a handle ran out of room).
+function Test-OwnMindDiskFull {
+  param($ErrorRecord)
+  $ex = $null
+  if ($ErrorRecord) { $ex = $ErrorRecord.Exception }
+  while ($ex) {
+    $code = $ex.HResult -band 0xFFFF
+    if ($code -eq 112 -or $code -eq 39) { return $true }
+    if ("$($ex.Message)" -match 'not enough space on the disk|disk is full|No space left') { return $true }
+    $ex = $ex.InnerException
+  }
+  return $false
+}
+
 # Invoke-OwnMindDownload -Uri URL -Dest FILE [-Headers @{...}]
 # Three tries with a short wait between them. Returns the web response (its Headers are what the
 # Node download reads) or $null when every try failed; the file is gone after a failure.
@@ -85,6 +135,8 @@ function Invoke-OwnMindDownload {
       return $resp
     } catch {
       Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+      # A full disk will not get better in two seconds; stop trying and say so.
+      if (Test-OwnMindDiskFull $_) { $global:OwnMindDiskFull = $true; return $null }
       if ($attempt -lt 3) { Start-Sleep -Seconds $attempt }
     }
   }
@@ -142,6 +194,7 @@ function Get-OwnMindArchive {
     [Parameter(Mandatory = $true)][string]$Dest
   )
   Set-StrictMode -Version Latest
+  $global:OwnMindDiskFull = $false
   $api = ''
   if ($Api) { $api = $Api.TrimEnd('/') }
   $source = ''
@@ -152,6 +205,7 @@ function Get-OwnMindArchive {
 
   if ($source -ne '' -and $source -ne 'server' -and $source -ne 'github') {
     Log-Err download "OWNMIND_SOURCE must be server or github (got: $source)"
+    Write-Host "FIX:retry_install:`$env:OWNMIND_SOURCE=''; <same one-liner>"
     return $null
   }
 
@@ -162,10 +216,15 @@ function Get-OwnMindArchive {
       if ($null -ne $resp) { return $result }
     }
     Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+    if ($global:OwnMindDiskFull) {
+      Log-Err download "Could not save the release archive (the disk is full)"
+      Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+      return $null
+    }
     if ($source -eq 'server') {
       Log-Err download "Could not download the release archive from $api"
       Write-Host "FIX:use_fallback_source:`$env:OWNMIND_SOURCE='github'; <same one-liner>"
-      Write-Host "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+      Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
       return $null
     }
     Log-Info fallback_source "The OwnMind server did not deliver the archive; trying GitHub"
@@ -188,8 +247,13 @@ function Get-OwnMindArchive {
     return $result
   }
   Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+  if ($global:OwnMindDiskFull) {
+    Log-Err download "Could not save the release archive (the disk is full)"
+    Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+    return $null
+  }
   Log-Err download "Could not download the release archive from the OwnMind server or GitHub"
-  Write-Host "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+  Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
   return $null
 }
 
@@ -214,7 +278,13 @@ function Expand-OwnMindRelease {
     New-Item -ItemType Directory -Force -Path $unpack | Out-Null
     Expand-Archive -LiteralPath $Archive -DestinationPath $unpack -Force -ErrorAction Stop
   } catch {
-    Log-Err unpack "Could not unpack the archive (it may be damaged)"
+    if (Test-OwnMindDiskFull $_) {
+      Log-Err unpack "Could not unpack the archive (the disk is full)"
+      Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+    } else {
+      Log-Err unpack "Could not unpack the archive (it may be damaged)"
+      Write-Host "FIX:retry_install:<same one-liner>"
+    }
     return $false
   }
   $root = $unpack
@@ -223,6 +293,7 @@ function Expand-OwnMindRelease {
     $all = @(Get-ChildItem -LiteralPath $unpack -Force)
     if ($all.Count -ne 1 -or -not $all[0].PSIsContainer) {
       Log-Err unpack "The GitHub archive does not have the one top-level folder that was expected"
+      Write-Host "FIX:retry_install:<same one-liner>"
       return $false
     }
     $root = $all[0].FullName
@@ -230,6 +301,7 @@ function Expand-OwnMindRelease {
   }
   if (-not (Test-Path -LiteralPath (Join-Path $root '.release') -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $root 'install.ps1') -PathType Leaf)) {
     Log-Err unpack "The archive is missing .release or install.ps1"
+    Write-Host "FIX:retry_install:<same one-liner>"
     return $false
   }
   Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
@@ -241,6 +313,7 @@ function Expand-OwnMindRelease {
     Move-Item -LiteralPath $root -Destination $Final -ErrorAction Stop
   } catch {
     Log-Err unpack "Could not move the unpacked files into $Final"
+    Write-Host "FIX:retry_install:<same one-liner>"
     return $false
   }
   Remove-Item -LiteralPath $Partial -Recurse -Force -ErrorAction SilentlyContinue
@@ -271,6 +344,7 @@ function Install-FromArchive {
   elseif ($env:OWNMIND_API_URL) { $api = $env:OWNMIND_API_URL }
   if (-not $key -or -not $api) {
     Log-Err missing_args "The API key and URL are needed to install OwnMind (powershell -ExecutionPolicy Bypass -File bootstrap.ps1 YOUR_API_KEY YOUR_API_URL)"
+    Write-Host "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
     exit 1
   }
   $partial = "$OwnmindDir.partial"
@@ -280,20 +354,24 @@ function Install-FromArchive {
     try {
       Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction Stop
     } catch {
+      Log-Err clear_partial "Could not remove $partial"
       Write-Host 'FIX:clear_partial:Remove-Item -Recurse -Force "$env:USERPROFILE\.ownmind.partial"'
       exit 1
     }
   }
+  # grammar-allow: Get-OwnMindArchive and Expand-OwnMindRelease have already printed their own ERROR with FIX or ASK
   $dl = @(Get-OwnMindArchive -Key $key -Api $api -Dest (Join-Path $partial 'archive.zip')) | Select-Object -Last 1
   if ($null -eq $dl) {
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
     exit 1
   }
+  # grammar-allow: Expand-OwnMindRelease has already printed its own ERROR with FIX or ASK
   $unpacked = @(Expand-OwnMindRelease -Archive (Join-Path $partial 'archive.zip') -Partial $partial -Final $OwnmindDir -Strip ([bool]$dl.Strip) -Release ([string]$dl.Release)) | Select-Object -Last 1
   if (-not $unpacked) { exit 1 }
   Set-Location "$OwnmindDir"
   # Private Node runtime when this machine has no usable node. The file exists in every release
   # that has this feature; the guard lets an older release without it still install.
+  # grammar-allow: Ensure-OwnMindNode has already printed its own ERROR with ASK
   $nodeHelper = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-node-runtime.ps1'
   if (Test-Path -LiteralPath $nodeHelper) {
     . $nodeHelper
@@ -302,6 +380,7 @@ function Install-FromArchive {
   }
   Log-Info install "Running install.ps1 (forwarding API_KEY / API_URL)"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @ArgList
+  # grammar-allow: install.ps1 prints its own ERROR with FIX or ASK for the stops it knows about
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
   Log-Ok done "Fresh install complete (release archive)"
 }
@@ -324,12 +403,14 @@ if (-not (Test-Path "$OwnmindDir")) {
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
     Log-Err git_clone "git clone failed (check network or GitHub access)"
+    Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
     exit 1
   }
   Log-Ok clone "Clone complete"
   Set-Location "$OwnmindDir"
   Log-Info install "Running install.ps1 (forwarding API_KEY / API_URL)"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
+  # grammar-allow: install.ps1 prints its own ERROR with FIX or ASK for the stops it knows about
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
   Log-Ok done "Fresh install complete"
   exit 0
@@ -348,6 +429,7 @@ if (-not (Test-Path "$OwnmindDir\.git") -and ((Test-Path -LiteralPath "$OwnmindD
   Log-Info already_installed "archive install found; re-running install.ps1"
   Set-Location "$OwnmindDir"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
+  # grammar-allow: install.ps1 prints its own ERROR with FIX or ASK for the stops it knows about
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
   Log-Ok done "Archive install checked"
   exit 0
@@ -372,10 +454,12 @@ if (-not (Test-Path "$OwnmindDir\.git")) {
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
     Log-Err git_clone "Re-clone failed; old data preserved at $Bak"
+    Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
     exit 1
   }
   Set-Location "$OwnmindDir"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
+  # grammar-allow: install.ps1 prints its own ERROR with FIX or ASK for the stops it knows about
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
   Log-Ok done "Repair complete (old data preserved at $Bak; backups older than 7 days are swept on next upgrade)"
   exit 0

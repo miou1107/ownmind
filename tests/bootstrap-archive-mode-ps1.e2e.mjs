@@ -411,7 +411,7 @@ test('private Node: neither source works, so the person is asked to check the ne
     ].join('\r\n'));
     const r = await run(probe, [], { ...win.env, OWNMIND_NODE_DIST: `${fixture.url}/nothing-here` });
     assert.match(r.out, /ERROR:node_download:/);
-    assert.match(r.out, /ASK:no_network:The installer could not download Node\.js from the OwnMind server or nodejs\.org\. Check that this computer is online, then paste the same install message to the AI again\./);
+    assert.match(r.out, /ASK:node_download:The installer could not download Node\.js from the OwnMind server or nodejs\.org\. Check that this computer is online, then paste the same install message to the AI again\./);
     assert.match(r.out, /RESULT=False/);
     assert.ok(!fs.existsSync(path.join(win.home, '.ownmind', 'runtime', 'current')), 'nothing may be linked after a failed download');
     assert.ok(!fs.existsSync(path.join(win.home, '.ownmind', 'runtime', '.partial')));

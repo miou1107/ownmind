@@ -46,5 +46,13 @@
   "handoff.waitingElsewhereMore": "{count} more handoffs are waiting in other projects; the console lists them on the handoffs page.",
   "handoff.accepted": "Took over the handoff for {project}. Say so if you want it undone.",
   "handoff.takenByAnotherWindow": "Another window took it over {minutes} minute(s) ago",
-  "consolidation.report": "[OwnMind] The memory tidy-up for {month} is done: merged {merged}, archived {archived}, decided {decided}. Say so if you want any of them back."
+  "consolidation.report": "[OwnMind] The memory tidy-up for {month} is done: merged {merged}, archived {archived}, decided {decided}. Say so if you want any of them back.",
+  "install.ask.no_network": "The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again.",
+  "install.ask.node_download": "The installer could not download Node.js from the OwnMind server or nodejs.org. Check that this computer is online, then paste the same install message to the AI again.",
+  "install.ask.disk_full": "This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again.",
+  "install.next.verify_manual_terminal": "OwnMind is installed. Type /exit, then run claude again, and your memory will load.",
+  "install.next.verify_manual_generic": "OwnMind is installed. Start a new conversation and your memory will load.",
+  "install.verify.session_title": "OwnMind install check",
+  "install.notify.loaded": "OwnMind is running and your memory has loaded.",
+  "install.notify.not_loaded": "OwnMind is installed but has not loaded your memory yet. Open a new conversation; if it still does not load, paste \"repair OwnMind\" to the AI."
 }

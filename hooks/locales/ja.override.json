@@ -48,5 +48,13 @@
   "handoff.waitingElsewhereMore": "ほかに {count} 件の引き継ぎが別のプロジェクトで待っています。管理画面の引き継ぎページで確認できます",
   "handoff.accepted": "{project} の引き継ぎを受け取りました。取り消したいときは一言ください",
   "handoff.takenByAnotherWindow": "別のウィンドウが {minutes} 分前に受け取りました",
-  "consolidation.report": "[OwnMind] {month} の記憶の整理が終わりました：統合 {merged}、アーカイブ {archived}、決定 {decided}。元に戻したいものがあれば一言ください。"
+  "consolidation.report": "[OwnMind] {month} の記憶の整理が終わりました：統合 {merged}、アーカイブ {archived}、決定 {decided}。元に戻したいものがあれば一言ください。",
+  "install.ask.no_network": "インストーラーが OwnMind のサーバーにも GitHub にも接続できませんでした。このパソコンがオンラインであることを確認してから、同じインストール用の文章をもう一度 AI に貼り付けてください。",
+  "install.ask.node_download": "インストーラーが Node.js をダウンロードできませんでした。OwnMind のサーバーにも nodejs.org にも接続できません。このパソコンがオンラインであることを確認してから、同じインストール用の文章をもう一度 AI に貼り付けてください。",
+  "install.ask.disk_full": "ディスクの空き容量が足りないため、インストーラーが止まりました。500 MB 以上空けてから、同じインストール用の文章をもう一度 AI に貼り付けてください。",
+  "install.next.verify_manual_terminal": "OwnMind のインストールが完了しました。/exit と入力して終了し、もう一度 claude を起動すると、記憶が読み込まれます。",
+  "install.next.verify_manual_generic": "OwnMind のインストールが完了しました。新しい会話を開始すると、記憶が読み込まれます。",
+  "install.verify.session_title": "OwnMind インストール確認",
+  "install.notify.loaded": "OwnMind は動作しており、記憶も読み込まれました。",
+  "install.notify.not_loaded": "OwnMind はインストールされましたが、まだ記憶が読み込まれていません。新しい会話を開いてみてください。それでも読み込まれない場合は、AI に「OwnMind を修復して」と貼り付けてください。"
 }

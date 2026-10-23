@@ -106,6 +106,32 @@ ownmind_github_latest_tag() {
     | tail -n 1 || true
 }
 
+# ownmind_ask_line CODE "ASK:CODE:<English sentence>"
+# Prints an ASK line the AI relays to the person. When this computer already has a node and
+# the OwnMind checkout's install-messages.cjs, the sentence comes out in the person's own
+# language; otherwise (bootstrap runs before any node is on the machine) the English literal
+# given as the second argument is printed. The literal must equal hooks/locales/en.json:
+# tests/install-messages.test.js checks that.
+ownmind_ask_line() {
+  local code="$1" literal="$2" helper line node_bin
+  helper="${OWNMIND_DIR:-$HOME/.ownmind}/scripts/install-helpers/install-messages.cjs"
+  node_bin="${OWNMIND_NODE:-node}"
+  if [ -f "$helper" ] && command -v "$node_bin" >/dev/null 2>&1 \
+    && line=$("$node_bin" "$helper" ask "$code" 2>/dev/null) && [ -n "$line" ]; then
+    printf '%s\n' "$line"
+  else
+    printf '%s\n' "$literal"
+  fi
+}
+
+# Whether text from tar or curl says the disk is full.
+ownmind_says_disk_full() {
+  case "$1" in
+    *"No space left"*|*"write error"*|*"Write failed"*|*"Error writing"*|*ENOSPC*|*"Disk quota"*) return 0 ;;
+  esac
+  return 1
+}
+
 # ownmind_download_archive KEY API_URL DEST_FILE
 # Sources in order: the OwnMind server, then GitHub. OWNMIND_SOURCE=server|github forces one.
 # Sets OWNMIND_ARCHIVE_STRIP (1 when the archive has one top-level folder to strip) and
@@ -115,28 +141,39 @@ ownmind_download_archive() {
   local key="$1" api="${2%/}" dest="$3"
   local source="${OWNMIND_SOURCE:-}"
   local gh_codeload="${OWNMIND_GITHUB_CODELOAD:-https://codeload.github.com}"
-  local tag ref
+  local tag ref rc
   OWNMIND_ARCHIVE_STRIP=0
   OWNMIND_ARCHIVE_RELEASE=""
 
   case "$source" in
     ""|server|github) ;;
-    *) log_err download "OWNMIND_SOURCE must be server or github (got: $source)"; return 1 ;;
+    *)
+      log_err download "OWNMIND_SOURCE must be server or github (got: $source)"
+      echo "FIX:retry_install:unset OWNMIND_SOURCE; bash <same one-liner>"
+      return 1 ;;
   esac
   mkdir -p "$(dirname "$dest")" || return 1
 
   if [ "$source" != "github" ]; then
     log_info download "Downloading the release archive from $api"
-    # shellcheck disable=SC2086 — see ownmind_github_latest_tag
-    if [ -n "$key" ] && [ -n "$api" ] \
-      && ownmind_curl_auth "$key" | curl -K - -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$api/api/install/archive"; then
-      return 0
+    rc=1
+    if [ -n "$key" ] && [ -n "$api" ]; then
+      rc=0
+      # shellcheck disable=SC2086 — see ownmind_github_latest_tag
+      ownmind_curl_auth "$key" | curl -K - -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$api/api/install/archive" || rc=$?
+      [ "$rc" -eq 0 ] && return 0
     fi
     rm -f "$dest"
+    # curl exit 23 is "could not write the file", which on an install is a full disk.
+    if [ "$rc" -eq 23 ]; then
+      log_err download "Could not save the release archive (the disk is full)"
+      ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+      return 1
+    fi
     if [ "$source" = "server" ]; then
       log_err download "Could not download the release archive from $api"
       echo "FIX:use_fallback_source:OWNMIND_SOURCE=github bash <same one-liner>"
-      echo "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+      ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
       return 1
     fi
     log_info fallback_source "The OwnMind server did not deliver the archive; trying GitHub"
@@ -152,14 +189,21 @@ ownmind_download_archive() {
     log_info fallback_source "GitHub tag list unavailable; using the main branch"
   fi
   log_info download "Downloading the release archive from GitHub ($OWNMIND_ARCHIVE_RELEASE)"
+  rc=0
   # shellcheck disable=SC2086 — see ownmind_github_latest_tag
-  if curl -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$gh_codeload/miou1107/ownmind/tar.gz/$ref"; then
+  curl -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$gh_codeload/miou1107/ownmind/tar.gz/$ref" || rc=$?
+  if [ "$rc" -eq 0 ]; then
     OWNMIND_ARCHIVE_STRIP=1
     return 0
   fi
   rm -f "$dest"
+  if [ "$rc" -eq 23 ]; then
+    log_err download "Could not save the release archive (the disk is full)"
+    ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+    return 1
+  fi
   log_err download "Could not download the release archive from the OwnMind server or GitHub"
-  echo "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+  ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
   return 1
 }
 
@@ -167,23 +211,37 @@ ownmind_download_archive() {
 # Unpacks into PARTIAL_DIR, checks that .release and install.sh are there, and only then
 # renames PARTIAL_DIR to FINAL_DIR, so FINAL_DIR never exists half-unpacked.
 ownmind_unpack_release() {
-  local archive="$1" partial="$2" final="$3" release
+  local archive="$1" partial="$2" final="$3" release tar_out
   mkdir -p "$partial" || return 1
+  # tar's own words are kept: they say whether the disk filled up or the archive is damaged.
   if [ "${OWNMIND_ARCHIVE_STRIP:-0}" = "1" ]; then
     # GitHub archives wrap everything in one folder, and carry no .release of their own.
-    tar -xzf "$archive" -C "$partial" --strip-components 1 || { log_err unpack "Could not unpack the archive (it may be damaged)"; return 1; }
-    printf '%s\n' "$OWNMIND_ARCHIVE_RELEASE" > "$partial/.release" || return 1
+    tar_out=$(tar -xzf "$archive" -C "$partial" --strip-components 1 2>&1) || { ownmind_unpack_failed "$tar_out"; return 1; }
+    printf '%s\n' "$OWNMIND_ARCHIVE_RELEASE" > "$partial/.release" || { ownmind_unpack_failed "write error"; return 1; }
   else
-    tar -xzf "$archive" -C "$partial" || { log_err unpack "Could not unpack the archive (it may be damaged)"; return 1; }
+    tar_out=$(tar -xzf "$archive" -C "$partial" 2>&1) || { ownmind_unpack_failed "$tar_out"; return 1; }
   fi
   if [ ! -f "$partial/.release" ] || [ ! -f "$partial/install.sh" ]; then
     log_err unpack "The archive is missing .release or install.sh"
+    echo "FIX:retry_install:bash <same one-liner>"
     return 1
   fi
   rm -f "$archive"
-  mv "$partial" "$final" || { log_err unpack "Could not move the unpacked files into $final"; return 1; }
+  mv "$partial" "$final" || { log_err unpack "Could not move the unpacked files into $final"; echo "FIX:retry_install:bash <same one-liner>"; return 1; }
   release=$(head -n 1 "$final/.release" | tr -d '[:space:]')
   log_ok unpack "release $release unpacked"
+}
+
+# A failed unpack is either a full disk (nothing the AI can do) or a damaged archive (a second
+# download fixes it). $1 is what tar said.
+ownmind_unpack_failed() {
+  if ownmind_says_disk_full "$1"; then
+    log_err unpack "Could not unpack the archive (the disk is full)"
+    ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  else
+    log_err unpack "Could not unpack the archive (it may be damaged)"
+    echo "FIX:retry_install:bash <same one-liner>"
+  fi
 }
 # END fetch-release
 
@@ -194,23 +252,27 @@ install_from_archive() {
   local partial="${OWNMIND_DIR}.partial"
   if [ -z "$key" ] || [ -z "$api" ]; then
     log_err missing_args "The API key and URL are needed to install OwnMind (bash -s -- YOUR_API_KEY YOUR_API_URL)"
+    echo "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
     exit 1
   fi
   log_info archive_mode "git is not installed; installing from the release archive"
   if [ -e "$partial" ]; then
     log_info clear_partial "Removing the unfinished download from an earlier attempt ($partial)"
-    rm -rf "$partial" || { echo "FIX:clear_partial:rm -rf ~/.ownmind.partial"; exit 1; }
+    rm -rf "$partial" || { log_err clear_partial "Could not remove $partial"; echo "FIX:clear_partial:rm -rf ~/.ownmind.partial"; exit 1; }
   fi
+  # grammar-allow: ownmind_download_archive and ownmind_unpack_release have already printed their own ERROR with FIX or ASK
   ownmind_download_archive "$key" "$api" "$partial/archive.tar.gz" || { rm -rf "$partial"; exit 1; }
   ownmind_unpack_release "$partial/archive.tar.gz" "$partial" "$OWNMIND_DIR" || exit 1
   cd "$OWNMIND_DIR"
   # Private Node runtime when this machine has no usable node. The file exists in every release
   # that has this feature; the guard lets an older release without it still install.
+  # grammar-allow: ownmind_ensure_node has already printed its own ERROR with ASK
   if [ -f "$OWNMIND_DIR/scripts/install-helpers/ensure-node-runtime.sh" ]; then
     . "$OWNMIND_DIR/scripts/install-helpers/ensure-node-runtime.sh"
     ownmind_ensure_node "${api%/}" "$key" || exit 1
   fi
   log_info install "Running install.sh (forwarding API_KEY + API_URL)"
+  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
   bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
   log_ok done "Fresh install complete (release archive)"
 }
@@ -227,6 +289,7 @@ if [ ! -d "$OWNMIND_DIR" ]; then
   git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done
   if [ ! -d "$OWNMIND_DIR/.git" ]; then
     log_err git_clone "git clone failed (check network or GitHub access)"
+    ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
     exit 1
   fi
   log_ok clone "Clone complete"
@@ -234,6 +297,7 @@ if [ ! -d "$OWNMIND_DIR" ]; then
   log_info install "Running install.sh (forwarding API_KEY + API_URL)"
   # Forward positional args ("$@") to install.sh; if missing, install.sh
   # prints its own friendly error message and exits non-zero.
+  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
   bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
   log_ok done "Fresh install complete"
   exit 0
@@ -248,6 +312,7 @@ if [ ! -d "$OWNMIND_DIR/.git" ] && { [ -f "$OWNMIND_DIR/.release" ] || [ -f "$OW
   fi
   log_info already_installed "archive install found; re-running install.sh"
   cd "$OWNMIND_DIR"
+  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
   bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
   log_ok done "Archive install checked"
   exit 0
@@ -257,6 +322,7 @@ fi
 if [ ! -d "$OWNMIND_DIR/.git" ]; then
   BAK="${OWNMIND_DIR}.broken.${TS}"
   log_info broken "$OWNMIND_DIR exists but is not a git repo; backing up to $BAK"
+  # grammar-allow: a rename inside the home folder failing means the folder is locked or unwritable, which no command the AI may run changes
   mv "$OWNMIND_DIR" "$BAK" || { log_err backup "Backup failed"; exit 1; }
   # A rename keeps the old modification time; the 7-day sweep in interactive-upgrade.sh counts from now.
   touch "$BAK" 2>/dev/null || true
@@ -269,6 +335,7 @@ if [ ! -d "$OWNMIND_DIR/.git" ]; then
   log_info fresh "Re-cloning"
   git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done
   cd "$OWNMIND_DIR"
+  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
   bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
   log_ok done "Repair complete (old data preserved at $BAK; backups older than 7 days are swept on next upgrade)"
   exit 0

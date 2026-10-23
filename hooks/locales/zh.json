@@ -45,5 +45,14 @@
   "handoff.waitingElsewhereMore": "另外還有 {count} 筆交接在別的專案沒接，後台的交接頁看得到",
   "handoff.accepted": "已接手 {project} 的交接，要撤銷跟我說一聲",
   "handoff.takenByAnotherWindow": "另一個視窗 {minutes} 分鐘前接走",
-  "consolidation.report": "[OwnMind] {month} 的記憶整理完了：合併 {merged}、歸檔 {archived}、定案 {decided}。要還原任何一條，說一聲。"
+  "consolidation.report": "[OwnMind] {month} 的記憶整理完了：合併 {merged}、歸檔 {archived}、定案 {decided}。要還原任何一條，說一聲。",
+  "_comment_install": "install.* keys: drafted 2026-10-23 for the zero-touch installer, pending the product owner's approval of the wording (zero-touch-install, Task 10 and 12).",
+  "install.ask.no_network": "安裝程式連不上 OwnMind 主機和 GitHub。確認電腦有網路後，把同一段安裝文字再貼給 AI 一次。",
+  "install.ask.node_download": "安裝程式下載不到 Node.js，OwnMind 主機和 nodejs.org 都連不上。確認電腦有網路後，把同一段安裝文字再貼給 AI 一次。",
+  "install.ask.disk_full": "硬碟空間不夠，安裝程式停了。清出 500 MB 以上，再把同一段安裝文字貼給 AI 一次。",
+  "install.next.verify_manual_terminal": "OwnMind 裝好了。輸入 /exit 離開，再輸入 claude 重新開啟，記憶就會載入。",
+  "install.next.verify_manual_generic": "OwnMind 裝好了。重新開一個對話，記憶就會載入。",
+  "install.verify.session_title": "OwnMind 安裝驗證",
+  "install.notify.loaded": "OwnMind 已經在運作，記憶載入了。",
+  "install.notify.not_loaded": "OwnMind 裝好了，但還沒載入記憶。開一個新對話試試；還是沒有，就把「修 OwnMind」貼給 AI。"
 }

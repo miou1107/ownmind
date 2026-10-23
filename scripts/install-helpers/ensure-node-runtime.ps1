@@ -295,6 +295,7 @@ function Ensure-OwnMindNode {
   }
 
   Log-Info node_download "trying the OwnMind server, then nodejs.org (this can take a few minutes when offline)"
+  $global:OwnMindDiskFull = $false
   $zip = Join-Path $partial 'node.zip'
   $got = $null
   if ($source -ne 'nodejs') {
@@ -306,8 +307,13 @@ function Ensure-OwnMindNode {
   }
   if ($null -eq $got) {
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
+    if ($global:OwnMindDiskFull) {
+      Log-Err node_download "Could not save the Node.js download (the disk is full)"
+      Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+      return $false
+    }
     Log-Err node_download "Could not download Node.js from the OwnMind server or nodejs.org"
-    Write-Host "ASK:no_network:The installer could not download Node.js from the OwnMind server or nodejs.org. Check that this computer is online, then paste the same install message to the AI again."
+    Write-OwnMindAsk -Code node_download -Literal "ASK:node_download:The installer could not download Node.js from the OwnMind server or nodejs.org. Check that this computer is online, then paste the same install message to the AI again."
     return $false
   }
   $version = [string]$got.Version
@@ -319,8 +325,15 @@ function Ensure-OwnMindNode {
     New-Item -ItemType Directory -Force -Path $unpack -ErrorAction Stop | Out-Null
     Expand-Archive -LiteralPath $zip -DestinationPath $unpack -Force -ErrorAction Stop
   } catch {
+    $full = Test-OwnMindDiskFull $_
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
-    Log-Err node_download "Could not unpack the Node.js archive (it may be damaged)"
+    if ($full) {
+      Log-Err node_download "Could not unpack the Node.js archive (the disk is full)"
+      Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+    } else {
+      Log-Err node_download "Could not unpack the Node.js archive (it may be damaged)"
+      Write-Host "FIX:retry_install:<same one-liner>"
+    }
     return $false
   }
   $inner = @(Get-ChildItem -LiteralPath $unpack -Force)
@@ -369,7 +382,7 @@ function Ensure-OwnMindNode {
     $said = $gotVer
     if (-not $said) { $said = 'nothing' }
     Log-Err node_download "The downloaded Node.js did not run (expected $version, got $said)"
-    Write-Host "ASK:no_network:The installer could not download a working Node.js. Check that this computer is online, then paste the same install message to the AI again."
+    Write-OwnMindAsk -Code node_download -Literal "ASK:node_download:The installer could not download Node.js from the OwnMind server or nodejs.org. Check that this computer is online, then paste the same install message to the AI again."
     return $false
   }
   Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue

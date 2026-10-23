@@ -11,6 +11,29 @@ ownmind_curl_auth() {
   printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
 }
 
+# The output grammar the AI reads (see scripts/bootstrap.sh):
+#   ERROR:<code>:<message> then FIX:<code>:<command>   a stop the AI can repair and retry
+#   ASK:<code>:<sentence>                              a stop only the person can resolve
+#   NEXT:<kind>[:<detail>]                             what to do after a successful install
+#
+# ownmind_ask_line CODE "ASK:CODE:<English sentence>" prints the sentence in the person's own
+# language when a node and the OwnMind checkout's install-messages.cjs exist, and the English
+# literal otherwise. ownmind_say KEY "<English sentence>" does the same for a bare sentence.
+# The English must equal hooks/locales/en.json (tests/install-messages.test.js checks that).
+ownmind_messages_cli() {
+  local helper="$HOME/.ownmind/scripts/install-helpers/install-messages.cjs" node_bin="${OWNMIND_NODE:-node}"
+  [ -f "$helper" ] && command -v "$node_bin" >/dev/null 2>&1 || return 1
+  "$node_bin" "$helper" "$@" 2>/dev/null
+}
+ownmind_ask_line() {
+  local line
+  if line=$(ownmind_messages_cli ask "$1") && [ -n "$line" ]; then printf '%s\n' "$line"; else printf '%s\n' "$2"; fi
+}
+ownmind_say() {
+  local line
+  if line=$(ownmind_messages_cli say "$1") && [ -n "$line" ]; then printf '%s\n' "$line"; else printf '%s\n' "$2"; fi
+}
+
 set -eE  # -E so the ERR trap below also fires inside shell functions
 
 # The key may also arrive in OWNMIND_INSTALL_KEY with an empty first argument: that is how
@@ -19,14 +42,16 @@ API_KEY="${1:-${OWNMIND_INSTALL_KEY:-}}"
 API_URL="${2:-}"
 
 if [ -z "$API_KEY" ]; then
-  echo "[ERROR] API Key and API URL required"
+  echo "ERROR:missing_args:API Key and API URL required"
+  echo "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
   echo "Usage:   bash install.sh YOUR_API_KEY YOUR_API_URL"
   echo "Example: bash install.sh abc123 https://your-server.com/ownmind"
   exit 1
 fi
 
 if [ -z "$API_URL" ]; then
-  echo "[ERROR] API URL required"
+  echo "ERROR:missing_args:API URL required"
+  echo "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
   echo "Usage:   bash install.sh YOUR_API_KEY YOUR_API_URL"
   echo "Example: bash install.sh abc123 https://your-server.com/ownmind"
   exit 1
@@ -121,6 +146,7 @@ NODE_STEP_PENDING=0
 run_node_step() {
   # shellcheck disable=SC1090
   . "$NODE_HELPER"
+  # grammar-allow: ownmind_ensure_node has already printed its own ERROR with ASK
   ownmind_ensure_node "$API_URL" "$API_KEY" || exit 1
   NODE_STEP_PENDING=0
 }
@@ -132,8 +158,8 @@ case "$OSTYPE" in
     elif ownmind_node_usable || [ ! -d "$HOME/.ownmind" ]; then
       NODE_STEP_PENDING=1
     else
-      echo "[ERROR] Node.js is missing or too old, and this OwnMind checkout is too old to install one."
-      echo "        Install Node.js v20+ LTS from https://nodejs.org/ and retry"
+      echo "ERROR:node_missing:Node.js is missing or too old, and this OwnMind checkout is too old to install one."
+      echo "FIX:retry_install:bash <same one-liner> (it brings this checkout up to date first, then installs a private Node.js)"
       exit 1
     fi
     ;;
@@ -142,18 +168,21 @@ case "$OSTYPE" in
       echo "[WARN] Node.js not found (required by OwnMind)"
       case "$OSTYPE" in
         linux*)
-          echo "[ERROR] Linux: install Node.js v20+ manually and re-run:"
+          echo "ERROR:node_missing:Linux: install Node.js v20+ manually and re-run:"
           echo "        Debian/Ubuntu: sudo apt install nodejs npm"
           echo "        Fedora/RHEL:   sudo dnf install nodejs npm"
           echo "        Or via nvm (recommended for version flexibility): https://github.com/nvm-sh/nvm"
+          # grammar-allow: no private Node.js download exists for Linux, so the remedy is the manual one printed here for the machine's owner
           exit 1
           ;;
         msys*|cygwin*|win32*)
-          echo "[ERROR] Windows: run install.ps1 instead (it auto-installs Node.js via winget)"
+          # grammar-allow: Git Bash is not a supported installer; the message names install.ps1 for the machine's owner
+          echo "ERROR:wrong_installer:Windows: run install.ps1 instead (it auto-installs Node.js via winget)"
           exit 1
           ;;
         *)
-          echo "[ERROR] Unknown OS ($OSTYPE); install Node.js v20+ manually and retry"
+          # grammar-allow: no installer exists for an unknown operating system, so there is no command to try
+          echo "ERROR:unknown_os:Unknown OS ($OSTYPE); install Node.js v20+ manually and retry"
           exit 1
           ;;
       esac
@@ -162,7 +191,8 @@ case "$OSTYPE" in
     NODE_VER=$(node --version 2>/dev/null | sed 's/^v//')
     NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
     if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
-      echo "[ERROR] Node.js too old (v$NODE_VER); OwnMind requires v20+. Upgrade and retry"
+      # grammar-allow: this branch only runs on Linux and unknown systems, which have no private Node.js download
+      echo "ERROR:node_too_old:Node.js too old (v$NODE_VER); OwnMind requires v20+. Upgrade and retry"
       exit 1
     fi
     ;;
@@ -206,20 +236,23 @@ elif [ -d "$OWNMIND_DIR" ]; then
     if ! (cd "$OWNMIND_DIR" && node "$RELEASE_HELPER" >/dev/null); then
       maybe_load_report_error
       report_error "install_git_pull_failed" "update to the newest release failed (existing OwnMind directory cannot be updated)"
-      echo "[ERROR] Updating OwnMind failed. Run bootstrap.sh or fix manually"
+      echo "ERROR:update_failed:Updating OwnMind failed. Run bootstrap.sh or fix manually"
+      echo "FIX:retry_install:bash <same one-liner>"
       exit 1
     fi
   elif ! git -C "$OWNMIND_DIR" pull -q; then
     maybe_load_report_error
     report_error "install_git_pull_failed" "git pull failed (existing OwnMind directory cannot be updated)"
-    echo "[ERROR] git pull failed. Run bootstrap.sh or fix manually"
+    echo "ERROR:update_failed:git pull failed. Run bootstrap.sh or fix manually"
+    echo "FIX:retry_install:bash <same one-liner>"
     exit 1
   fi
 else
   echo "[INFO] Cloning OwnMind MCP server"
   if ! git clone -q https://github.com/miou1107/ownmind.git "$OWNMIND_DIR"; then
     report_error "install_git_clone_failed" "git clone github.com/miou1107/ownmind failed"
-    echo "[ERROR] git clone failed (network or GitHub access)"
+    echo "ERROR:git_clone:git clone failed (network or GitHub access)"
+    ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
     exit 1
   fi
   # The node step deferred above needs the clone, and the release lookup below needs node.
@@ -276,18 +309,24 @@ fi
 if [ "$npm_status" -ne 0 ]; then
   report_error "install_npm_failed" "npm install in ${OWNMIND_DIR}/mcp failed"
   if [ "$INSTALL_LOG_IS_FILE" = "1" ] && [ -s "$INSTALL_LOG" ]; then
-    echo "[ERROR] npm install failed. What npm said:"
+    echo "ERROR:npm_install:npm install failed. What npm said:"
     tail -n 20 "$INSTALL_LOG" | sed 's/^/       /'
     echo "       Full log: $INSTALL_LOG"
   elif [ "$INSTALL_LOG_IS_FILE" = "1" ]; then
-    echo "[ERROR] npm install failed, and npm wrote no output at all."
+    echo "ERROR:npm_install:npm install failed, and npm wrote no output at all."
   else
     # The fallback case: npm ran unredirected, so its output is already above. Saying so is the
     # honest line — there is no file to tail, and pointing at /dev/stderr would either find a
     # terminal or find the transcript of this whole run.
-    echo "[ERROR] npm install failed. npm's error is printed above; $INSTALL_LOG_DIR could not be written to."
+    echo "ERROR:npm_install:npm install failed. npm's error is printed above; $INSTALL_LOG_DIR could not be written to."
   fi
   echo "       If it names no cause, try: npm install -g npm@latest and retry"
+  # A full disk is the one npm failure the AI cannot repair.
+  if [ "$INSTALL_LOG_IS_FILE" = "1" ] && grep -qiE 'ENOSPC|No space left' "$INSTALL_LOG" 2>/dev/null; then
+    ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  else
+    echo "FIX:retry_install:bash <same one-liner>"
+  fi
   exit 1
 fi
 
@@ -319,6 +358,12 @@ on_install_error() {
     tail -n 5 "$INSTALL_LOG" | sed 's/^/         /'
   fi
   report_error "install_aborted" "install.sh aborted at line ${line}" "$INSTALL_LOG" 2>/dev/null || true
+  echo "ERROR:install_aborted:install.sh aborted at line ${line}"
+  if [ "$INSTALL_LOG_IS_FILE" = "1" ] && grep -qiE 'ENOSPC|No space left' "$INSTALL_LOG" 2>/dev/null; then
+    ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  else
+    echo "FIX:retry_install:bash <same one-liner>"
+  fi
 }
 trap 'on_install_error "$LINENO"' ERR
 
@@ -1309,6 +1354,8 @@ if [ -f "$ARTIFACT_CHECK" ]; then
     # alone. The self-check below has already told the server, which is how a human hears
     # about it.
     echo "[FAIL] Installation did not complete."
+    echo "ERROR:install_incomplete:Installation did not complete."
+    echo "FIX:retry_install:bash <same one-liner>"
     printf '%s\n' "$artifact_result" | sed 's/^/       /'
     echo "       Log: $INSTALL_LOG"
     report_error "install_incomplete" "$artifact_result" "$INSTALL_LOG" 2>/dev/null || true
@@ -1351,5 +1398,17 @@ echo "  [ OK ] Claude Code        SessionStart hook"
 { [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "  [ OK ] Antigravity        rules file"
 echo "  [ OK ] Git hooks          pre-commit + post-commit (Iron Rule Verification)"
 echo ""
-echo "Open a new AI session — OwnMind will auto-load your memory."
-echo ""
+# What the AI does next depends on where it is running (zero-touch-install, Task 12):
+#   Claude desktop app (CLAUDE_CODE_ENTRYPOINT=claude-desktop, or CLAUDE_CODE_DESKTOP_APP_VERSION set)
+#     -> NEXT:verify:new-session   the AI opens a verification conversation itself
+#   Claude Code in a terminal (CLAUDE_CODE_ENTRYPOINT=cli, or unset with a terminal on stdin)
+#     -> NEXT:verify:manual:<sentence about /exit and claude>
+#   anything else -> NEXT:verify:manual:<sentence about a new conversation>
+# This is the last line printed: whatever reads the output last reads the instruction.
+if [ "${CLAUDE_CODE_ENTRYPOINT:-}" = "claude-desktop" ] || [ -n "${CLAUDE_CODE_DESKTOP_APP_VERSION:-}" ]; then
+  echo "NEXT:verify:new-session"
+elif [ "${CLAUDE_CODE_ENTRYPOINT:-}" = "cli" ] || { [ -z "${CLAUDE_CODE_ENTRYPOINT:-}" ] && [ -t 0 ]; }; then
+  echo "NEXT:verify:manual:$(ownmind_say install.next.verify_manual_terminal "OwnMind is installed. Type /exit, then run claude again, and your memory will load.")"
+else
+  echo "NEXT:verify:manual:$(ownmind_say install.next.verify_manual_generic "OwnMind is installed. Start a new conversation and your memory will load.")"
+fi

@@ -28,6 +28,43 @@ function Reload-Path {
   }
 }
 
+# --- The output grammar the AI reads (see scripts/bootstrap.ps1) ---
+#   ERROR:<code>:<message> then FIX:<code>:<command>   a stop the AI can repair and retry
+#   ASK:<code>:<sentence>                              a stop only the person can resolve
+#   NEXT:<kind>[:<detail>]                             what to do after a successful install
+# Get-OwnMindSentence asks the OwnMind checkout's install-messages.cjs for a sentence in the
+# person's language (the Windows UI culture picks it), and returns the English literal when
+# there is no node or no checkout yet. The literal must equal hooks/locales/en.json:
+# tests/install-messages.test.js checks that.
+function Get-OwnMindSentence {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Command,
+    [Parameter(Mandatory = $true)][string]$Literal
+  )
+  try {
+    $helper = Join-Path $HOME '.ownmind\scripts\install-helpers\install-messages.cjs'
+    $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+    if ($node -and (Test-Path -LiteralPath $helper)) {
+      $argv = @($helper) + $Command
+      if (-not $env:OWNMIND_LOCALE_FORCE) { $argv += @('--locale', (Get-Culture).Name) }
+      $previous = [Console]::OutputEncoding
+      try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $exe = [string]@($node)[0].Source
+        $out = & $exe @argv 2>$null
+      } finally {
+        [Console]::OutputEncoding = $previous
+      }
+      if ($LASTEXITCODE -eq 0 -and $out) { return ("$out").Trim() }
+    }
+  } catch { }
+  return $Literal
+}
+function Write-OwnMindAsk {
+  param([Parameter(Mandatory = $true)][string]$Code, [Parameter(Mandatory = $true)][string]$Literal)
+  Write-Host (Get-OwnMindSentence -Command @('ask', $Code) -Literal $Literal)
+}
+
 # --- 參數處理（同時支援 param 和環境變數，irm | iex 不支援 param）---
 # 過濾 flag-like args（如舊版 interactive-upgrade.ps1 傳的 --update），避免被當 API key
 $PosArgs = @($args | Where-Object { $_ -notlike '-*' })
@@ -35,10 +72,14 @@ if ($PosArgs.Count -ge 1) { $ApiKey = $PosArgs[0] } else { $ApiKey = $env:OWNMIN
 if ($PosArgs.Count -ge 2) { $ApiUrl = $PosArgs[1] } else { $ApiUrl = $env:OWNMIND_API_URL }
 
 if (-not $ApiKey) {
+  Write-Host "ERROR:missing_args:API Key and API URL required"
+  Write-Host "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
   Write-Error "API Key required`nUsage:   .\install.ps1 YOUR_API_KEY YOUR_API_URL`nOr env:  `$env:OWNMIND_API_KEY='xxx'; `$env:OWNMIND_API_URL='https://...'"
   exit 1
 }
 if (-not $ApiUrl) {
+  Write-Host "ERROR:missing_args:API Key and API URL required"
+  Write-Host "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
   Write-Error "API URL required`nUsage: .\install.ps1 YOUR_API_KEY YOUR_API_URL"
   exit 1
 }
@@ -129,6 +170,8 @@ function Confirm-NodeVersion {
   $nodeMajor = 0
   try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
   if ($nodeMajor -lt 20) {
+    Write-Host "ERROR:node_missing:Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+."
+    Write-Host "FIX:retry_install:<same one-liner> (it downloads a private Node.js when none is usable)"
     Write-Error "Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+. Run the install again: it downloads a private Node.js when none is usable."
     exit 1
   }
@@ -140,6 +183,7 @@ function Invoke-NodeStep {
   $nodeOk = @(Ensure-OwnMindNode -ApiUrl $ApiUrl -ApiKey $ApiKey) | Select-Object -Last 1
   if (-not $nodeOk) {
     Report-Error -Kind "install_node_runtime_failed" -Detail "no usable Node.js and the private runtime could not be installed"
+    # grammar-allow: Ensure-OwnMindNode has already printed its own ERROR with ASK
     exit 1
   }
   $script:NodeStepPending = $false
@@ -151,6 +195,8 @@ if (Test-Path $NodeHelper) {
 } elseif ((Test-NodeUsable) -or -not (Test-Path (Join-Path $HOME '.ownmind'))) {
   $NodeStepPending = $true
 } else {
+  Write-Host "ERROR:node_missing:Node.js is missing or too old, and this OwnMind checkout is too old to install one."
+  Write-Host "FIX:retry_install:<same one-liner> (it brings this checkout up to date first, then installs a private Node.js)"
   Write-Error "Node.js is missing or too old, and this OwnMind checkout is too old to install one. Install Node.js v20+ LTS from https://nodejs.org/ and retry"
   exit 1
 }
@@ -270,6 +316,8 @@ if ((Test-Path $OwnmindDir) -and ((Test-Path $ReleaseFile) -or (Test-Path (Join-
   if ($LASTEXITCODE -ne 0) {
     Maybe-LoadReportError
     Report-Error -Kind "install_git_pull_failed" -Detail "更新 $OwnmindDir 失敗（更新到最新正式版，或舊版的 git pull）"
+    Write-Host "ERROR:update_failed:Updating OwnMind failed. Run bootstrap or fix manually"
+    Write-Host "FIX:retry_install:<same one-liner>"
     Write-Error "git pull failed. Run bootstrap or fix manually and retry"
     exit 1
   }
@@ -277,12 +325,16 @@ if ((Test-Path $OwnmindDir) -and ((Test-Path $ReleaseFile) -or (Test-Path (Join-
   Write-Host "[INFO] Cloning OwnMind MCP server"
   if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) {
     Report-Error -Kind "install_git_clone_failed" -Detail "git is not installed and there is no OwnMind folder to update"
+    Write-Host "ERROR:git_missing:git is not installed, and there is no OwnMind folder yet."
+    Write-Host "FIX:retry_install:<same one-liner> (bootstrap installs from the release archive without git)"
     Write-Error "git is not installed, and there is no OwnMind folder yet. Run bootstrap.ps1, which installs from the release archive without git."
     exit 1
   }
   git clone -q https://github.com/miou1107/ownmind.git $OwnmindDir
   if ($LASTEXITCODE -ne 0) {
     Report-Error -Kind "install_git_clone_failed" -Detail "git clone github.com/miou1107/ownmind 失敗"
+    Write-Host "ERROR:git_clone:git clone failed (network or GitHub access)"
+    Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
     Write-Error "git clone failed (network or GitHub access)"
     exit 1
   }
@@ -312,6 +364,8 @@ npm install -q 2>$null
 if ($LASTEXITCODE -ne 0) {
   Pop-Location
   Report-Error -Kind "install_npm_failed" -Detail "npm install 在 $OwnmindDir\mcp 失敗"
+  Write-Host "ERROR:npm_install:npm install failed."
+  Write-Host "FIX:retry_install:<same one-liner>"
   Write-Error "npm install failed. Try: npm install -g npm@latest and retry"
   exit 1
 }
@@ -865,5 +919,19 @@ if (-not $HasBash) {
 }
 Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
-Write-Host "Open a new Claude Code session - OwnMind will auto-load your memory."
-Write-Host ""
+# What the AI does next depends on where it is running (zero-touch-install, Task 12):
+#   Claude desktop app (CLAUDE_CODE_ENTRYPOINT=claude-desktop, or CLAUDE_CODE_DESKTOP_APP_VERSION set)
+#     -> NEXT:verify:new-session   the AI opens a verification conversation itself
+#   Claude Code in a terminal (CLAUDE_CODE_ENTRYPOINT=cli, or unset with a terminal on stdin)
+#     -> NEXT:verify:manual:<sentence about /exit and claude>
+#   anything else -> NEXT:verify:manual:<sentence about a new conversation>
+# This is the last line printed: whatever reads the output last reads the instruction.
+$HasTerminal = $false
+try { $HasTerminal = ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) } catch { }
+if ($env:CLAUDE_CODE_ENTRYPOINT -eq 'claude-desktop' -or $env:CLAUDE_CODE_DESKTOP_APP_VERSION) {
+  Write-Host "NEXT:verify:new-session"
+} elseif ($env:CLAUDE_CODE_ENTRYPOINT -eq 'cli' -or (-not $env:CLAUDE_CODE_ENTRYPOINT -and $HasTerminal)) {
+  Write-Host ("NEXT:verify:manual:" + (Get-OwnMindSentence -Command @('say', 'install.next.verify_manual_terminal') -Literal "OwnMind is installed. Type /exit, then run claude again, and your memory will load."))
+} else {
+  Write-Host ("NEXT:verify:manual:" + (Get-OwnMindSentence -Command @('say', 'install.next.verify_manual_generic') -Literal "OwnMind is installed. Start a new conversation and your memory will load."))
+}
