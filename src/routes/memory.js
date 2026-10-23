@@ -529,6 +529,33 @@ async function backfillRequiredSkills(rules) {
 }
 
 /**
+ * Issue #197: rewrite a stored guess that the current guessing no longer agrees with.
+ *
+ * A guess is stored by whichever version saved the rule, so a fix to the guessing would
+ * otherwise leave every old guess in place — and in the admin console — forever. `init` already
+ * reads guesses from the text (requiredSkillsOf); this keeps the stored copy in step. The
+ * write happens only while the row still holds the guess that was read, as a guess: a list a
+ * person set, or text edited, between the read and this write is never overwritten. `updated_at`
+ * is left alone for the reason given above.
+ *
+ * @param {{ id: number, stored: string[], skills: string[] }[]} stale rows with the list they
+ *   hold and the list they should hold
+ */
+async function refreshStaleGuesses(stale) {
+  for (const { id, stored, skills } of stale) {
+    await query(
+      `UPDATE memories
+       SET metadata = metadata || jsonb_build_object('required_skills', $1::jsonb)
+       WHERE id = $2
+         AND jsonb_typeof(metadata) = 'object'
+         AND metadata->>'required_skills_source' = 'auto'
+         AND metadata->'required_skills' = $3::jsonb`,
+      [JSON.stringify(skills), id, JSON.stringify(stored)]
+    );
+  }
+}
+
+/**
  * GET /init - load initial memories.
  */
 router.get('/init', async (req, res) => {
@@ -628,8 +655,9 @@ router.get('/init', async (req, res) => {
     // Issue #139: which skills each rule tells the AI to use. Only the machine knows what it
     // has installed, so the comparison is the hook's (hooks/lib/missing-skills.js); this sends
     // just the rules that name something. Sent in compact mode, which is every caller.
+    const skillsByRule = new Map(ironRules.map((r) => [r.id, requiredSkillsOf(r)]));
     const ironRuleSkills = ironRules
-      .map((r) => ({ code: r.code || 'IR-?', title: r.title, skills: requiredSkillsOf(r) }))
+      .map((r) => ({ code: r.code || 'IR-?', title: r.title, skills: skillsByRule.get(r.id) }))
       .filter((r) => r.skills.length > 0);
     // A rule saved before the field existed is read from its text above, and the result is
     // written back in the background, so the list becomes visible and correctable in the
@@ -638,6 +666,15 @@ router.get('/init', async (req, res) => {
     if (unfilledRules.length > 0) {
       backfillRequiredSkills(unfilledRules).catch((e) => {
         logger.warn('required_skills backfill failed', { error: e.message });
+      });
+    }
+    const staleGuesses = ironRules
+      .filter((r) => r.metadata?.required_skills_source === 'auto' && Array.isArray(r.metadata.required_skills))
+      .map((r) => ({ id: r.id, stored: r.metadata.required_skills, skills: skillsByRule.get(r.id) }))
+      .filter((r) => JSON.stringify(r.stored) !== JSON.stringify(r.skills));
+    if (staleGuesses.length > 0) {
+      refreshStaleGuesses(staleGuesses).catch((e) => {
+        logger.warn('required_skills refresh failed', { error: e.message });
       });
     }
 

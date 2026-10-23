@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## 尚未發版（零接觸安裝：伺服器發安裝腳本與壓縮檔）
+## v1.33.3 修改（2026-10-24，零接觸安裝：同事貼上安裝文字，AI 自己裝完並檢查）
 
 新增檔：
 ```
@@ -144,6 +144,42 @@ tests/session-hook-without-timeout.test.js              — two more cases: the 
 install.sh, tests/install-git-stub-hooks-path.test.js   — the skip line reads "git is not usable on this machine (no developer tools); skipping the global git hooks path"
 tests/bootstrap-archive-mode-ps1.e2e.mjs                — the real-install case writes .no-usage-scanner as soon as the release is unpacked and requires install.ps1's opt-out line, so it never registers the developer's scheduled task
 .github/workflows/test.yml                              — install job: a time limit on each e2e step (15, 15, 20, 25 minutes) and 90 minutes for the job, so a slow run stops on the slow step
+src/routes/install.js                                   — GET /install.sh serves scripts/bootstrap.sh and GET /install.ps1 serves scripts/bootstrap.ps1 (not the root installers, which need git)
+tests/install-routes.test.js                            — the served /install.sh and /install.ps1 bodies are the bootstrap scripts, not the root installers
+docs/ai-install-runbook.md                              — new: the manual the colleague's AI reads before it runs the installer (served as /install-manual.md): what is installed, the FIX/ASK/NEXT grammar, troubleshooting and permissions, definition of done, the verification session
+skills/ownmind-upgrade.md                               — install section starts with a pointer to /install-manual.md; its rule list is the manual's rule list
+Dockerfile                                              — COPY docs/ai-install-runbook.md, so GET /install-manual.md answers 200 in production
+client/src/utils/install-prompt.js                      — buildInstallPrompt returns the new message: read the manual first, run the one-liner for the OS once, NEXT/FIX/ASK rules, permissions step by step; server URLs instead of raw.githubusercontent.com
+docs/site/strings.json, docs/site/template.html, docs/index.html, docs/zh-tw/index.html, docs/ja/index.html — the site install box carries the same message
+README.md, docs/README.zh-TW.md, docs/README.ja.md       — install section (Option A message, Option B one-liners) points at the OwnMind server
+tests/ai-install-runbook.test.js                        — new: the manual documents exactly the FIX/ASK codes the scripts print, names every permission case, never tells the user to install a prerequisite, and shares its rule text with the skill
+tests/readme-install-prompt-consistency.test.js         — new: the three READMEs and the site message carry the same one-liners as the console button and none point at the old raw script URLs
+tests/team-install-prompt.test.js                       — pins the exact install message and the trailing-slash rule
+tests/install-routes.test.js                            — the real runbook is served on /install-manual.md
+tests/upgrade-archive-mode.test.js, tests/upgrade-sweep-covers-broken-and-prev.test.js — hand their generated bash scripts over as files (spawnBashScript), as tests/bash-c-escaping.test.js requires
+docs/ai-install-runbook.md                              — wording for an AI that has no ownmind-upgrade skill yet; removal only when asked; the Summary line may be on the error stream
+scripts/install-helpers/first-load-watch.cjs            — new: watchFirstLoad polls GET /api/install/first-load every 15 s for up to 10 min and notifies "loaded" or "not_loaded" once; command line reads the URL and key with resolve-credentials.cjs, keeps one pid in ~/.ownmind/state/first-load-watch.pid (a new watcher stops the old one), logs one outcome line to ~/.ownmind/logs/first-load-watch.log, always exits 0
+scripts/install-helpers/notify.sh                       — new: macOS notification titled OwnMind; the sentence goes to osascript as an argument (item 1 of argv), OWNMIND_NOTIFY_DRY_RUN=1 prints the argv instead; does nothing elsewhere
+scripts/install-helpers/notify.ps1                      — new: Windows 10/11 toast under the PowerShell app id, falling back to a 10 second NotifyIcon balloon; never throws
+install.sh, install.ps1                                 — take a timestamp at the start of the run; after the self-check and before the NEXT: line start the watcher detached (nohup / Start-Process -WindowStyle Hidden) unless OWNMIND_SKIP_FIRST_LOAD_WATCH=1
+shared/archive-update.js, scripts/interactive-upgrade.sh, scripts/interactive-upgrade.ps1 — set OWNMIND_SKIP_FIRST_LOAD_WATCH=1 for the installer they re-run, so an upgrade pops no notification
+tests/first-load-watch.test.js                          — new: injected fetch/clock/sleep (loaded on poll 3, not_loaded at 600 s and never loaded, throwing and 500 keep polling, Bearer header and exact since), pid replacement, the command line against a local server, notify.sh dry run with quotes in the sentence, static checks on both installers and the upgraders
+tests/install-clean-machine.e2e.mjs, tests/bootstrap-archive-mode.e2e.mjs — run the real installer with OWNMIND_SKIP_FIRST_LOAD_WATCH=1 and assert no watcher pid file is left behind
+scripts/install-helpers/first-load-watch.cjs            — corrects `since` by the gap between the server's Date header and the local clock (over 30 s), times out each request after 10 s, prints the sentence on Linux, and detaches itself into its own session (--child) without the key in its environment
+install.sh, install.ps1                                 — call the watcher in the foreground (it detaches itself); no nohup or disown
+docs/ai-install-runbook.md                              — a note that the desktop notification may not appear (a Mac attributes it to Script Editor) and the verification session is the real proof
+```
+
+## v1.33.2 修改（2026-10-23，規矩內文猜錯技能名字的誤報，#197）
+
+修改檔：
+```
+shared/required-skills.js                               — 名字要緊接 skill／技能或調用類動詞才算技能，帶外掛名稱的名字都算；用「例如」舉出來的、否定句裡的不算；跳過自動產生的起源段落；自動猜的清單一律照現在的猜法重算；送回的 auto 清單不會變成手動清單
+src/routes/memory.js                                    — /init 把跟新猜法不一致的自動清單寫回資料庫，只在資料庫還是讀到的那份舊清單時才寫，手動清單不動，updated_at 不變
+mcp/index.js                                            — ownmind_save 的 metadata 說明改成新的猜法，並寫明送回 auto 清單仍算猜測
+tests/required-skills.test.js                           — 四種誤報各一個重現案例，加上清單、例句、否定句、粗體引號、長空白速度的案例
+tests/required-skills-route.test.js                     — 舊版存的自動清單在 /init 重算並寫回，手動清單不動
+README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md, package.json — 版號 v1.33.2
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
@@ -10334,27 +10370,3 @@ docs/superpowers/plans/2026-05-07-me-narrative-report-plan.md    — 新增（pl
 package.json / README* / docs/README*     — 1.17.46 → 1.17.47
 CHANGELOG.md                              — v1.17.47 條目
 ```
-src/routes/install.js                                   — GET /install.sh serves scripts/bootstrap.sh and GET /install.ps1 serves scripts/bootstrap.ps1 (not the root installers, which need git)
-tests/install-routes.test.js                            — the served /install.sh and /install.ps1 bodies are the bootstrap scripts, not the root installers
-docs/ai-install-runbook.md                              — new: the manual the colleague's AI reads before it runs the installer (served as /install-manual.md): what is installed, the FIX/ASK/NEXT grammar, troubleshooting and permissions, definition of done, the verification session
-skills/ownmind-upgrade.md                               — install section starts with a pointer to /install-manual.md; its rule list is the manual's rule list
-Dockerfile                                              — COPY docs/ai-install-runbook.md, so GET /install-manual.md answers 200 in production
-client/src/utils/install-prompt.js                      — buildInstallPrompt returns the new message: read the manual first, run the one-liner for the OS once, NEXT/FIX/ASK rules, permissions step by step; server URLs instead of raw.githubusercontent.com
-docs/site/strings.json, docs/site/template.html, docs/index.html, docs/zh-tw/index.html, docs/ja/index.html — the site install box carries the same message
-README.md, docs/README.zh-TW.md, docs/README.ja.md       — install section (Option A message, Option B one-liners) points at the OwnMind server
-tests/ai-install-runbook.test.js                        — new: the manual documents exactly the FIX/ASK codes the scripts print, names every permission case, never tells the user to install a prerequisite, and shares its rule text with the skill
-tests/readme-install-prompt-consistency.test.js         — new: the three READMEs and the site message carry the same one-liners as the console button and none point at the old raw script URLs
-tests/team-install-prompt.test.js                       — pins the exact install message and the trailing-slash rule
-tests/install-routes.test.js                            — the real runbook is served on /install-manual.md
-tests/upgrade-archive-mode.test.js, tests/upgrade-sweep-covers-broken-and-prev.test.js — hand their generated bash scripts over as files (spawnBashScript), as tests/bash-c-escaping.test.js requires
-docs/ai-install-runbook.md                              — wording for an AI that has no ownmind-upgrade skill yet; removal only when asked; the Summary line may be on the error stream
-scripts/install-helpers/first-load-watch.cjs            — new: watchFirstLoad polls GET /api/install/first-load every 15 s for up to 10 min and notifies "loaded" or "not_loaded" once; command line reads the URL and key with resolve-credentials.cjs, keeps one pid in ~/.ownmind/state/first-load-watch.pid (a new watcher stops the old one), logs one outcome line to ~/.ownmind/logs/first-load-watch.log, always exits 0
-scripts/install-helpers/notify.sh                       — new: macOS notification titled OwnMind; the sentence goes to osascript as an argument (item 1 of argv), OWNMIND_NOTIFY_DRY_RUN=1 prints the argv instead; does nothing elsewhere
-scripts/install-helpers/notify.ps1                      — new: Windows 10/11 toast under the PowerShell app id, falling back to a 10 second NotifyIcon balloon; never throws
-install.sh, install.ps1                                 — take a timestamp at the start of the run; after the self-check and before the NEXT: line start the watcher detached (nohup / Start-Process -WindowStyle Hidden) unless OWNMIND_SKIP_FIRST_LOAD_WATCH=1
-shared/archive-update.js, scripts/interactive-upgrade.sh, scripts/interactive-upgrade.ps1 — set OWNMIND_SKIP_FIRST_LOAD_WATCH=1 for the installer they re-run, so an upgrade pops no notification
-tests/first-load-watch.test.js                          — new: injected fetch/clock/sleep (loaded on poll 3, not_loaded at 600 s and never loaded, throwing and 500 keep polling, Bearer header and exact since), pid replacement, the command line against a local server, notify.sh dry run with quotes in the sentence, static checks on both installers and the upgraders
-tests/install-clean-machine.e2e.mjs, tests/bootstrap-archive-mode.e2e.mjs — run the real installer with OWNMIND_SKIP_FIRST_LOAD_WATCH=1 and assert no watcher pid file is left behind
-scripts/install-helpers/first-load-watch.cjs            — corrects `since` by the gap between the server's Date header and the local clock (over 30 s), times out each request after 10 s, prints the sentence on Linux, and detaches itself into its own session (--child) without the key in its environment
-install.sh, install.ps1                                 — call the watcher in the foreground (it detaches itself); no nohup or disown
-docs/ai-install-runbook.md                              — a note that the desktop notification may not appear (a Mac attributes it to Script Editor) and the verification session is the real proof
