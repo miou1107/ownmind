@@ -48,6 +48,10 @@ COPY shared/ ./shared/
 # Without it the parse falls back to [] and the footer's changelog modal is empty
 # in production while working on every developer machine.
 COPY CHANGELOG.md ./CHANGELOG.md
+# Zero-touch install: GET /install-manual.md serves this file (src/routes/install.js). Without the
+# COPY the route answers 404 manual_not_available in production while working in development.
+# The matching re-include is in .dockerignore (docs/ is otherwise excluded).
+COPY docs/ai-install-runbook.md docs/ai-install-runbook.md
 
 # v1.20：藍綠並存策略 — 新版 client build 產物放 dashboard/
 # v1.26.60：整併結束，映像裡只剩一個後台。/me 跟 /admin 兩個舊介面的靜態檔都搬到 repo

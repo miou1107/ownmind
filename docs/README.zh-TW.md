@@ -314,12 +314,26 @@ graph LR
 
 #### 方法 A：讓 AI 自動安裝（最簡單）
 
-在你的 AI 編輯器（例如 Cursor 或 Claude Code）對話框輸入：
+在你的 AI 編輯器（例如 Cursor 或 Claude Code）對話框貼上這段訊息。後台使用者管理頁的「複製安裝指令」會幫你填好金鑰與路徑：
 
-- **全新安裝**：`安裝 OwnMind (我的金鑰是 YOUR_API_KEY、路徑是 YOUR_API_URL)`
+- **全新安裝**：
+
+  ```text
+  幫我安裝 OwnMind。
+  先讀 YOUR_API_URL/install-manual.md，照手冊的步驟做。
+  依這台電腦的作業系統，從下面挑一行執行，只執行一次。畫面上顯示 NEXT 就照 NEXT 做；顯示 FIX 就先執行 FIX 那一行的指令，再重跑一次安裝指令；顯示 ASK 才來問我。
+  安裝過程需要我按「允許」或開權限時，一步一步告訴我按哪裡。相依的軟體都由安裝指令自己處理，不要叫我手動裝。
+
+  macOS:
+  curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+  Windows (PowerShell):
+  $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex
+  ```
+
 - **自動升級**：`升級 OwnMind`
 
-AI 會自己偵測你的作業系統並自動完成安裝。
+AI 會先讀伺服器提供的手冊（`YOUR_API_URL/install-manual.md`），再依作業系統執行其中一行指令，並照畫面上的 NEXT、FIX、ASK 處理。電腦沒有 git 或 Node.js 也能安裝：安裝指令會改用發行檔，並在 `~/.ownmind/runtime/` 放一份專用的 Node.js。
 
 #### 方法 B：使用終端機單行指令安裝
 
@@ -327,20 +341,20 @@ macOS 或 Linux：
 
 ```bash
 # 全新安裝
-curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
 # 升級
-curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash
+curl -fsSL YOUR_API_URL/install.sh | bash
 ```
 
 Windows PowerShell：
 
 ```powershell
 # 全新安裝
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex
 
 # 升級
-iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
+irm YOUR_API_URL/install.ps1 | iex
 ```
 
 > **Windows 用戶請注意**：OwnMind 依賴 Windows 版 Git 隨附的 Shell 執行環境（sh.exe）跑 Git hook。請確保安裝完整版 Git for Windows、避免簡易版或精簡版、否則代碼提交時會報錯。

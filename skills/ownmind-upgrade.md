@@ -147,9 +147,12 @@ OK:done:首次安裝完成
 
 Audience: the AI that runs the OwnMind installer on a colleague's computer. This section is self-contained; read it top to bottom before the first command.
 
+Read `<API_URL>/install-manual.md` first (anonymous, English; `<API_URL>` is the URL in the install message the colleague pasted). It is the full manual: what the installer changes, every code it prints, troubleshooting, the permission steps. If that address is unreachable, the rules below are the same rules; the manual and this section are kept identical by a test.
+
 ### What to do
 
-1. Read the manual first: `<API_URL>/install-manual.md` (anonymous, English; `<API_URL>` is the URL in the install message the colleague pasted). Then run the one-liner from that message once. Read every line of its output.
+<!-- rules:start -->
+1. Run the one-liner from the install message the colleague pasted, once. Read every line of its output.
 2. Every line the installer prints starts with one of six prefixes:
 
 | Prefix | Meaning | What you do |
@@ -180,9 +183,11 @@ Audience: the AI that runs the OwnMind installer on a colleague's computer. This
 4. `ASK:<code>:<sentence>`: say the sentence to the user exactly as printed (it is already in the user's language; codes: `no_network`, `node_download`, `disk_full`, `unsupported_os`), then stop. Do not retry, do not add advice of your own.
 5. Never suggest installing git, Node.js, Homebrew, the Xcode command line tools or winget. The installer brings its own runtime; a machine on which it could not is an `ASK:` case, not a chore for the user. (The `ERROR:` text of an unsupported system may mention Node.js; it is for the log, not for you to repeat.)
 6. Permissions. When your tool or the operating system refuses something the install needs, that is the one question you may ask your owner during the install. Name the permission, say what it is for and what they will see after granting it, in their language, one step at a time, naming the button or setting as it appears on screen. Then carry on with the install. Do not stop at "I do not have permission".
+<!-- rules:end -->
 
 ### After a successful install
 
+<!-- verify:start -->
 The last line of the output is a `NEXT:` line.
 
 - `NEXT:verify:new-session:<title>` (you are running inside the Claude desktop app): tell the user OwnMind is installed and that a verification conversation is opening. Then start a new session with the desktop app's own session tool (`mcp__ccd_session__start_session`), using `<title>` from the line as the session title. If the session does not start by itself and the app shows a card instead, tell the user to click the card to open the check. The brief for that session is:
@@ -196,6 +201,7 @@ The last line of the output is a `NEXT:` line.
 ### Report to the user
 
 In the user's language, three sentences at most: it is installed, what happens next, and what the user should do (usually nothing). Do not list commands, file names or codes.
+<!-- verify:end -->
 
 ---
 

@@ -288,10 +288,19 @@ docker compose up -d</pre>
       </div>
       <div class="box">
         <h3>Connect a machine</h3>
-        <p>Paste one line into Claude Code or Cursor and the AI installs itself, or run one line in a terminal.</p>
-        <pre class="prompt">Install OwnMind (my key is YOUR_API_KEY, URL is YOUR_API_URL)</pre>
-        <p class="or">Or in a terminal:</p>
-        <pre>curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL</pre>
+        <p>Paste this message into Claude Code or Cursor and the AI installs it, or run one line in a terminal.</p>
+        <pre class="prompt">Install OwnMind for me.
+First read YOUR_API_URL/install-manual.md and follow the manual.
+Pick the line below that matches this computer's operating system and run it once. If the output shows NEXT, do what NEXT says; if it shows FIX, run the command on the FIX line first, then run the install line again; only if it shows ASK, come and ask me.
+If the install needs me to click &quot;Allow&quot; or open a permission, tell me where to click, one step at a time. The installer handles every dependency itself; do not ask me to install anything by hand.
+
+macOS:
+curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+Windows (PowerShell):
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex</pre>
+        <p class="or">Or on a Mac, in a terminal:</p>
+        <pre>curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL</pre>
       </div>
     </div>
   </div>

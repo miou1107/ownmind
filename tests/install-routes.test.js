@@ -111,6 +111,19 @@ describe('install routes', () => {
     assert.equal(await r.text(), '# runbook\n');
   });
 
+  it('serves the real runbook file on /install-manual.md, and the real install.sh route serves the bootstrap script', async () => {
+    const realSrv = await startServer(buildApp({ query: async () => ({ rows: [] }), repoRoot: REAL_ROOT }));
+    try {
+      const manual = await fetch(`${realSrv.url}/install-manual.md`);
+      assert.equal(manual.status, 200);
+      assert.equal(await manual.text(), fs.readFileSync(path.join(REAL_ROOT, 'docs', 'ai-install-runbook.md'), 'utf8'));
+      const sh = await fetch(`${realSrv.url}/install.sh`);
+      assert.equal(await sh.text(), fs.readFileSync(path.join(REAL_ROOT, 'scripts', 'bootstrap.sh'), 'utf8'));
+    } finally {
+      await realSrv.close();
+    }
+  });
+
   it('refuses the archive without a key', async () => {
     const r = await fetch(`${srv.url}/api/install/archive`);
     assert.equal(r.status, 401);

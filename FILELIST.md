@@ -10307,3 +10307,13 @@ CHANGELOG.md                              — v1.17.47 條目
 ```
 src/routes/install.js                                   — GET /install.sh serves scripts/bootstrap.sh and GET /install.ps1 serves scripts/bootstrap.ps1 (not the root installers, which need git)
 tests/install-routes.test.js                            — the served /install.sh and /install.ps1 bodies are the bootstrap scripts, not the root installers
+docs/ai-install-runbook.md                              — new: the manual the colleague's AI reads before it runs the installer (served as /install-manual.md): what is installed, the FIX/ASK/NEXT grammar, troubleshooting and permissions, definition of done, the verification session
+skills/ownmind-upgrade.md                               — install section starts with a pointer to /install-manual.md; its rule list is the manual's rule list
+Dockerfile                                              — COPY docs/ai-install-runbook.md, so GET /install-manual.md answers 200 in production
+client/src/utils/install-prompt.js                      — buildInstallPrompt returns the new message: read the manual first, run the one-liner for the OS once, NEXT/FIX/ASK rules, permissions step by step; server URLs instead of raw.githubusercontent.com
+docs/site/strings.json, docs/site/template.html, docs/index.html, docs/zh-tw/index.html, docs/ja/index.html — the site install box carries the same message
+README.md, docs/README.zh-TW.md, docs/README.ja.md       — install section (Option A message, Option B one-liners) points at the OwnMind server
+tests/ai-install-runbook.test.js                        — new: the manual documents exactly the FIX/ASK codes the scripts print, names every permission case, never tells the user to install a prerequisite, and shares its rule text with the skill
+tests/readme-install-prompt-consistency.test.js         — new: the three READMEs and the site message carry the same one-liners as the console button and none point at the old raw script URLs
+tests/team-install-prompt.test.js                       — pins the exact install message and the trailing-slash rule
+tests/install-routes.test.js                            — the real runbook is served on /install-manual.md
