@@ -38,6 +38,9 @@ function makeFixtureRoot({ withRunbook = false } = {}) {
   put('package.json', '{"version":"0.0.0"}\n');
   put('hooks/a.js', 'x');
   put('src/secret.js', 'x');
+  put('src/app.js', 'x');
+  put('src/routes/r.js', 'x');
+  put('src/utils/md-parser.js', 'x');
   put('db/001.sql', 'x');
   put('tests/t.js', 'x');
   put('node_modules/m/index.js', 'x');
@@ -118,9 +121,12 @@ describe('install routes', () => {
       assert.ok(names.includes('install.sh'));
       assert.ok(names.includes('install.ps1'));
       assert.ok(names.includes('hooks/a.js'));
-      for (const bad of ['src/', 'db/', 'tests/', '.git/', 'client/src/']) {
+      for (const bad of ['db/', 'tests/', '.git/', 'client/src/', 'src/routes/']) {
         assert.ok(!names.some((n) => n === bad.replace(/\/$/, '') || n.startsWith(bad)), `${bad} must not be packed`);
       }
+      assert.ok(!names.includes('src/app.js'), 'src/app.js must not be packed');
+      assert.ok(!names.includes('src/secret.js'), 'src/secret.js must not be packed');
+      assert.ok(names.includes('src/utils/md-parser.js'), 'src/utils stays: the MCP server imports it');
       assert.ok(!names.some((n) => n.split('/').includes('node_modules')), 'node_modules must not be packed');
       assert.ok(names.includes('client/package.json'));
     } finally {
@@ -146,6 +152,14 @@ describe('install routes', () => {
     rows = [{ ts }];
     const r = await fetch(`${srv.url}/api/install/first-load?since=2026-10-23T00:00:00.000Z`, { headers: { authorization: `Bearer ${KEY}` } });
     assert.deepEqual(await r.json(), { loaded: true, at: ts.toISOString() });
+  });
+
+  it('first-load: a loose but parseable since reaches the database as a full ISO timestamp', async () => {
+    rows = [];
+    calls.length = 0;
+    const r = await fetch(`${srv.url}/api/install/first-load?since=1`, { headers: { authorization: `Bearer ${KEY}` } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(calls[0].params, [7, new Date(Date.parse('1')).toISOString()]);
   });
 
   it('first-load: refuses without a key and rejects a missing or malformed since', async () => {
@@ -175,15 +189,45 @@ describe('buildInstallArchive', () => {
     }
   });
 
-  it('packs the real checkout without src, node_modules or tests', async () => {
+  it('packs the real checkout without server code, node_modules or tests, but with src/utils', async () => {
     const a = await buildInstallArchive({ repoRoot: REAL_ROOT, version: 'v0.0.0-real' });
     try {
       const names = execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
         .split('\n').filter(Boolean);
       assert.ok(names.includes('.release'));
       assert.ok(names.includes('install.sh'));
-      assert.ok(!names.some((n) => /^(src|db|tests|\.git)(\/|$)/.test(n)));
+      assert.ok(names.includes('src/utils/md-parser.js'));
+      assert.ok(!names.some((n) => /^(db|tests|\.git)(\/|$)/.test(n)));
+      assert.ok(!names.some((n) => /^src\/(?!utils(\/|$)).+/.test(n)), 'nothing under src/ except utils/');
       assert.ok(!names.some((n) => n.split('/').includes('node_modules')));
+    } finally {
+      fs.rmSync(a.path, { force: true });
+    }
+  });
+
+  it('every ../src/ import made by the client code is inside the archive', async () => {
+    const sources = [];
+    for (const dir of ['mcp', 'mcp/lib', 'hooks', 'hooks/lib']) {
+      for (const f of fs.readdirSync(path.join(REAL_ROOT, dir))) {
+        if (/\.(c|m)?js$/.test(f) && fs.statSync(path.join(REAL_ROOT, dir, f)).isFile()) sources.push(path.join(dir, f));
+      }
+    }
+    const wanted = new Map(); // archive path -> file that imports it
+    for (const rel of sources) {
+      const text = fs.readFileSync(path.join(REAL_ROOT, rel), 'utf8');
+      for (const m of text.matchAll(/['"`]((?:\.\.\/)+src\/[^'"`]+\.[cm]?js)['"`]/g)) {
+        const target = path.relative(REAL_ROOT, path.resolve(REAL_ROOT, path.dirname(rel), m[1])).split(path.sep).join('/');
+        wanted.set(target, rel);
+      }
+    }
+    assert.ok(wanted.size >= 4, `expected the known ../src/ imports to be found, got ${[...wanted.keys()]}`);
+    const a = await buildInstallArchive({ repoRoot: REAL_ROOT, version: 'v0.0.0-imports' });
+    try {
+      const names = new Set(execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+        .split('\n').filter(Boolean));
+      for (const [target, importer] of wanted) {
+        assert.ok(names.has(target), `${importer} imports ${target}, which the archive does not contain`);
+      }
     } finally {
       fs.rmSync(a.path, { force: true });
     }

@@ -10,14 +10,15 @@ import { execFile } from 'node:child_process';
  * install OwnMind from the server alone.
  *
  * What is left out is what the install never reads: dependencies (the installer runs
- * `npm install` itself), version-control data, tests, and the server-only code and
- * migrations. Developer-tool folders are left out as well, so packing a working copy does
- * not drag a worktree's session notes along.
+ * `npm install` itself), version-control data, tests, migrations and the server-only code.
+ * `src/utils/` stays, as in a git clone: the MCP server and the sync hook import from it at
+ * startup, so an install without it dies with ERR_MODULE_NOT_FOUND. Developer-tool folders
+ * are left out as well, so packing a working copy does not drag a worktree's session notes along.
  */
 
 // Excluded when the path relative to the repo root equals one of these.
 const EXCLUDED_PATHS = new Set([
-  '.git', 'tests', 'db', 'src', 'client/src',
+  '.git', 'tests', 'db', 'client/src',
   '.claude', '.superpowers', '.ownmind',
 ]);
 // Excluded at any depth.
@@ -27,6 +28,8 @@ const built = new Map(); // `${repoRoot}\0${version}` -> Promise<{ path, version
 
 function isExcluded(rel) {
   if (EXCLUDED_PATHS.has(rel)) return true;
+  // Under src/ only utils/ is kept (src/ itself stays so that utils/ has a parent).
+  if (rel.startsWith('src/') && rel !== 'src/utils' && !rel.startsWith('src/utils/')) return true;
   return rel.split('/').some((part) => EXCLUDED_NAMES.has(part));
 }
 

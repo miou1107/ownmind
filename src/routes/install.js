@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { buildInstallArchive } from '../services/install-archive.js';
 import { SERVER_VERSION } from '../utils/server-version.js';
@@ -52,12 +53,10 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
       res.set('X-OwnMind-Release', archive.version);
       res.set('Content-Type', 'application/gzip');
       res.set('Content-Length', String(fs.statSync(archive.path).size));
-      fs.createReadStream(archive.path)
-        .on('error', (err) => {
-          logger.error('install archive: stream failed', { error: err.message });
-          res.destroy(err);
-        })
-        .pipe(res);
+      // pipeline destroys the file stream when the client goes away mid-download.
+      pipeline(fs.createReadStream(archive.path), res, (err) => {
+        if (err) logger.warn('install archive: download interrupted', { error: err.message });
+      });
     } catch (err) {
       logger.error('install archive: build failed', { error: err.message });
       res.status(500).json({ error: 'archive_unavailable' });
@@ -66,7 +65,8 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
 
   router.get('/api/install/first-load', auth, async (req, res) => {
     const since = typeof req.query.since === 'string' ? req.query.since : '';
-    if (!since || Number.isNaN(Date.parse(since))) {
+    const sinceMs = since ? Date.parse(since) : NaN;
+    if (Number.isNaN(sinceMs)) {
       return res.status(400).json({ error: 'since must be an ISO timestamp' });
     }
     try {
@@ -74,7 +74,7 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
         `SELECT ts FROM activity_logs
           WHERE user_id = $1 AND event = 'init' AND source = 'hook' AND ts > $2
           ORDER BY ts DESC LIMIT 1`,
-        [req.user.id, since],
+        [req.user.id, new Date(sinceMs).toISOString()],
       );
       const row = r.rows[0];
       res.json(row ? { loaded: true, at: new Date(row.ts).toISOString() } : { loaded: false, at: null });

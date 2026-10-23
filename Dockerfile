@@ -30,8 +30,8 @@ COPY scripts/bootstrap.ps1 ./scripts/bootstrap.ps1
 COPY scripts/ensure-console-build.js ./scripts/ensure-console-build.js
 # Zero-touch install: GET /api/install/archive packs these from the container's own
 # filesystem (src/services/install-archive.js), and /install.sh and /install.ps1 are
-# read from here. The archive leaves out src/, db/, tests/ and
-# node_modules, so those need no entry. Everything the client installs from has to be
+# read from here. The archive leaves out db/, tests/, node_modules and all of src/ except
+# src/utils/, so only src/ needs its entry above. Everything the client installs from has to be
 # listed; a path missing here is missing from every no-git install.
 COPY scripts/ ./scripts/
 COPY install.sh install.ps1 ./
