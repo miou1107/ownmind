@@ -12,8 +12,9 @@ import { SERVER_VERSION } from '../utils/server-version.js';
  *
  *   GET /install.sh, /install.ps1, /install-manual.md   anonymous; the same files the public
  *                                                       repository carries, so nothing secret
- *   GET /api/install/archive                            the checkout as .tar.gz, for a machine
- *                                                       without git; behind auth like
+ *   GET /api/install/archive[?format=zip]               the checkout as .tar.gz (or .zip, which is
+ *                                                       what Windows PowerShell can unpack), for a
+ *                                                       machine without git; behind auth like
  *                                                       /api/version, so a scanner cannot read
  *                                                       the version
  *   GET /api/install/node?os=&arch=                     the official Node LTS archive for the private
@@ -51,11 +52,15 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
   router.get('/install-manual.md', sendText('docs/ai-install-runbook.md'));
 
   router.get('/api/install/archive', auth, async (req, res) => {
+    const format = req.query.format === undefined || req.query.format === '' ? 'tar.gz' : req.query.format;
+    if (format !== 'tar.gz' && format !== 'zip') {
+      return res.status(400).json({ error: 'unsupported_format' });
+    }
     try {
       const version = `v${SERVER_VERSION}`;
-      const archive = await buildInstallArchive({ repoRoot, version });
+      const archive = await buildInstallArchive({ repoRoot, version, format });
       res.set('X-OwnMind-Release', archive.version);
-      res.set('Content-Type', 'application/gzip');
+      res.set('Content-Type', format === 'zip' ? 'application/zip' : 'application/gzip');
       res.set('Content-Length', String(fs.statSync(archive.path).size));
       // pipeline destroys the file stream when the client goes away mid-download.
       pipeline(fs.createReadStream(archive.path), res, (err) => {

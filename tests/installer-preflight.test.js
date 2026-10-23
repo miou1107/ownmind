@@ -108,8 +108,8 @@ function stagedShell(tools, mustBeMissing = ['git', 'node']) {
 /** What a skipped shell test says, so it cannot be mistaken for a passing one. */
 const NO_SHELL = 'this machine cannot build a PATH that bash runs under and that really lacks the tool (see stagedShell); nothing was run';
 
-describe('#98 bootstrap without git: PowerShell stops, bash installs from the release archive', () => {
-  it('bootstrap.ps1 names the missing tool, prints the command, and exits 1', {
+describe('#98 bootstrap without git: both bootstraps install from the release archive instead of stopping', () => {
+  it('bootstrap.ps1 does not stop for git; without an API key it says what is needed and creates nothing', {
     skip: isWindows ? false : 'the PowerShell path only exists on Windows',
   }, () => {
     const home = tempDir('om-preflight-home-');
@@ -130,12 +130,16 @@ describe('#98 bootstrap without git: PowerShell stops, bash installs from the re
       },
     });
 
+    // Since the zero-touch install, a machine without git installs from the release archive
+    // (tests/bootstrap-archive-mode-ps1.e2e.mjs runs that path on Windows). What is pinned here
+    // is the old refusal being gone, and that a run with no key still touches nothing.
     const said = `${r.stdout}${r.stderr}`;
     assert.equal(r.status, 1, `expected a clean stop, got ${r.status}:\n${said}`);
-    assert.match(said, /preflight_missing_git/, said);
-    assert.match(said, /winget install --id Git\.Git/, 'the remedy has to be the command itself');
+    assert.doesNotMatch(said, /preflight_missing_git/, said);
+    assert.match(said, /ERROR:missing_args:/, said);
     // Nothing was created: the whole point is that it stops before doing work.
     assert.equal(fs.existsSync(path.join(home, '.ownmind')), false);
+    assert.equal(fs.existsSync(path.join(home, '.ownmind.partial')), false);
     assert.deepEqual(fs.readdirSync(home).filter((n) => n.includes('.bak')), []);
   });
 
@@ -374,15 +378,15 @@ describe('#98 the assumptions the Windows check rests on', () => {
 });
 
 describe('#98 one missing tool has one name', () => {
-  it('the two preflight modules and bootstrap.ps1 print ERROR:preflight_missing_<tool>', () => {
+  it('the two preflight modules print ERROR:preflight_missing_<tool>', () => {
     // It did not, and CI is what noticed: the two preflight modules printed
     // `preflight_missing_<tool>` as the reported kind and `preflight_<tool>` on screen, while
-    // both bootstraps printed the longer form. Somebody grepping their terminal for what the
+    // both bootstraps printed the longer form (neither bootstrap stops for git any more, so
+    // only the two preflight modules carry the prefix now). Somebody grepping their terminal for what the
     // console told them would have found nothing.
     const cases = [
       ['scripts/install-helpers/preflight.sh', /ERROR:preflight_missing_%s:/],
       ['scripts/install-helpers/preflight.ps1', /ERROR:preflight_missing_\$\(\$f\.Name\):/],
-      ['scripts/bootstrap.ps1', /Log-Err preflight_missing_git/],
     ];
     for (const [rel, pattern] of cases) {
       const src = fs.readFileSync(path.join(repoRoot, rel), 'utf8');

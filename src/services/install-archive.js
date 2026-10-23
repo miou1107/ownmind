@@ -4,10 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { writeZipFromDir } from './zip-writer.js';
 
 /**
  * The release archive: a .tar.gz of the server's own checkout, so a machine without git can
- * install OwnMind from the server alone.
+ * install OwnMind from the server alone. Windows asks for the same tree as a .zip
+ * (`format: 'zip'`), because Expand-Archive reads nothing else.
  *
  * What is left out is what the install never reads: dependencies (the installer runs
  * `npm install` itself), version-control data, tests, migrations and the server-only code.
@@ -24,7 +26,9 @@ const EXCLUDED_PATHS = new Set([
 // Excluded at any depth.
 const EXCLUDED_NAMES = new Set(['node_modules', '.git']);
 
-const built = new Map(); // `${repoRoot}\0${version}` -> Promise<{ path, version, sha256 }>
+const FORMATS = { 'tar.gz': 'tar.gz', zip: 'zip' };
+
+const built = new Map(); // `${repoRoot}\0${version}\0${format}` -> Promise<{ path, version, sha256 }>
 
 function isExcluded(rel) {
   if (EXCLUDED_PATHS.has(rel)) return true;
@@ -49,9 +53,9 @@ function sha256Of(file) {
   });
 }
 
-async function build({ repoRoot, version }) {
+async function build({ repoRoot, version, format }) {
   const stage = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-install-stage-'));
-  const target = path.join(os.tmpdir(), `ownmind-install-${version}.tar.gz`);
+  const target = path.join(os.tmpdir(), `ownmind-install-${version}.${format}`);
   const partial = `${target}.${process.pid}.partial`;
   try {
     await fsp.cp(repoRoot, stage, {
@@ -62,9 +66,13 @@ async function build({ repoRoot, version }) {
       },
     });
     await fsp.writeFile(path.join(stage, '.release'), `${version}\n`);
-    // Name the top-level entries instead of packing '.', so members read `install.sh`, not `./install.sh`.
-    const entries = (await fsp.readdir(stage)).sort();
-    await tarCreate(partial, stage, entries);
+    if (format === 'zip') {
+      await writeZipFromDir({ dir: stage, out: partial });
+    } else {
+      // Name the top-level entries instead of packing '.', so members read `install.sh`, not `./install.sh`.
+      const entries = (await fsp.readdir(stage)).sort();
+      await tarCreate(partial, stage, entries);
+    }
     await fsp.rename(partial, target);
   } finally {
     await fsp.rm(stage, { recursive: true, force: true });
@@ -74,15 +82,16 @@ async function build({ repoRoot, version }) {
 }
 
 /**
- * Build the archive once per process and version; later calls get the same file.
+ * Build the archive once per process, version and format; later calls get the same file.
  *
- * @param {{ repoRoot: string, version: string }} opts version as written to `.release`, e.g. "v1.33.1"
+ * @param {{ repoRoot: string, version: string, format?: 'tar.gz'|'zip' }} opts version as written to `.release`, e.g. "v1.33.1"
  * @returns {Promise<{ path: string, version: string, sha256: string }>}
  */
-export function buildInstallArchive({ repoRoot, version }) {
-  const key = `${repoRoot}\0${version}`;
+export function buildInstallArchive({ repoRoot, version, format = 'tar.gz' }) {
+  if (!Object.hasOwn(FORMATS, format)) throw new Error(`unsupported archive format: ${format}`);
+  const key = `${repoRoot}\0${version}\0${format}`;
   if (!built.has(key)) {
-    const p = build({ repoRoot, version });
+    const p = build({ repoRoot, version, format });
     built.set(key, p);
     // A failed build must not be remembered, or the next request would replay the failure.
     p.catch(() => built.delete(key));

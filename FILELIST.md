@@ -19,6 +19,13 @@ tests/bootstrap-archive-mode.test.js                    — bootstrap.sh 沒有 
 tests/bootstrap-archive-mode.e2e.mjs                    — 乾淨 Mac 加本機假伺服器：下載解壓、清掉半途的 .partial、install.sh 失敗後續跑、連不上時的 ASK:no_network、退回 GitHub（CI 的 install 工作點名執行）
 scripts/install-helpers/ensure-node-runtime.sh          — ownmind_ensure_node：系統 node 20 以上就直接用；沒有或太舊，就從伺服器（失敗再從 nodejs.org）下載官方 Node 壓縮檔，shasum 驗證後解到 ~/.ownmind/runtime/node-<版本>/，current 連結指過去，寫入 .node-path
 tests/node-runtime-mac.test.js                          — 私有 Node 的靜態檢查（壓縮檔名稱與 shared/node-runtime.js 一致、preflight 在 Mac 不把缺 node 當失敗）和乾淨 Mac 的實測：沒有 node、node 18、node 22、伺服器 503、檢查碼不符、current 是真資料夾、退回 nodejs.org（取最新的 v22.10.0 而不是 v22.9.0）
+src/services/zip-writer.js                              — writeZipFromDir (a directory tree to a .zip, deflate or store, directory entries, UTF-8 names, no dependency) and readZipEntries (central-directory reader that checks sizes and CRC-32); Expand-Archive on Windows reads only zip
+tests/install-archive-zip.test.js                       — zip writer round trip (unzip -tq where available), GET /api/install/archive?format=zip lists .release, install.ps1, src/utils and no src/routes, default stays tar.gz, unknown format is 400
+scripts/install-helpers/fetch-release.ps1               — Windows twin of fetch-release.sh: Get-OwnMindArchive (server ?format=zip, then GitHub; key goes in an in-process header), Expand-OwnMindRelease (unpack to .partial\unpack, check .release and install.ps1, then move); bootstrap.ps1 embeds the same block
+scripts/install-helpers/ensure-node-runtime.ps1         — Ensure-OwnMindNode: system node 20 or newer is used as is; otherwise the official Node zip from the server (then nodejs.org), SHA-256 checked, unpacked to ~\.ownmind\runtime\node-<version>, runtime\current is a directory junction, .node-path written
+tests/bootstrap-archive-mode-ps1.test.js                — static checks for bootstrap.ps1 without git: no stop on missing git, FIX/ASK sentences identical to the shell side, embedded block identical to fetch-release.ps1, healthy-archive branch, ARCHIVE_MODE check, PowerShell 5.1 syntax limits, ASCII without BOM
+tests/install-ps1-private-node.test.js                  — static checks: install.ps1 no longer installs git or Node with winget and calls Ensure-OwnMindNode, start.cmd tries runtime\current\node.exe first, preflight.ps1 reports a missing node as "no action needed", helper agrees with shared/node-runtime.js
+tests/bootstrap-archive-mode-ps1.e2e.mjs                — Windows only (skips elsewhere): bootstrap.ps1 and Ensure-OwnMindNode under Windows PowerShell with no git or node on PATH against a local fixture server; the Windows leg of the CI install job runs it by name
 ```
 
 修改檔：
@@ -37,6 +44,17 @@ tests/clean-mac-sim.test.js                             — 多測 xcodeStub 選
 tests/installer-preflight.test.js                       — bootstrap.sh 沒有 git 時不再停下來，原本斷言「停下來」的兩處改成斷言新行為（沒帶 key 時回 missing_args、什麼都不建）
 tests/install-e2e-is-actually-run.test.js               — 多檢查 bootstrap-archive-mode.e2e.mjs 在 CI 的 install 工作裡被點名執行
 .github/workflows/test.yml                              — install 工作多跑 tests/bootstrap-archive-mode.e2e.mjs
+src/services/install-archive.js                         — format option: buildInstallArchive({ format: "zip" }) writes the same staged tree as .zip, built once per process like the .tar.gz
+src/routes/install.js                                   — GET /api/install/archive?format=zip returns application/zip with the same X-OwnMind-Release header; other formats are 400
+scripts/bootstrap.ps1                                   — no longer requires git: without it, installs from the release archive (INFO:archive_mode, .ownmind.partial, OK:unpack); healthy archive install (.release, no .git) re-runs install.ps1; guarded hook for ensure-node-runtime.ps1 before install.ps1
+install.ps1                                             — the winget block no longer installs git or Node; sources ensure-node-runtime.ps1 and calls Ensure-OwnMindNode (deferred until the checkout exists); the User PATH write for node is removed; a missing git with no folder yet points to bootstrap.ps1
+scripts/install-helpers/preflight.ps1                   — a missing git is not a failure when .git is absent; a missing or old node is listed as "private runtime will be installed (no action needed)" and not counted
+mcp/start.cmd                                           — first lookup is %USERPROFILE%\.ownmind\runtime\current\node.exe, before where node
+tests/start-cmd-node-fallback.test.js                   — the User PATH assertion for install.ps1 now asserts it no longer writes it
+tests/install-prerequisite-auto-install.test.js         — the install.ps1 assertions that pinned winget Git.Git and OpenJS.NodeJS.LTS now pin the private runtime and the absence of both
+tests/installer-preflight.test.js                       — bootstrap.ps1 without git no longer stops with preflight_missing_git (asserts missing_args and nothing created); the shared-prefix test no longer lists bootstrap.ps1
+.github/workflows/test.yml                              — install job also runs tests/bootstrap-archive-mode-ps1.e2e.mjs (skips itself off Windows)
+tests/install-e2e-is-actually-run.test.js               — also checks that bootstrap-archive-mode-ps1.e2e.mjs exists, skips itself off Windows, and is named by an unconditional step of the install job
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

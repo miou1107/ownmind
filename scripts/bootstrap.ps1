@@ -9,18 +9,28 @@
 #     iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 #
 # Branches:
-#   1. ~/.ownmind not present         -> fresh clone + install.ps1 (needs API key args/env)
-#   2. ~/.ownmind present, no .git    -> backup + re-clone + install.ps1 (needs API key args/env)
+#   1. ~/.ownmind not present         -> fresh clone (git) or release archive (no git), then install.ps1
+#   2. ~/.ownmind present, no .git    -> with .release: healthy archive install, re-run install.ps1
+#                                        without .release: backup + re-install (needs API key args/env)
 #   3. ~/.ownmind is a git repo       -> delegate to scripts/interactive-upgrade.ps1 (no args needed)
 #
+# Archive mode (no git on this machine): the release archive comes from the OwnMind server
+# ($API_URL/api/install/archive?format=zip), then from GitHub. It is unpacked into
+# ~/.ownmind.partial and moved to ~/.ownmind only after a full unpack.
+#
 # Env overrides (for testing):
-#   $env:OWNMIND_DIR   - install path (default: $env:USERPROFILE\.ownmind)
-#   $env:OWNMIND_REPO  - git URL      (default: https://github.com/miou1107/ownmind.git)
+#   $env:OWNMIND_DIR              - install path (default: $env:USERPROFILE\.ownmind)
+#   $env:OWNMIND_REPO             - git URL      (default: https://github.com/miou1107/ownmind.git)
+#   $env:OWNMIND_SOURCE           - server | github: force one archive source (default: server, then github)
+#   $env:OWNMIND_GITHUB_API       - GitHub API base URL (default: https://api.github.com)
+#   $env:OWNMIND_GITHUB_CODELOAD  - GitHub site base URL for /<repo>/archive/... (default: https://github.com)
 #
 # Log format (machine-readable):
 #   "INFO:detect:<message>"   - progress message
 #   "OK:done:<message>"       - step succeeded
 #   "ERROR:install:<message>" - failure
+#   "FIX:<code>:<command>"    - a command that repairs the failure
+#   "ASK:<code>:<sentence>"   - something the person at the keyboard has to do
 
 $ErrorActionPreference = "Stop"
 
@@ -37,20 +47,260 @@ function Log-Info($code, $msg) { Write-Host "INFO:${code}:${msg}" }
 function Log-Ok($code, $msg)   { Write-Host "OK:${code}:${msg}" }
 function Log-Err($code, $msg)  { Write-Host "ERROR:${code}:${msg}" -ForegroundColor Red }
 
-# #98 - bootstrap clones and pulls, so git is the one thing it cannot do without. Checked here
-# rather than in scripts/install-helpers/preflight.ps1 because on a fresh install that file does
-# not exist yet: this script is fetched over the network and run before anything is on disk.
-# The full check (node, npm, PowerShell version) runs from the checkout once there is one.
-#
+# Without git, OwnMind is installed from a release archive (see "Archive mode" above). The
+# download and unpack functions below are an embedded copy of
+# scripts/install-helpers/fetch-release.ps1: this script is fetched over the network and run
+# before anything is on disk, so it cannot dot-source that file.
+# tests/bootstrap-archive-mode-ps1.test.js fails when the two copies differ.
+# BEGIN fetch-release
+# Windows PowerShell 5.1 on a stock Windows 10 offers TLS 1.0 and 1.1 unless told otherwise, and
+# GitHub and nodejs.org refuse both. Adding TLS 1.2 changes nothing on a machine that has it.
+function Enable-OwnMindTls12 {
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  } catch { }
+}
+
+# Invoke-OwnMindDownload -Uri URL -Dest FILE [-Headers @{...}]
+# Three tries with a short wait between them. Returns the web response (its Headers are what the
+# Node download reads) or $null when every try failed; the file is gone after a failure.
+# The progress bar is switched off because Windows PowerShell 5.1 draws it so slowly that a 30 MB
+# download takes minutes with it and seconds without.
+function Invoke-OwnMindDownload {
+  param(
+    [Parameter(Mandatory = $true)][string]$Uri,
+    [Parameter(Mandatory = $true)][string]$Dest,
+    [hashtable]$Headers = @{}
+  )
+  Set-StrictMode -Version Latest
+  Enable-OwnMindTls12
+  $ProgressPreference = 'SilentlyContinue'
+  $dir = Split-Path -Parent $Dest
+  if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  }
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    try {
+      $resp = Invoke-WebRequest -Uri $Uri -OutFile $Dest -Headers $Headers -UseBasicParsing -TimeoutSec 120 -PassThru -ErrorAction Stop
+      return $resp
+    } catch {
+      Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+      if ($attempt -lt 3) { Start-Sleep -Seconds $attempt }
+    }
+  }
+  return $null
+}
+
+# One response header as trimmed text, or an empty string. Windows PowerShell 5.1 hands back a
+# string, PowerShell 7 an array of strings; both end up as one string.
+function Get-OwnMindHeader {
+  param($Response, [string]$Name)
+  Set-StrictMode -Version Latest
+  try { $value = $Response.Headers[$Name] } catch { return '' }
+  if ($null -eq $value) { return '' }
+  if ($value -is [array]) { $value = $value[0] }
+  return ([string]$value).Trim()
+}
+
+# Newest vX.Y.Z tag of the public repo, read from the GitHub API with a regular expression
+# (nothing here depends on node). Returns an empty string when the tags API cannot be reached.
+function Get-OwnMindGithubLatestTag {
+  Set-StrictMode -Version Latest
+  Enable-OwnMindTls12
+  $ProgressPreference = 'SilentlyContinue'
+  $apiBase = 'https://api.github.com'
+  if ($env:OWNMIND_GITHUB_API) { $apiBase = $env:OWNMIND_GITHUB_API.TrimEnd('/') }
+  $text = ''
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    try {
+      $r = Invoke-WebRequest -Uri "$apiBase/repos/miou1107/ownmind/tags?per_page=30" -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+      $text = [string]$r.Content
+      break
+    } catch {
+      if ($attempt -lt 3) { Start-Sleep -Seconds $attempt }
+    }
+  }
+  if (-not $text) { return '' }
+  $best = $null
+  $bestName = ''
+  foreach ($m in [regex]::Matches($text, '"name"\s*:\s*"(v(\d+\.\d+\.\d+))"')) {
+    try { $v = [version]$m.Groups[2].Value } catch { continue }
+    if ($null -eq $best -or $v -gt $best) { $best = $v; $bestName = $m.Groups[1].Value }
+  }
+  return $bestName
+}
+
+# Get-OwnMindArchive -Key KEY -Api API_URL -Dest FILE
+# Sources in order: the OwnMind server, then GitHub. OWNMIND_SOURCE=server|github forces one.
+# Returns @{ Strip = <bool>; Release = <text> } on success: Strip is true when the archive has one
+# top-level folder to strip, and Release is the name to write into .release in that case.
+# Returns $null on failure, after printing the ERROR / FIX / ASK lines.
+function Get-OwnMindArchive {
+  param(
+    [string]$Key,
+    [string]$Api,
+    [Parameter(Mandatory = $true)][string]$Dest
+  )
+  Set-StrictMode -Version Latest
+  $api = ''
+  if ($Api) { $api = $Api.TrimEnd('/') }
+  $source = ''
+  if ($env:OWNMIND_SOURCE) { $source = $env:OWNMIND_SOURCE }
+  $ghBase = 'https://github.com'
+  if ($env:OWNMIND_GITHUB_CODELOAD) { $ghBase = $env:OWNMIND_GITHUB_CODELOAD.TrimEnd('/') }
+  $result = @{ Strip = $false; Release = '' }
+
+  if ($source -ne '' -and $source -ne 'server' -and $source -ne 'github') {
+    Log-Err download "OWNMIND_SOURCE must be server or github (got: $source)"
+    return $null
+  }
+
+  if ($source -ne 'github') {
+    Log-Info download "Downloading the release archive from $api"
+    if ($Key -and $api) {
+      $resp = Invoke-OwnMindDownload -Uri "$api/api/install/archive?format=zip" -Dest $Dest -Headers @{ Authorization = "Bearer $Key" }
+      if ($null -ne $resp) { return $result }
+    }
+    Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+    if ($source -eq 'server') {
+      Log-Err download "Could not download the release archive from $api"
+      Write-Host "FIX:use_fallback_source:`$env:OWNMIND_SOURCE='github'; <same one-liner>"
+      Write-Host "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+      return $null
+    }
+    Log-Info fallback_source "The OwnMind server did not deliver the archive; trying GitHub"
+  }
+
+  $tag = Get-OwnMindGithubLatestTag
+  if ($tag) {
+    $ref = "refs/tags/$tag"
+    $release = $tag
+  } else {
+    $ref = 'refs/heads/main'
+    $release = 'main'
+    Log-Info fallback_source "GitHub tag list unavailable; using the main branch"
+  }
+  Log-Info download "Downloading the release archive from GitHub ($release)"
+  $resp = Invoke-OwnMindDownload -Uri "$ghBase/miou1107/ownmind/archive/$ref.zip" -Dest $Dest
+  if ($null -ne $resp) {
+    $result.Strip = $true
+    $result.Release = $release
+    return $result
+  }
+  Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+  Log-Err download "Could not download the release archive from the OwnMind server or GitHub"
+  Write-Host "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+  return $null
+}
+
+# Expand-OwnMindRelease -Archive ZIP -Partial DIR -Final DIR -Strip <bool> -Release TEXT
+# Unpacks into PARTIAL\unpack, checks that .release and install.ps1 are there, and only then
+# moves the folder to FINAL and removes PARTIAL, so FINAL never exists half-unpacked.
+# Returns $true or $false (after printing an ERROR line).
+function Expand-OwnMindRelease {
+  param(
+    [Parameter(Mandatory = $true)][string]$Archive,
+    [Parameter(Mandatory = $true)][string]$Partial,
+    [Parameter(Mandatory = $true)][string]$Final,
+    [bool]$Strip = $false,
+    [string]$Release = ''
+  )
+  Set-StrictMode -Version Latest
+  $unpack = Join-Path $Partial 'unpack'
+  try {
+    New-Item -ItemType Directory -Force -Path $unpack | Out-Null
+    Expand-Archive -LiteralPath $Archive -DestinationPath $unpack -Force -ErrorAction Stop
+  } catch {
+    Log-Err unpack "Could not unpack the archive (it may be damaged)"
+    return $false
+  }
+  $root = $unpack
+  if ($Strip) {
+    # GitHub archives wrap everything in one folder, and carry no .release of their own.
+    $all = @(Get-ChildItem -LiteralPath $unpack -Force)
+    if ($all.Count -ne 1 -or -not $all[0].PSIsContainer) {
+      Log-Err unpack "The GitHub archive does not have the one top-level folder that was expected"
+      return $false
+    }
+    $root = $all[0].FullName
+    [System.IO.File]::WriteAllText((Join-Path $root '.release'), "$Release`n", (New-Object System.Text.UTF8Encoding $false))
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $root '.release') -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $root 'install.ps1') -PathType Leaf)) {
+    Log-Err unpack "The archive is missing .release or install.ps1"
+    return $false
+  }
+  Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
+  $parent = Split-Path -Parent $Final
+  if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  }
+  try {
+    Move-Item -LiteralPath $root -Destination $Final -ErrorAction Stop
+  } catch {
+    Log-Err unpack "Could not move the unpacked files into $Final"
+    return $false
+  }
+  Remove-Item -LiteralPath $Partial -Recurse -Force -ErrorAction SilentlyContinue
+  $name = "$(Get-Content -LiteralPath (Join-Path $Final '.release') -TotalCount 1 -Encoding UTF8)".Trim()
+  Log-Ok unpack "release $name unpacked"
+  return $true
+}
+# END fetch-release
+
 # -CommandType Application on purpose: a profile alias named git is not a program these scripts
 # can invoke, and it would read as present here and fail later.
 $gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue
-if (-not $gitCmd) {
-  Log-Err preflight_missing_git "git is not on PATH, and OwnMind is installed and updated with it. Nothing has been changed."
-  Write-Host "  fix: winget install --id Git.Git -e --source winget    (then open a new terminal so PATH is picked up)"
-  Write-Host ""
-  Write-Host "Fix that and run the same command again."
-  exit 1
+$HasGit = ($null -ne $gitCmd)
+
+# Download the archive and unpack it into $OwnmindDir. Used whenever there is no git, or the
+# directory has to be rebuilt without git. Exits the script on failure.
+function Install-FromArchive {
+  param([object[]]$ArgList)
+  # The same two inputs install.ps1 takes: positional KEY URL, or the OWNMIND_API_KEY and
+  # OWNMIND_API_URL variables. Flag-like arguments are not a key.
+  $positional = @($ArgList | Where-Object { $_ -and ("$_" -notlike '-*') })
+  $key = ''
+  $api = ''
+  if ($positional.Count -ge 1) { $key = "$($positional[0])" }
+  elseif ($env:OWNMIND_API_KEY) { $key = $env:OWNMIND_API_KEY }
+  elseif ($env:OWNMIND_INSTALL_KEY) { $key = $env:OWNMIND_INSTALL_KEY }
+  if ($positional.Count -ge 2) { $api = "$($positional[1])" }
+  elseif ($env:OWNMIND_API_URL) { $api = $env:OWNMIND_API_URL }
+  if (-not $key -or -not $api) {
+    Log-Err missing_args "The API key and URL are needed to install OwnMind (powershell -ExecutionPolicy Bypass -File bootstrap.ps1 YOUR_API_KEY YOUR_API_URL)"
+    exit 1
+  }
+  $partial = "$OwnmindDir.partial"
+  Log-Info archive_mode "git is not installed; installing from the release archive"
+  if (Test-Path -LiteralPath $partial) {
+    Log-Info clear_partial "Removing the unfinished download from an earlier attempt ($partial)"
+    try {
+      Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction Stop
+    } catch {
+      Write-Host 'FIX:clear_partial:Remove-Item -Recurse -Force "$env:USERPROFILE\.ownmind.partial"'
+      exit 1
+    }
+  }
+  $dl = @(Get-OwnMindArchive -Key $key -Api $api -Dest (Join-Path $partial 'archive.zip')) | Select-Object -Last 1
+  if ($null -eq $dl) {
+    Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+  }
+  $unpacked = @(Expand-OwnMindRelease -Archive (Join-Path $partial 'archive.zip') -Partial $partial -Final $OwnmindDir -Strip ([bool]$dl.Strip) -Release ([string]$dl.Release)) | Select-Object -Last 1
+  if (-not $unpacked) { exit 1 }
+  Set-Location "$OwnmindDir"
+  # Private Node runtime when this machine has no usable node. The file exists in every release
+  # that has this feature; the guard lets an older release without it still install.
+  $nodeHelper = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-node-runtime.ps1'
+  if (Test-Path -LiteralPath $nodeHelper) {
+    . $nodeHelper
+    $nodeOk = @(Ensure-OwnMindNode -ApiUrl $api.TrimEnd('/') -ApiKey $key) | Select-Object -Last 1
+    if (-not $nodeOk) { exit 1 }
+  }
+  Log-Info install "Running install.ps1 (forwarding API_KEY / API_URL)"
+  & powershell -ExecutionPolicy Bypass -File .\install.ps1 @ArgList
+  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
+  Log-Ok done "Fresh install complete (release archive)"
 }
 
 Log-Info detect "Checking OwnMind installation ($OwnmindDir)"
@@ -63,6 +313,10 @@ $InstallArgs = $args
 
 # Branch 1: no install
 if (-not (Test-Path "$OwnmindDir")) {
+  if (-not $HasGit) {
+    Install-FromArchive $InstallArgs
+    exit 0
+  }
   Log-Info fresh "Fresh install: cloning repo"
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
@@ -78,12 +332,34 @@ if (-not (Test-Path "$OwnmindDir")) {
   exit 0
 }
 
-# Branch 2: broken
+# Branch 2: no .git. With .release and install.ps1 this is a healthy archive install; otherwise it is broken.
+if (-not (Test-Path "$OwnmindDir\.git") -and (Test-Path -LiteralPath "$OwnmindDir\.release") -and (Test-Path -LiteralPath "$OwnmindDir\install.ps1")) {
+  $upgrader = "$OwnmindDir\scripts\interactive-upgrade.ps1"
+  # a later task adds an archive branch to the upgrader and marks it with this literal
+  if ((Test-Path -LiteralPath $upgrader) -and (Select-String -LiteralPath $upgrader -Pattern 'ARCHIVE_MODE' -SimpleMatch -Quiet)) {
+    Log-Info upgrade "Archive install found; delegating to interactive-upgrade.ps1"
+    & powershell -ExecutionPolicy Bypass -File $upgrader
+    exit $LASTEXITCODE
+  }
+  Log-Info already_installed "archive install found; re-running install.ps1"
+  Set-Location "$OwnmindDir"
+  & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
+  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
+  Log-Ok done "Archive install checked"
+  exit 0
+}
+
+# Branch 2b: broken
 if (-not (Test-Path "$OwnmindDir\.git")) {
   $Bak = "$OwnmindDir.broken.$Ts"
   Log-Info broken "$OwnmindDir exists but is not a git repo; backing up to $Bak"
   Move-Item "$OwnmindDir" "$Bak"
   Log-Ok backup "Backed up"
+  if (-not $HasGit) {
+    Install-FromArchive $InstallArgs
+    Log-Ok done "Repair complete (old data preserved at $Bak; backups older than 7 days are swept on next upgrade)"
+    exit 0
+  }
   Log-Info fresh "Re-cloning"
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {

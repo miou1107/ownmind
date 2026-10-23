@@ -103,3 +103,6 @@ jobs:
       - run: npm ci
       - run: node --test --test-timeout=900000 tests/install-clean-machine.e2e.mjs
       - run: node --test --test-timeout=300000 tests/bootstrap-archive-mode.e2e.mjs
+      # The Windows twin of the step above: it runs bootstrap.ps1 and ensure-node-runtime.ps1 under
+      # Windows PowerShell with no git and no node on PATH. It skips itself on the other two legs.
+      - run: node --test --test-timeout=600000 tests/bootstrap-archive-mode-ps1.e2e.mjs

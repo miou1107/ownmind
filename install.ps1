@@ -94,93 +94,65 @@ function Maybe-LoadReportError {
   if (Test-Path $h) { . $h }
 }
 
-# --- 檢查必要工具（v1.17.76：缺 git/node 走 winget 自動裝，回報者 vin-windows-test）---
-# v1.17.75 之前：缺 git 或 node 直接 Write-Error exit，user 沒裝過 = 完全卡死。
-# 現在：跟 sqlite3 同 pattern → winget 自動裝、reload PATH、再驗證一次。
-function Install-WithWinget {
-  param(
-    [string]$ToolName,    # "git" / "node"
-    [string]$WingetId,    # "Git.Git" / "OpenJS.NodeJS.LTS"
-    [string]$ManualUrl    # 手動安裝 fallback URL
-  )
-  Write-Host "[WARN] $ToolName not found (required by OwnMind)" -ForegroundColor Yellow
-  $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
-  if (-not $hasWinget) {
-    Write-Error "$ToolName missing and winget unavailable. Install from $ManualUrl then retry."
-    exit 1
-  }
-  Write-Host "[INFO] Auto-installing $WingetId via winget (1-2 min)"
+# --- Node.js (>= v20; required by the scanner and the MCP server) ---
+# A machine with no usable node gets a private Node in ~/.ownmind/runtime, downloaded by
+# scripts/install-helpers/ensure-node-runtime.ps1 with no winget, no password and no dialog (the same
+# as install.sh on a Mac). git is no longer installed or required here: bootstrap.ps1 installs from
+# the release archive when there is none. A machine whose node is v20 or newer keeps using it.
+#
+# The helper lives in the OwnMind checkout, which on a first install is cloned further down; in
+# that case the step is deferred until the checkout is there ($NodeStepPending).
+#
+# The private runtime is reached by its absolute path (runtime\current\node.exe) and by the PATH
+# prepend inside this process, never through the User PATH. The step that used to write the node
+# directory into the User PATH after a winget install is gone with the winget install: a system
+# node is already on PATH, and a private one must not be added to it.
+$NodeHelper = Join-Path $HOME '.ownmind\scripts\install-helpers\ensure-node-runtime.ps1'
+$NodeStepPending = $false
+
+function Test-NodeUsable {
+  $cmd = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+  if (-not $cmd) { return $false }
   try {
-    winget install --id $WingetId --scope user --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Error "winget install $WingetId failed (exit=$LASTEXITCODE). Install $ToolName manually ($ManualUrl) and retry."
-      exit 1
-    }
-  } catch {
-    Write-Error "winget install $WingetId failed: $_. Install $ToolName manually ($ManualUrl) and retry."
-    exit 1
-  }
-  Reload-Path
-  if (-not (Get-Command $ToolName -ErrorAction SilentlyContinue)) {
-    Write-Error "$ToolName installed but not visible in current PowerShell session. Close this terminal completely, reopen, and re-run the same install command."
-    exit 1
-  }
-  Write-Host "[ OK ] $ToolName installed (PATH reloaded)" -ForegroundColor Green
+    $exe = [string]@($cmd)[0].Source
+    $raw = & $exe --version 2>$null
+    $major = [int]((("$raw".Trim()) -replace '^v', '') -split '\.' | Select-Object -First 1)
+    return ($major -ge 20)
+  } catch { return $false }
 }
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  try {
-    Install-WithWinget -ToolName "git" -WingetId "Git.Git" -ManualUrl "https://git-scm.com/download/win"
-  } catch {
-    Report-Error -Kind "install_winget_git_failed" -Detail "winget Git.Git failed: $_"
-    throw
+# Node version check (>= v20, scanner / mcp need it)
+function Confirm-NodeVersion {
+  $nodeVerRaw = ""
+  try { $nodeVerRaw = (& node --version 2>$null) } catch { }
+  $nodeVer = "$nodeVerRaw" -replace '^v', ''
+  $nodeMajor = 0
+  try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
+  if ($nodeMajor -lt 20) {
+    Write-Error "Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+. Run the install again: it downloads a private Node.js when none is usable."
+    exit 1
   }
-}
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  try {
-    Install-WithWinget -ToolName "node" -WingetId "OpenJS.NodeJS.LTS" -ManualUrl "https://nodejs.org/"
-  } catch {
-    Report-Error -Kind "install_winget_node_failed" -Detail "winget OpenJS.NodeJS.LTS failed: $_"
-    throw
-  }
+  Write-Host "   Node.js: $nodeVerRaw ✓" -ForegroundColor Gray
 }
 
-# Node 版本驗證（>= v20，scanner / mcp 需要）
-$nodeVerRaw = (& node --version 2>$null)
-$nodeVer = $nodeVerRaw -replace '^v', ''
-$nodeMajor = 0
-try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
-if ($nodeMajor -lt 20) {
-  Write-Error "Node.js too old ($nodeVerRaw); OwnMind requires v20+. Upgrade with: winget upgrade OpenJS.NodeJS.LTS"
+function Invoke-NodeStep {
+  . $NodeHelper
+  $nodeOk = @(Ensure-OwnMindNode -ApiUrl $ApiUrl -ApiKey $ApiKey) | Select-Object -Last 1
+  if (-not $nodeOk) {
+    Report-Error -Kind "install_node_runtime_failed" -Detail "no usable Node.js and the private runtime could not be installed"
+    exit 1
+  }
+  $script:NodeStepPending = $false
+  Confirm-NodeVersion
+}
+
+if (Test-Path $NodeHelper) {
+  Invoke-NodeStep
+} elseif ((Test-NodeUsable) -or -not (Test-Path (Join-Path $HOME '.ownmind'))) {
+  $NodeStepPending = $true
+} else {
+  Write-Error "Node.js is missing or too old, and this OwnMind checkout is too old to install one. Install Node.js v20+ LTS from https://nodejs.org/ and retry"
   exit 1
-}
-Write-Host "   Node.js: $nodeVerRaw ✓" -ForegroundColor Gray
-
-# --- v1.17.77: 把 node 安裝目錄持久化寫入 User PATH（回報者 vin-windows-test 第二輪）---
-# 為什麼必要：winget 只更新 Machine PATH，但 already-running 的 Claude Code 不會 reload；
-# 它 spawn `cmd.exe /c start.cmd` 時繼承的 PATH 仍 stale → MCP server 起不來。
-# 寫 User PATH 確保「下次開新 terminal / 重啟 Claude Code」就會找到，跟 fallback 兩層守住。
-$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
-if ($nodeCmd) {
-  $nodeDir = (Split-Path -Parent $nodeCmd.Path).TrimEnd('\')
-  $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
-  $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-  $allParts = @()
-  if ($userPath) { $allParts += $userPath -split ';' }
-  if ($machinePath) { $allParts += $machinePath -split ';' }
-  $alreadyInPath = $false
-  foreach ($p in $allParts) {
-    if ($p -and ($p.TrimEnd('\') -ieq $nodeDir)) { $alreadyInPath = $true; break }
-  }
-  if (-not $alreadyInPath) {
-    $newUserPath = if ($userPath) { "$userPath;$nodeDir" } else { $nodeDir }
-    try {
-      [System.Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
-      Write-Host "[ OK ] Node path persisted to User PATH ($nodeDir) - effective after terminal/Claude Code restart" -ForegroundColor Green
-    } catch {
-      Write-Host "[WARN] Failed to write User PATH: $_ (non-fatal; start.cmd has fallback)" -ForegroundColor Yellow
-    }
-  }
 }
 
 # --- sqlite3 自動裝（v1.17.14，Tier 2 Cursor/Antigravity/OpenCode 需要）---
@@ -295,12 +267,19 @@ if (Test-Path $OwnmindDir) {
   }
 } else {
   Write-Host "[INFO] Cloning OwnMind MCP server"
+  if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) {
+    Report-Error -Kind "install_git_clone_failed" -Detail "git is not installed and there is no OwnMind folder to update"
+    Write-Error "git is not installed, and there is no OwnMind folder yet. Run bootstrap.ps1, which installs from the release archive without git."
+    exit 1
+  }
   git clone -q https://github.com/miou1107/ownmind.git $OwnmindDir
   if ($LASTEXITCODE -ne 0) {
     Report-Error -Kind "install_git_clone_failed" -Detail "git clone github.com/miou1107/ownmind 失敗"
     Write-Error "git clone failed (network or GitHub access)"
     exit 1
   }
+  # The node step deferred above needs the clone, and the release lookup below needs node.
+  if ($NodeStepPending -and (Test-Path $NodeHelper)) { Invoke-NodeStep }
   # A fresh clone is main's tip; step back to the newest release. Nothing local to lose.
   Push-Location $OwnmindDir
   $release = "$(& node $ReleaseHelper --print)".Trim()
@@ -311,6 +290,11 @@ if (Test-Path $OwnmindDir) {
     Write-Host "[WARN] No release found ($release); installing main's latest commit"
   }
   Pop-Location
+}
+# An existing checkout that was too old to carry the node helper has just been updated and now
+# does; a checkout that still lacks it (and a node that works) simply carries on.
+if ($NodeStepPending) {
+  if (Test-Path $NodeHelper) { Invoke-NodeStep } else { $NodeStepPending = $false; Confirm-NodeVersion }
 }
 Maybe-LoadReportError
 
