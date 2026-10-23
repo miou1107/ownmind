@@ -17,6 +17,12 @@ import path from 'node:path';
  *   - Not sealed: absolute paths. A script that calls /usr/bin/git or /opt/homebrew/bin/node
  *     by full path still reaches them. The installer under test is expected to use PATH.
  *
+ * A real clean Mac is not quite "no git": /usr/bin/git exists as a stub that opens the
+ * install-the-developer-tools dialog. `xcodeStub: true` reproduces that: `git` is on PATH, prints
+ * the stub's own message and exits 1 (leaving `gitMarker` behind, so a test can prove it was never
+ * run), and `xcode-select -p` exits 2 as it does when the tools are absent. The installer finds
+ * the stubs through OWNMIND_XCODE_SELECT and OWNMIND_GIT_STUB_DIR, which are set in `env`.
+ *
  * `bin/` is created outside HOME on purpose: a clean home must stay empty until the thing
  * under test writes to it.
  */
@@ -47,12 +53,12 @@ function findSystemTool(name) {
 }
 
 /**
- * @param {{ keep?: string[] }} [options] tool names to link into the simulated PATH. Names that
+ * @param {{ keep?: string[], xcodeStub?: boolean }} [options] tool names to link into the simulated PATH. Names that
  *   do not exist in a system directory are skipped rather than failing, so the same list works
  *   on a Mac and on a Linux CI runner.
- * @returns {{ home: string, binDir: string, env: Record<string, string>, cleanup: () => void }}
+ * @returns {{ home: string, binDir: string, env: Record<string, string>, gitMarker: string, cleanup: () => void }}
  */
-export function makeCleanMac({ keep = DEFAULT_KEEP } = {}) {
+export function makeCleanMac({ keep = DEFAULT_KEEP, xcodeStub = false } = {}) {
   const root = fs.realpathSync(os.tmpdir());
   const home = fs.realpathSync(fs.mkdtempSync(path.join(root, 'clean-mac-home-')));
   const binDir = fs.realpathSync(fs.mkdtempSync(path.join(root, 'clean-mac-bin-')));
@@ -62,11 +68,24 @@ export function makeCleanMac({ keep = DEFAULT_KEEP } = {}) {
     if (target) fs.symlinkSync(target, path.join(binDir, name));
   }
 
+  const gitMarker = path.join(binDir, 'git-was-run');
+  if (xcodeStub) {
+    fs.writeFileSync(path.join(binDir, 'git'), [
+      '#!/bin/sh',
+      `: > "${gitMarker}"`,
+      'echo "xcode-select: note: No developer tools were found, requesting install." >&2',
+      'exit 1',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    fs.writeFileSync(path.join(binDir, 'xcode-select'), '#!/bin/sh\nexit 2\n', { mode: 0o755 });
+  }
+
   const env = {
     HOME: home,
     PATH: binDir,
     XDG_CONFIG_HOME: path.join(home, '.config'),
     GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig'),
+    ...(xcodeStub ? { OWNMIND_XCODE_SELECT: path.join(binDir, 'xcode-select'), OWNMIND_GIT_STUB_DIR: binDir } : {}),
   };
 
   let cleaned = false;
@@ -77,5 +96,5 @@ export function makeCleanMac({ keep = DEFAULT_KEEP } = {}) {
     fs.rmSync(binDir, { recursive: true, force: true });
   };
 
-  return { home, binDir, env, cleanup };
+  return { home, binDir, env, gitMarker, cleanup };
 }

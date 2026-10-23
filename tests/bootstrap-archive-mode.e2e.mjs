@@ -134,6 +134,38 @@ test('no git: the release is downloaded, unpacked into ~/.ownmind, and install.s
   }
 });
 
+test('the macOS git stub counts as no git: archive mode runs and the stub is never executed', { skip }, async () => {
+  const mac = makeCleanMac({ xcodeStub: true });
+  try {
+    fixture.mode = 'ok';
+    assert.equal(spawnSync('sh', ['-c', 'command -v git'], { env: mac.env }).status, 0, 'the stub git must be on PATH, like /usr/bin/git on a real Mac');
+    const r = await runBootstrap(mac);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /INFO:archive_mode:/);
+    assert.match(r.out, /OK:unpack:release v9\.9\.9 unpacked/);
+    assert.ok(!fs.existsSync(mac.gitMarker), 'git was executed, which on a real Mac opens the developer-tools dialog');
+    assert.doesNotMatch(r.out, /requesting install/);
+  } finally {
+    mac.cleanup();
+  }
+});
+
+test('a git that is not the stub counts as git', { skip }, () => {
+  // The same fake git, but the stub directory is somewhere else (Homebrew, a private install).
+  const mac = makeCleanMac({ xcodeStub: true });
+  try {
+    const script = `. "${path.join(repoRoot, 'scripts', 'install-helpers', 'preflight.sh')}"; ownmind_git_usable`;
+    const asStub = spawnSync('bash', ['-c', script], { env: mac.env });
+    assert.notEqual(asStub.status, 0, 'in the stub directory with no developer tools it is not usable');
+    const elsewhere = spawnSync('bash', ['-c', script], { env: { ...mac.env, OWNMIND_GIT_STUB_DIR: '/usr/bin' } });
+    assert.equal(elsewhere.status, 0, 'outside the stub directory it is a real git');
+    const withTools = spawnSync('bash', ['-c', script], { env: { ...mac.env, OWNMIND_XCODE_SELECT: '/usr/bin/true' } });
+    assert.equal(withTools.status, 0, 'with the developer tools installed it is usable');
+  } finally {
+    mac.cleanup();
+  }
+});
+
 test('an unfinished download from an earlier attempt is cleared and started again', { skip }, async () => {
   const mac = makeCleanMac();
   try {
@@ -184,12 +216,17 @@ test('server unreachable and OWNMIND_SOURCE=server: the person is told to check 
   const mac = makeCleanMac();
   try {
     fixture.mode = '500';
-    const r = await runBootstrap(mac, { OWNMIND_SOURCE: 'server' });
+    fixture.requests = [];
+    // Pointed at the fixture so that any GitHub request would be recorded, not sent to github.com.
+    const r = await runBootstrap(mac, { OWNMIND_SOURCE: 'server', OWNMIND_GITHUB_API: fixture.url, OWNMIND_GITHUB_CODELOAD: fixture.url });
     assert.notEqual(r.status, 0, r.out);
     assert.match(r.out, /ERROR:download:/);
     assert.match(r.out, /FIX:use_fallback_source:OWNMIND_SOURCE=github bash <same one-liner>/);
     assert.match(r.out, /ASK:no_network:The installer could not reach the OwnMind server or GitHub\. Check that this computer is online, then paste the same install message to the AI again\./);
     assert.ok(!fs.existsSync(path.join(mac.home, '.ownmind')), 'nothing may be installed after a failed download');
+    assert.ok(!fs.existsSync(path.join(mac.home, '.ownmind.partial')), 'the empty partial directory must be removed');
+    assert.ok(fixture.requests.length > 0, 'the server was asked');
+    assert.ok(fixture.requests.every((q) => q.url.startsWith('/api/')), `no GitHub traffic when the source is forced to server: ${JSON.stringify(fixture.requests)}`);
   } finally {
     mac.cleanup();
   }

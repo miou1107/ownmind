@@ -26,7 +26,9 @@ src/routes/install.js                                   — 新增 GET /api/inst
 docker-compose.yml, .env.example                        — api 容器掛上 ownmind_install_cache 到 /var/cache/ownmind-install，並在 compose 直接設定 INSTALL_CACHE_DIR（正式機的 .env 沒有這個變數）；.env.example 只留說明
 Dockerfile, .dockerignore                               — 映像裡放進 scripts/、install.sh、install.ps1、mcp/、hooks/、skills/、configs/
 scripts/bootstrap.sh                                    — 沒有 git 時不再結束，改走壓縮檔安裝（INFO:archive_mode）；有 .release 沒有 .git 的資料夾視為完好的壓縮檔安裝，重跑 install.sh；解壓完、跑 install.sh 之前留一個等 ensure-node-runtime.sh 的入口
-tests/helpers/clean-mac-sim.mjs                         — 保留的系統工具多了 sqlite3、launchctl
+tests/helpers/clean-mac-sim.mjs                         — 保留的系統工具多了 sqlite3、launchctl；新增 xcodeStub 選項，模擬 macOS 內建的 git 替身
+scripts/install-helpers/preflight.sh                      — 新增 ownmind_git_usable：macOS 內建的 /usr/bin/git 只是會跳出安裝視窗的替身，要 xcode-select -p 成功才算有 git；檢查 git 的地方都改用它，bootstrap.sh 內嵌同一份
+tests/clean-mac-sim.test.js                             — 多測 xcodeStub 選項（有 git 替身、xcode-select 回 2、跑過會留標記檔）
 tests/installer-preflight.test.js                       — bootstrap.sh 沒有 git 時不再停下來，原本斷言「停下來」的兩處改成斷言新行為（沒帶 key 時回 missing_args、什麼都不建）
 tests/install-e2e-is-actually-run.test.js               — 多檢查 bootstrap-archive-mode.e2e.mjs 在 CI 的 install 工作裡被點名執行
 .github/workflows/test.yml                              — install 工作多跑 tests/bootstrap-archive-mode.e2e.mjs

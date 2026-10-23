@@ -21,6 +21,27 @@
 # install.ps1 has enforced since v1.17.76. Raise it here and the check follows.
 OWNMIND_NODE_FLOOR=20
 
+# BEGIN git-usable
+# Is there a git that works? `command -v git` is not enough on a Mac: macOS ships /usr/bin/git
+# as a stub that opens the "install the developer tools" dialog when run. The stub is told
+# apart from the real thing by `xcode-select -p`, which exits non-zero and shows no dialog when
+# the command line tools are absent. A git anywhere else (Homebrew, a private install) is real.
+# OWNMIND_XCODE_SELECT and OWNMIND_GIT_STUB_DIR exist so tests can stand in for the Mac; setting
+# OWNMIND_XCODE_SELECT also turns the check on for a machine that is not a Mac.
+ownmind_git_usable() {
+  local git_path
+  git_path=$(command -v git 2>/dev/null) || return 1
+  [ -n "$git_path" ] || return 1
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ] || [ -n "${OWNMIND_XCODE_SELECT:-}" ]; then
+    case "$git_path" in
+      "${OWNMIND_GIT_STUB_DIR:-/usr/bin}"/*)
+        "${OWNMIND_XCODE_SELECT:-/usr/bin/xcode-select}" -p >/dev/null 2>&1 || return 1 ;;
+    esac
+  fi
+  return 0
+}
+# END git-usable
+
 # Every unmet requirement, one per line, as "name<TAB>problem<TAB>remedy".
 # Writes nothing else and never exits, so the caller decides what to do.
 ownmind_preflight_failures() {
@@ -35,7 +56,7 @@ ownmind_preflight_failures() {
       remedy_node='sudo apt-get install -y nodejs npm     # or your package manager' ;;
   esac
 
-  if ! command -v git >/dev/null 2>&1; then
+  if ! ownmind_git_usable; then
     printf 'git\tgit is not on PATH; OwnMind is installed and updated with it\t%s\n' "$remedy_git"
   fi
 

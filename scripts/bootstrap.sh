@@ -44,13 +44,46 @@ log_ok()   { echo "OK:$1:$2"; }
 log_err()  { echo "ERROR:$1:$2" >&2; }
 
 # Without git, OwnMind is installed from a release archive (see "Archive mode" above). The
-# download and unpack functions below are an embedded copy of scripts/install-helpers/fetch-release.sh:
+# git check and the download and unpack functions below are embedded copies of
+# scripts/install-helpers/preflight.sh (git-usable) and scripts/install-helpers/fetch-release.sh:
 # this script is fetched over the network and run before anything is on disk, so it cannot source
 # that file. tests/bootstrap-archive-mode.test.js fails when the two copies differ.
+# BEGIN git-usable
+# Is there a git that works? `command -v git` is not enough on a Mac: macOS ships /usr/bin/git
+# as a stub that opens the "install the developer tools" dialog when run. The stub is told
+# apart from the real thing by `xcode-select -p`, which exits non-zero and shows no dialog when
+# the command line tools are absent. A git anywhere else (Homebrew, a private install) is real.
+# OWNMIND_XCODE_SELECT and OWNMIND_GIT_STUB_DIR exist so tests can stand in for the Mac; setting
+# OWNMIND_XCODE_SELECT also turns the check on for a machine that is not a Mac.
+ownmind_git_usable() {
+  local git_path
+  git_path=$(command -v git 2>/dev/null) || return 1
+  [ -n "$git_path" ] || return 1
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ] || [ -n "${OWNMIND_XCODE_SELECT:-}" ]; then
+    case "$git_path" in
+      "${OWNMIND_GIT_STUB_DIR:-/usr/bin}"/*)
+        "${OWNMIND_XCODE_SELECT:-/usr/bin/xcode-select}" -p >/dev/null 2>&1 || return 1 ;;
+    esac
+  fi
+  return 0
+}
+# END git-usable
+
 HAS_GIT=1
-command -v git >/dev/null 2>&1 || HAS_GIT=0
+ownmind_git_usable || HAS_GIT=0
 
 # BEGIN fetch-release
+# curl options shared by every call below. --retry-all-errors needs curl 7.71, and macOS 11
+# ships 7.64: passing it there makes curl exit 2 on every call, which would read as "no
+# network". So it is probed once, and the help text is captured first because `grep -q` on a
+# pipe can close it early and fail the pipeline under pipefail. --speed-limit/--speed-time end
+# a connection that has stalled, so an unattended install cannot hang forever.
+OWNMIND_CURL_FLAGS="--retry 3 --connect-timeout 15 --speed-limit 1024 --speed-time 60"
+OWNMIND_CURL_HELP=$(curl --help all 2>/dev/null || true)
+case "$OWNMIND_CURL_HELP" in
+  *--retry-all-errors*) OWNMIND_CURL_FLAGS="$OWNMIND_CURL_FLAGS --retry-all-errors" ;;
+esac
+
 # Emit a curl config on stdout carrying the Authorization header, so the key is read through
 # `curl -K -` from stdin and never appears on a command line that `ps` can show. Backslashes
 # and quotes in the key are escaped for curl's config syntax by sed, which also gets the key
@@ -63,7 +96,8 @@ ownmind_curl_auth() {
 # Prints nothing when the tags API cannot be reached.
 ownmind_github_latest_tag() {
   local tags
-  tags=$(curl -fsSL --retry 3 --retry-all-errors --connect-timeout 15 \
+  # shellcheck disable=SC2086 — $OWNMIND_CURL_FLAGS is a fixed list of curl options, split on purpose
+  tags=$(curl -fsSL $OWNMIND_CURL_FLAGS \
     "${OWNMIND_GITHUB_API:-https://api.github.com}/repos/miou1107/ownmind/tags?per_page=30" 2>/dev/null) || return 0
   printf '%s\n' "$tags" \
     | grep -o '"name": *"v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"' \
@@ -80,7 +114,6 @@ ownmind_github_latest_tag() {
 ownmind_download_archive() {
   local key="$1" api="${2%/}" dest="$3"
   local source="${OWNMIND_SOURCE:-}"
-  local retry="--retry 3 --retry-all-errors --connect-timeout 15"
   local gh_codeload="${OWNMIND_GITHUB_CODELOAD:-https://codeload.github.com}"
   local tag ref
   OWNMIND_ARCHIVE_STRIP=0
@@ -94,9 +127,9 @@ ownmind_download_archive() {
 
   if [ "$source" != "github" ]; then
     log_info download "Downloading the release archive from $api"
-    # shellcheck disable=SC2086 — $retry is a fixed list of curl options, split on purpose
+    # shellcheck disable=SC2086 — see ownmind_github_latest_tag
     if [ -n "$key" ] && [ -n "$api" ] \
-      && ownmind_curl_auth "$key" | curl -K - -fsSL $retry -o "$dest" "$api/api/install/archive"; then
+      && ownmind_curl_auth "$key" | curl -K - -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$api/api/install/archive"; then
       return 0
     fi
     rm -f "$dest"
@@ -119,8 +152,8 @@ ownmind_download_archive() {
     log_info fallback_source "GitHub tag list unavailable; using the main branch"
   fi
   log_info download "Downloading the release archive from GitHub ($OWNMIND_ARCHIVE_RELEASE)"
-  # shellcheck disable=SC2086 — see above
-  if curl -fsSL $retry -o "$dest" "$gh_codeload/miou1107/ownmind/tar.gz/$ref"; then
+  # shellcheck disable=SC2086 — see ownmind_github_latest_tag
+  if curl -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$gh_codeload/miou1107/ownmind/tar.gz/$ref"; then
     OWNMIND_ARCHIVE_STRIP=1
     return 0
   fi
@@ -168,7 +201,7 @@ install_from_archive() {
     log_info clear_partial "Removing the unfinished download from an earlier attempt ($partial)"
     rm -rf "$partial" || { echo "FIX:clear_partial:rm -rf ~/.ownmind.partial"; exit 1; }
   fi
-  ownmind_download_archive "$key" "$api" "$partial/archive.tar.gz" || exit 1
+  ownmind_download_archive "$key" "$api" "$partial/archive.tar.gz" || { rm -rf "$partial"; exit 1; }
   ownmind_unpack_release "$partial/archive.tar.gz" "$partial" "$OWNMIND_DIR" || exit 1
   cd "$OWNMIND_DIR"
   # Private Node runtime (installed by a later step; the guard keeps this script shippable alone).
@@ -205,8 +238,8 @@ if [ ! -d "$OWNMIND_DIR" ]; then
   exit 0
 fi
 
-# Branch 2: no .git. With a .release file this is a healthy archive install; without one it is broken.
-if [ ! -d "$OWNMIND_DIR/.git" ] && [ -f "$OWNMIND_DIR/.release" ]; then
+# Branch 2: no .git. With .release and install.sh this is a healthy archive install; otherwise it is broken.
+if [ ! -d "$OWNMIND_DIR/.git" ] && [ -f "$OWNMIND_DIR/.release" ] && [ -f "$OWNMIND_DIR/install.sh" ]; then
   if grep -q 'ARCHIVE_MODE' "$OWNMIND_DIR/scripts/interactive-upgrade.sh" 2>/dev/null; then
     log_info upgrade "Archive install found; delegating to interactive-upgrade.sh"
     exec bash "$OWNMIND_DIR/scripts/interactive-upgrade.sh"

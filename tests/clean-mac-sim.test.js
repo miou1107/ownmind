@@ -79,3 +79,29 @@ test('cleanup removes the home and the bin, and is safe to call twice', () => {
   assert.equal(fs.existsSync(mac.binDir), false);
   mac.cleanup();
 });
+
+test('xcodeStub puts a git on PATH that only complains, and an xcode-select that says no tools', () => {
+  const mac = makeCleanMac({ xcodeStub: true });
+  try {
+    assert.equal(inMac(mac, 'command -v git').status, 0, 'a real clean Mac has /usr/bin/git, so git must be found');
+    assert.equal(fs.existsSync(mac.gitMarker), false);
+    const git = inMac(mac, 'git --version');
+    assert.equal(git.status, 1);
+    assert.match(git.stderr, /xcode-select: note: No developer tools were found, requesting install\./);
+    assert.equal(fs.existsSync(mac.gitMarker), true, 'running the stub leaves the marker');
+    assert.equal(inMac(mac, '"$OWNMIND_XCODE_SELECT" -p').status, 2);
+    assert.equal(mac.env.OWNMIND_GIT_STUB_DIR, mac.binDir);
+  } finally {
+    mac.cleanup();
+  }
+});
+
+test('without xcodeStub there is no git, no xcode-select and no marker seam in env', () => {
+  const mac = makeCleanMac();
+  try {
+    assert.notEqual(inMac(mac, 'command -v xcode-select').status, 0);
+    assert.equal(mac.env.OWNMIND_XCODE_SELECT, undefined);
+  } finally {
+    mac.cleanup();
+  }
+});

@@ -20,6 +20,17 @@ if ! type log_info >/dev/null 2>&1; then
 fi
 
 # BEGIN fetch-release
+# curl options shared by every call below. --retry-all-errors needs curl 7.71, and macOS 11
+# ships 7.64: passing it there makes curl exit 2 on every call, which would read as "no
+# network". So it is probed once, and the help text is captured first because `grep -q` on a
+# pipe can close it early and fail the pipeline under pipefail. --speed-limit/--speed-time end
+# a connection that has stalled, so an unattended install cannot hang forever.
+OWNMIND_CURL_FLAGS="--retry 3 --connect-timeout 15 --speed-limit 1024 --speed-time 60"
+OWNMIND_CURL_HELP=$(curl --help all 2>/dev/null || true)
+case "$OWNMIND_CURL_HELP" in
+  *--retry-all-errors*) OWNMIND_CURL_FLAGS="$OWNMIND_CURL_FLAGS --retry-all-errors" ;;
+esac
+
 # Emit a curl config on stdout carrying the Authorization header, so the key is read through
 # `curl -K -` from stdin and never appears on a command line that `ps` can show. Backslashes
 # and quotes in the key are escaped for curl's config syntax by sed, which also gets the key
@@ -32,7 +43,8 @@ ownmind_curl_auth() {
 # Prints nothing when the tags API cannot be reached.
 ownmind_github_latest_tag() {
   local tags
-  tags=$(curl -fsSL --retry 3 --retry-all-errors --connect-timeout 15 \
+  # shellcheck disable=SC2086 — $OWNMIND_CURL_FLAGS is a fixed list of curl options, split on purpose
+  tags=$(curl -fsSL $OWNMIND_CURL_FLAGS \
     "${OWNMIND_GITHUB_API:-https://api.github.com}/repos/miou1107/ownmind/tags?per_page=30" 2>/dev/null) || return 0
   printf '%s\n' "$tags" \
     | grep -o '"name": *"v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"' \
@@ -49,7 +61,6 @@ ownmind_github_latest_tag() {
 ownmind_download_archive() {
   local key="$1" api="${2%/}" dest="$3"
   local source="${OWNMIND_SOURCE:-}"
-  local retry="--retry 3 --retry-all-errors --connect-timeout 15"
   local gh_codeload="${OWNMIND_GITHUB_CODELOAD:-https://codeload.github.com}"
   local tag ref
   OWNMIND_ARCHIVE_STRIP=0
@@ -63,9 +74,9 @@ ownmind_download_archive() {
 
   if [ "$source" != "github" ]; then
     log_info download "Downloading the release archive from $api"
-    # shellcheck disable=SC2086 — $retry is a fixed list of curl options, split on purpose
+    # shellcheck disable=SC2086 — see ownmind_github_latest_tag
     if [ -n "$key" ] && [ -n "$api" ] \
-      && ownmind_curl_auth "$key" | curl -K - -fsSL $retry -o "$dest" "$api/api/install/archive"; then
+      && ownmind_curl_auth "$key" | curl -K - -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$api/api/install/archive"; then
       return 0
     fi
     rm -f "$dest"
@@ -88,8 +99,8 @@ ownmind_download_archive() {
     log_info fallback_source "GitHub tag list unavailable; using the main branch"
   fi
   log_info download "Downloading the release archive from GitHub ($OWNMIND_ARCHIVE_RELEASE)"
-  # shellcheck disable=SC2086 — see above
-  if curl -fsSL $retry -o "$dest" "$gh_codeload/miou1107/ownmind/tar.gz/$ref"; then
+  # shellcheck disable=SC2086 — see ownmind_github_latest_tag
+  if curl -fsSL $OWNMIND_CURL_FLAGS -o "$dest" "$gh_codeload/miou1107/ownmind/tar.gz/$ref"; then
     OWNMIND_ARCHIVE_STRIP=1
     return 0
   fi

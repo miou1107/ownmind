@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const bootstrap = readFileSync(join(__dirname, '..', 'scripts', 'bootstrap.sh'), 'utf8');
 const fetchRelease = readFileSync(join(__dirname, '..', 'scripts', 'install-helpers', 'fetch-release.sh'), 'utf8');
+const preflight = readFileSync(join(__dirname, '..', 'scripts', 'install-helpers', 'preflight.sh'), 'utf8');
 
 /** The text between the BEGIN/END markers, markers included. */
 function embeddedBlock(src, name) {
@@ -44,7 +45,7 @@ test('archive layout and failure lines are named as the contract says', () => {
 
 test('the download uses retry, a connect timeout, and keeps the key off the command line', () => {
   const block = embeddedBlock(bootstrap, 'fetch-release');
-  assert.match(block, /--retry 3 --retry-all-errors --connect-timeout 15/);
+  assert.match(block, /OWNMIND_CURL_FLAGS="--retry 3 --connect-timeout 15 --speed-limit 1024 --speed-time 60"/);
   assert.match(block, /ownmind_curl_auth "\$key" \| curl -K -/,
     'the Authorization header must be fed to curl on stdin, not as a -H argument');
   assert.doesNotMatch(block, /-H\s+"Authorization/,
@@ -95,4 +96,36 @@ test('bash 3.2 (stock macOS) compatibility: none of the newer bash features', ()
     assert.doesNotMatch(src, /\$\{[A-Za-z_]+(,,|\^\^)\}/);
     assert.doesNotMatch(src, /declare -A/);
   }
+});
+
+test('--retry-all-errors is only passed to a curl that knows it (macOS 11 has 7.64)', () => {
+  const block = embeddedBlock(bootstrap, 'fetch-release');
+  assert.match(block, /OWNMIND_CURL_HELP=\$\(curl --help all/, 'the flag must be probed from curl\'s own help');
+  assert.match(block, /\*--retry-all-errors\*\) OWNMIND_CURL_FLAGS="\$OWNMIND_CURL_FLAGS --retry-all-errors"/);
+  const withoutProbe = block.replace(/\*--retry-all-errors\*\)[^\n]*\n/, '').replace(/case "\$OWNMIND_CURL_HELP"/, '');
+  const unconditional = withoutProbe.split('\n').filter((l) => !l.trim().startsWith('#') && l.includes('--retry-all-errors'));
+  assert.deepEqual(unconditional, [], 'every other use of the flag would be unconditional');
+  assert.doesNotMatch(block, /curl --help all[^\n]*\|\s*grep/, 'piping into grep -q can fail under pipefail');
+  const calls = block.split('\n').filter((l) => /\bcurl\b[^\n]*-fsSL/.test(l) || /^\s+\$?\s*curl -fsSL/.test(l));
+  assert.ok(calls.length >= 3);
+  for (const l of calls) assert.match(l, /\$OWNMIND_CURL_FLAGS/, `curl call without the shared flags: ${l}`);
+});
+
+test('HAS_GIT is decided by ownmind_git_usable, not by command -v git (macOS ships a git stub)', () => {
+  assert.match(bootstrap, /^HAS_GIT=1\nownmind_git_usable \|\| HAS_GIT=0$/m);
+  assert.doesNotMatch(bootstrap, /command -v git[^\n]*HAS_GIT/);
+  assert.match(preflight, /if ! ownmind_git_usable; then\n\s+printf 'git\\t/,
+    'preflight.sh must use the same check wherever it decides git is missing');
+  assert.doesNotMatch(preflight.replace(embeddedBlock(preflight, 'git-usable'), ''), /command -v git/);
+  assert.match(embeddedBlock(preflight, 'git-usable'), /OWNMIND_XCODE_SELECT:-\/usr\/bin\/xcode-select/);
+});
+
+test('the embedded git check is byte-identical to preflight.sh', () => {
+  assert.equal(embeddedBlock(bootstrap, 'git-usable'), embeddedBlock(preflight, 'git-usable'),
+    'edit scripts/install-helpers/preflight.sh, then paste the block between the markers into bootstrap.sh');
+});
+
+test('a failed download removes the empty partial directory; a healthy archive install needs install.sh', () => {
+  assert.match(bootstrap, /ownmind_download_archive "\$key" "\$api" "\$partial\/archive\.tar\.gz" \|\| \{ rm -rf "\$partial"; exit 1; \}/);
+  assert.match(bootstrap, /-f "\$OWNMIND_DIR\/\.release" \] && \[ -f "\$OWNMIND_DIR\/install\.sh" \]/);
 });
