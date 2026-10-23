@@ -108,7 +108,7 @@ function stagedShell(tools, mustBeMissing = ['git', 'node']) {
 /** What a skipped shell test says, so it cannot be mistaken for a passing one. */
 const NO_SHELL = 'this machine cannot build a PATH that bash runs under and that really lacks the tool (see stagedShell); nothing was run';
 
-describe('#98 bootstrap stops when git is missing, before touching anything', () => {
+describe('#98 bootstrap without git: PowerShell stops, bash installs from the release archive', () => {
   it('bootstrap.ps1 names the missing tool, prints the command, and exits 1', {
     skip: isWindows ? false : 'the PowerShell path only exists on Windows',
   }, () => {
@@ -139,7 +139,10 @@ describe('#98 bootstrap stops when git is missing, before touching anything', ()
     assert.deepEqual(fs.readdirSync(home).filter((n) => n.includes('.bak')), []);
   });
 
-  it('bootstrap.sh names the missing tool, prints the command, and exits 1', (t) => {
+  it('bootstrap.sh does not stop for git; without an API key it says what is needed and creates nothing', (t) => {
+    // Since the zero-touch install, a machine without git installs from the release archive
+    // (tests/bootstrap-archive-mode.e2e.mjs runs that path). What is left to pin here is the
+    // old refusal being gone, and that a run with no key still touches nothing.
     // date and uname run before the git check; without them the script dies earlier and this
     // test would be asserting about the wrong failure.
     const staged = stagedShell(['date', 'uname']);
@@ -158,9 +161,10 @@ describe('#98 bootstrap stops when git is missing, before touching anything', ()
 
     const said = `${r.stdout}${r.stderr}`;
     assert.equal(r.status, 1, `expected a clean stop, got ${r.status}:\n${said}`);
-    assert.match(said, /preflight_missing_git/, said);
-    assert.match(said, /fix:/, 'the remedy has to be on screen');
+    assert.doesNotMatch(said, /preflight_missing_git/, said);
+    assert.match(said, /ERROR:missing_args:/, said);
     assert.equal(fs.existsSync(path.join(home, '.ownmind')), false);
+    assert.equal(fs.existsSync(path.join(home, '.ownmind.partial')), false);
   });
 });
 
@@ -370,7 +374,7 @@ describe('#98 the assumptions the Windows check rests on', () => {
 });
 
 describe('#98 one missing tool has one name', () => {
-  it('all four scripts print ERROR:preflight_missing_<tool>', () => {
+  it('the two preflight modules and bootstrap.ps1 print ERROR:preflight_missing_<tool>', () => {
     // It did not, and CI is what noticed: the two preflight modules printed
     // `preflight_missing_<tool>` as the reported kind and `preflight_<tool>` on screen, while
     // both bootstraps printed the longer form. Somebody grepping their terminal for what the
@@ -378,7 +382,6 @@ describe('#98 one missing tool has one name', () => {
     const cases = [
       ['scripts/install-helpers/preflight.sh', /ERROR:preflight_missing_%s:/],
       ['scripts/install-helpers/preflight.ps1', /ERROR:preflight_missing_\$\(\$f\.Name\):/],
-      ['scripts/bootstrap.sh', /log_err preflight_missing_git/],
       ['scripts/bootstrap.ps1', /Log-Err preflight_missing_git/],
     ];
     for (const [rel, pattern] of cases) {

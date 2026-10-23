@@ -14,6 +14,9 @@ tests/node-runtime-shared.test.js                       — 四種壓縮檔名�
 tests/helpers/clean-mac-sim.mjs                         — makeCleanMac：模擬乾淨 Mac 的測試助手，空的暫時 HOME 加上只放系統工具的 PATH（沒有 git、node、npm、brew）
 tests/clean-mac-sim.test.js                             — 乾淨 Mac 助手的自測：git、node 找不到，curl、tar 找得到，HOME 是空的，真實的 HOME 和 CLAUDECODE 不會漏進來
 docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md — 零接觸安裝的實測紀錄：新開的 claude 行程讀不讀得到剛裝好的 OwnMind（驗收時再補）
+scripts/install-helpers/fetch-release.sh                — ownmind_download_archive（先連伺服器，再連 GitHub；key 走 curl -K - 不上指令列）與 ownmind_unpack_release（解到 .partial，檢查 .release 和 install.sh 後才改名）；bootstrap.sh 內嵌同一份
+tests/bootstrap-archive-mode.test.js                    — bootstrap.sh 沒有 git 時的靜態檢查：不再因缺 git 結束、FIX／ASK 行、內嵌函式與 fetch-release.sh 逐字相同
+tests/bootstrap-archive-mode.e2e.mjs                    — 乾淨 Mac 加本機假伺服器：下載解壓、清掉半途的 .partial、install.sh 失敗後續跑、連不上時的 ASK:no_network、退回 GitHub（CI 的 install 工作點名執行）
 ```
 
 修改檔：
@@ -22,6 +25,11 @@ src/app.js                                              — 安裝路徑掛在 a
 src/routes/install.js                                   — 新增 GET /api/install/node?os=&arch=（要登入，回應標頭有 X-Node-Version 與 X-Sha256；nodejs.org 連不上時回 503 node_upstream_unavailable）
 docker-compose.yml, .env.example                        — api 容器掛上 ownmind_install_cache 到 /var/cache/ownmind-install，並在 compose 直接設定 INSTALL_CACHE_DIR（正式機的 .env 沒有這個變數）；.env.example 只留說明
 Dockerfile, .dockerignore                               — 映像裡放進 scripts/、install.sh、install.ps1、mcp/、hooks/、skills/、configs/
+scripts/bootstrap.sh                                    — 沒有 git 時不再結束，改走壓縮檔安裝（INFO:archive_mode）；有 .release 沒有 .git 的資料夾視為完好的壓縮檔安裝，重跑 install.sh；解壓完、跑 install.sh 之前留一個等 ensure-node-runtime.sh 的入口
+tests/helpers/clean-mac-sim.mjs                         — 保留的系統工具多了 sqlite3、launchctl
+tests/installer-preflight.test.js                       — bootstrap.sh 沒有 git 時不再停下來，原本斷言「停下來」的兩處改成斷言新行為（沒帶 key 時回 missing_args、什麼都不建）
+tests/install-e2e-is-actually-run.test.js               — 多檢查 bootstrap-archive-mode.e2e.mjs 在 CI 的 install 工作裡被點名執行
+.github/workflows/test.yml                              — install 工作多跑 tests/bootstrap-archive-mode.e2e.mjs
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

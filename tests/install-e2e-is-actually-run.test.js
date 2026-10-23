@@ -66,6 +66,25 @@ test('the clean-install test runs on all three platforms', () => {
   }
 });
 
+const ARCHIVE_E2E_FILE = 'tests/bootstrap-archive-mode.e2e.mjs';
+
+test('the archive-mode bootstrap test exists and a CI job runs it by name', () => {
+  assert.ok(
+    fs.existsSync(path.join(repoRoot, ARCHIVE_E2E_FILE)),
+    `${ARCHIVE_E2E_FILE} is gone; the only test that runs bootstrap.sh without git is not running`,
+  );
+  const job = installJob();
+  assert.ok(job, `${WORKFLOW} has no \`install\` job`);
+  const steps = (job.steps || []).filter((s) => typeof s.run === 'string');
+  const runner = steps.find((s) => s.run.includes(ARCHIVE_E2E_FILE));
+  assert.ok(runner, `no step in the install job runs ${ARCHIVE_E2E_FILE}`);
+  assert.ok(
+    runner.if === undefined,
+    `the step running ${ARCHIVE_E2E_FILE} is conditional (\`if: ${runner.if}\`), so it can skip silently`,
+  );
+  assert.ok(!ARCHIVE_E2E_FILE.endsWith('.test.js'), `${ARCHIVE_E2E_FILE} would now run inside npm test`);
+});
+
 test('the file is deliberately outside the default test glob', () => {
   // If it is ever renamed to `.test.js` it joins `npm test`, and every developer and every
   // matrix leg starts paying an npm install for it. That is a decision, not an accident, so

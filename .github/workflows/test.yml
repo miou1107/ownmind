@@ -102,3 +102,4 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test --test-timeout=900000 tests/install-clean-machine.e2e.mjs
+      - run: node --test --test-timeout=300000 tests/bootstrap-archive-mode.e2e.mjs
