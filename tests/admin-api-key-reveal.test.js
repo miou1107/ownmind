@@ -67,12 +67,13 @@ function get(app, path) {
 }
 
 describe('the user list no longer carries anyone\'s full key', () => {
-  const src = readFileSync(join(repoRoot, 'src/routes/admin.js'), 'utf8');
-  const select = src.match(/SELECT[\s\S]{0,400}FROM users ORDER BY created_at DESC/)[0];
+  // The list query lives in admin-users-list.js; admin.js only mounts its handler.
+  const src = readFileSync(join(repoRoot, 'src/routes/admin-users-list.js'), 'utf8');
+  const select = src.match(/SELECT[\s\S]{0,1800}ORDER BY u\.created_at DESC/)[0];
 
   it('returns an eight-character prefix, not api_key', () => {
-    assert.match(select, /LEFT\(api_key, 8\) AS api_key_prefix/);
-    assert.doesNotMatch(select.replace(/LEFT\(api_key, 8\) AS api_key_prefix/, ''), /api_key/);
+    assert.match(select, /LEFT\(u\.api_key, 8\) AS api_key_prefix/);
+    assert.doesNotMatch(select.replace(/LEFT\(u\.api_key, 8\) AS api_key_prefix/, ''), /api_key/);
   });
 });
 

@@ -1,3 +1,16 @@
 {
-  "_comment": "英文人工強制覆寫字典 — LLM 翻出來的詞你不滿意、寫進這裡、永遠覆蓋 LLM 結果。key 對應 zh.json 的 key。"
+  "_comment": "英文人工強制覆寫字典 — LLM 翻出來的詞你不滿意、寫進這裡、永遠覆蓋 LLM 結果。key 對應 zh.json 的 key。",
+  "team.col.last_load": "Last memory load",
+  "team.load.today": "Today {time}",
+  "team.load.yesterday": "Yesterday {time}",
+  "team.load.dated": "{date} {time}",
+  "team.load.error": "Install failed, nothing loaded since",
+  "team.load.error_detail": "Error reported {time}",
+  "team.load.never": "Installed, nothing loaded yet",
+  "team.load.never_detail": "{machine}, installed {date}",
+  "team.load.never_detail_nomachine": "Installed {date}",
+  "team.load.not_installed": "Not installed yet",
+  "team.load.tip.green": "This computer has loaded memories. OwnMind is working on their side.",
+  "team.load.tip.yellow": "Installed, but no memories loaded yet. Opening a new conversation turns it green.",
+  "team.load.tip.red": "The install reported an error and nothing has loaded since. Ask them to paste the install text to their AI again."
 }

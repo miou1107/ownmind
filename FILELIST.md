@@ -36,6 +36,10 @@ tests/check-sync-archive-mode.test.js                   — the real check-sync.
 scripts/install-helpers/sweep-old-trees.sh              — ownmind_sweep_old_trees: removes .ownmind.bak.*, .ownmind.broken.*, .ownmind.prev and .ownmind/.prev older than N days, unlinking runtime/current first and never following a link named like one of them
 tests/upgrade-archive-mode.test.js                      — both upgraders contain ARCHIVE_MODE (.release or a swap journal, no .git) and skip steps 1-4 for the archive update; no PowerShell-side swap; update.sh/.ps1 pass --node-bin only for a private runtime; the real interactive-upgrade.sh on an archive install: already current, and a failing server leaving it untouched
 tests/upgrade-sweep-covers-broken-and-prev.test.js      — the sweep in a temp HOME: old .broken/.prev/.bak removed, recent kept, a link inside unlinked not followed, a link named .ownmind.prev left alone; the .ps1 sweep and backup/rollback go through the junction-safe helpers; bootstrap resets the set-aside tree's time
+src/routes/admin-users-list.js                          — LIST_USERS_SQL and createListUsersHandler: GET /api/admin/users with last_memory_load_at, last_machine, first_install_at, last_install_error_at from two lateral joins in one query
+client/src/pages/Admin/last-load.js                     — lastLoadState(row, now): green / yellow / red / none for the team page's last-memory-load cell, with the time wording in the viewer's local time
+tests/admin-users-last-load.test.js                     — the four fields pass through, a member with no rows gets nulls, one query for the whole team, the SQL rules for loads and install errors
+tests/team-last-load-state.test.js                      — every branch of lastLoadState: today / yesterday / dated time, error older than the last load stays green, yellow, red, none, deactivated
 ```
 
 修改檔：
@@ -115,6 +119,10 @@ tests/install-skill-runbook.test.js                     — new: the install sec
 tests/install-output-grammar.test.js                    — also scans failing returns inside the stop functions of the six helper scripts; helper calls that always print ERROR with FIX or ASK count
 tests/install-messages.test.js, tests/install-next-line.test.js, tests/hook-english-fallbacks-match-dictionary.test.js — FIX payload checks, the Windows UTF-8 print scope, the title on the NEXT line, the copy file for bootstrap
 tests/bootstrap-archive-mode.e2e.mjs, tests/bootstrap-archive-mode.test.js, tests/bootstrap-archive-mode-ps1.test.js — a bootstrap run ends on the NEXT line (stub and real install.sh); FIX payload pins follow the runnable commands
+src/routes/admin.js                                     — GET /users is mounted from admin-users-list.js (the query moved out so a stubbed query can drive it)
+client/src/pages/Admin/TeamPage.jsx                     — new column 最近一次載入記憶 between 密碼狀態 and 近 7 天用量: a light, a time or a pill, and a muted second line (Chinese wording pending the product owner's approval)
+client/src/i18n/zh.json, en.json, en.override.json, ja.json, ja.override.json — team.col.last_load and team.load.* (English and Japanese pinned in the override files)
+tests/team-users-select-shape.test.js, tests/admin-api-key-reveal.test.js, tests/account-deactivate.test.js — read the list query from admin-users-list.js
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

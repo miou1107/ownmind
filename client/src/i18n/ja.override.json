@@ -1,3 +1,16 @@
 {
-  "_comment": "日文人工強制覆寫字典 — LLM 翻出來的詞你不滿意、寫進這裡、永遠覆蓋 LLM 結果。key 對應 zh.json 的 key。"
+  "_comment": "日文人工強制覆寫字典 — LLM 翻出來的詞你不滿意、寫進這裡、永遠覆蓋 LLM 結果。key 對應 zh.json 的 key。",
+  "team.col.last_load": "最近のメモリ読み込み",
+  "team.load.today": "今日 {time}",
+  "team.load.yesterday": "昨日 {time}",
+  "team.load.dated": "{date} {time}",
+  "team.load.error": "インストールエラー、以降の読み込みなし",
+  "team.load.error_detail": "{time} にエラー報告",
+  "team.load.never": "インストール済み、未読み込み",
+  "team.load.never_detail": "{machine}、{date} にインストール",
+  "team.load.never_detail_nomachine": "{date} にインストール",
+  "team.load.not_installed": "未インストール",
+  "team.load.tip.green": "このパソコンはメモリを読み込みました。OwnMind は正常に動作しています。",
+  "team.load.tip.yellow": "インストールは完了していますが、まだメモリを読み込んでいません。新しい会話を開くと緑になります。",
+  "team.load.tip.red": "インストール時にエラーが報告され、その後は読み込みがありません。インストール用の文章をもう一度 AI に貼り付けてもらってください。"
 }
