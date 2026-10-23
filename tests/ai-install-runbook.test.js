@@ -132,6 +132,9 @@ describe('docs/ai-install-runbook.md', () => {
     assert.match(done, /Summary:\s+N passed, N warnings, N failed/);
     assert.match(done, /next conversation/i);
     assert.match(done, /error stream/i, 'the summary line may be on stderr');
+    // The installer's own self-check reports memory_load as this warning (self-check.cjs,
+    // trigger post_install); the manual must not let the AI treat it as something to fix.
+    assert.match(done, /`memory_load` is a warning that says `memories load in the next conversation`; that is expected, and there is nothing to fix or re-run/);
   });
 
   it('runs the same verification as the skill: save, find, remove, one line per item', () => {

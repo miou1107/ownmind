@@ -349,3 +349,24 @@ link to be added by the controller).
 - Every fresh install's self-check prints `[FAIL] memory_load ... Fix: Re-run the installer, then
   fully restart your AI tool`, because no conversation has started yet. An AI reading the output
   could take that sentence as an instruction to re-run the installer.
+
+### Addendum: the memory check right after an install (same day, 15:43 UTC run)
+
+The note above about `memory_load` is resolved. The installer's own self-check (trigger
+`post_install`) now reports a warning with no remedy when memories have never loaded and the
+machine shows no reason they cannot. The admin alert job ignores a `memory_load` verdict from a
+`post_install` report; later reports (auto update, upgrade, manual) still alert as before. Re-run
+of both acceptance tests: pass. Self-check part of the Step 1 output:
+
+```
+[FAIL]  scheduler            launchd agent not found
+        Fix: Re-run install.sh or: launchctl load ~/Library/LaunchAgents/com.ownmind.usage-scanner.plist
+[WARN]  memory_load          memories load in the next conversation
+[ OK ]  usage_roundtrip      the server has this machine's data for 0 tool(s)
+
+Summary:  13 passed, 1 warnings, 1 failed
+```
+
+The remaining `[FAIL]` is the scheduler, caused by this simulation's scanner opt-out (see the
+deviation above); the test allows that one line and no other. First-load `loaded: true`, watcher
+`outcome=loaded`, Step 4 still byte-identical.

@@ -134,6 +134,11 @@ tests/bootstrap-archive-mode-ps1.e2e.mjs                — new case: bare Windo
 .github/workflows/test.yml                              — install job runs tests/zero-touch-acceptance.e2e.mjs; job timeout 40 minutes, the Windows e2e 20 minutes
 tests/install-e2e-is-actually-run.test.js               — also checks that zero-touch-acceptance.e2e.mjs exists, skips itself off macOS, and is named by an unconditional step of the install job
 docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md — acceptance section: Step 1 run on this Mac, Step 3 pointer, Step 4 comparison, Step 2 status
+scripts/install-helpers/self-check.cjs                  — the installer's own run (trigger post_install) reports memory_load as a warning, "memories load in the next conversation", with no remedy, when memories have never loaded and the machine shows no reason they cannot; every other trigger keeps the failure and its remedy
+src/lib/install-check-alerts.js, src/jobs/install-check-alerts.js — a memory_load verdict from a post_install report (older clients still send a failure) neither raises nor resolves an admin alert; the report query carries trigger_kind
+docs/ai-install-runbook.md                              — Definition of done: a memory_load warning right after an install is expected, nothing to fix or re-run
+tests/self-check-memory-load.test.js, tests/install-check-alerts.test.js, tests/ai-install-runbook.test.js — post_install warns without a remedy, every other trigger fails; post_install memory_load neither alerts nor resolves, later triggers still alert; the manual's sentence
+tests/zero-touch-acceptance.e2e.mjs                     — a fresh install prints no [FAIL] line except the scheduler one this simulation causes, and memory_load is a warning with no Fix line
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

@@ -243,6 +243,15 @@ test('Step 1: a clean Mac runs the prompt\'s one-liner against the real server, 
   assert.match(r.out, /\[INFO\] Skipping usage scanner install \(\.no-usage-scanner opt-out\)/,
     'the scanner opt-out was not in place when install.sh reached it; the run may have touched launchd');
   assert.doesNotMatch(r.out, /\nERROR:|\nASK:|\nFIX:/, 'a clean install prints no ERROR, ASK or FIX line');
+  // No [FAIL] line, so the colleague's AI is never handed a "Fix: re-run the installer". The one
+  // exception is `scheduler`, and only because of this simulation's deviation (the scanner is
+  // opted out and launchctl hides the developer's own agent), so it is pinned to that wording.
+  // memory_load in particular is a warning right after an install.
+  const failLines = r.out.split('\n').filter((l) => l.includes('[FAIL]'));
+  assert.deepEqual(failLines.filter((l) => !/^\[FAIL\]\s+scheduler\s+launchd agent not found$/.test(l.trim())), [],
+    `a fresh install printed a [FAIL] line:\n${failLines.join('\n')}`);
+  assert.match(r.out, /\[WARN\]\s+memory_load\s+memories load in the next conversation\n(?!\s+Fix:)/,
+    'memory_load right after an install is a warning with no remedy');
   const lines = r.stdout.split('\n').filter(Boolean);
   assert.match(lines[lines.length - 1], /^NEXT:verify:/, lines.slice(-4).join('\n'));
   assert.ok(!fs.existsSync(mac.gitMarker), 'the git stub was executed; on a real Mac that opens the developer-tools dialog');

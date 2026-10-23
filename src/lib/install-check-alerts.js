@@ -15,7 +15,7 @@
 
 /**
  * @typedef {{name: string, status: string, detail?: string, fix?: string}} Check
- * @typedef {{user_id: number, user_name: string, machine: string, client_version: string|null, checks: Check[]}} MachineReport
+ * @typedef {{user_id: number, user_name: string, machine: string, client_version: string|null, trigger_kind?: string|null, checks: Check[]}} MachineReport
  * @typedef {{user_id: number, machine: string, check_name: string, detail: string|null, announced_at: Date|null, resolved_at: Date|null}} AlertStateRow
  */
 
@@ -53,6 +53,10 @@ export function evaluateFailures({ reports = [], knownState = [] } = {}) {
 
     for (const check of checks) {
       if (!check || typeof check.name !== 'string') continue;
+      // The installer's own self-check runs before any conversation, so its memory_load
+      // verdict says nothing yet (this release's client sends a warning there, older ones a
+      // failure). It neither announces nor resolves; the next report decides.
+      if (report.trigger_kind === 'post_install' && check.name === 'memory_load') continue;
 
       const key = stateKey(report.user_id, report.machine, check.name);
       const prev = byKey.get(key);

@@ -126,7 +126,7 @@ The install is finished when all of this is true, and the last line of the outpu
 - `~/.ownmind/mcp/node_modules` exists, so the memory connector can start.
 - `~/.claude/settings.json` holds the OwnMind hook entries (session start, and the checks before actions).
 - `~/.claude.json` holds the OwnMind memory connector entry.
-- The installer's own check printed a summary line like `Summary:  N passed, N warnings, N failed`, with no failures. The line may appear on the error stream, so look for it in the error output as well as the normal output. Warnings are fine to report as they are.
+- The installer's own check printed a summary line like `Summary:  N passed, N warnings, N failed`, with no failures. The line may appear on the error stream, so look for it in the error output as well as the normal output. Warnings are fine to report as they are. Right after an install, `memory_load` is a warning that says `memories load in the next conversation`; that is expected, and there is nothing to fix or re-run.
 
 The proof the colleague can feel: the next conversation they start shows the OwnMind context at its start (memories loaded, a version line). A conversation that was already open before the install does not show it; that is why the last step opens a new one.
 
