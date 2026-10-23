@@ -128,6 +128,12 @@ install.sh                                              — the global git hooks
 tests/install-git-stub-hooks-path.test.js               — new: runs that step on its own with the macOS git stub (skips git, no abort, stub never run) and with a working git (hooks path still set)
 hooks/ownmind-session-start.sh                          — a stand-in `timeout` when the machine has none (stock macOS): every `timeout N node ...` in the hook was "command not found", so the hook told the server memory had loaded and printed nothing into the conversation
 tests/session-hook-without-timeout.test.js              — new: the real shell hook on a simulated clean Mac (no timeout, node only as the private runtime) against a stub server hands the conversation its memory context
+tests/zero-touch-acceptance.e2e.mjs                     — new, macOS only (skips elsewhere, and without Docker or nodejs.org): the install prompt's one-liner on a simulated clean Mac (git stub, no node) against the real server on a real Postgres; asserts the NEXT line, the files, `claude mcp list` Connected, the SessionStart hook making first-load answer loaded, the watcher logging loaded, and the git stub never run; second test: this branch's install.sh on a git install keeps every OwnMind entry in settings.json and .claude.json byte-identical
+tests/fixtures/zero-touch-v1.33-install-entries.json    — new: the settings.json and mcpServers.ownmind that install.sh at origin/main writes (home as {HOME}); the starting files of the acceptance test's second case where a machine has no ~/.claude/settings.json (CI)
+tests/bootstrap-archive-mode-ps1.e2e.mjs                — new case: bare Windows PATH, the REAL install.ps1 on the server's own archive builder output and nodejs.org's Node through the server's node-archive service; asserts .release, runtime\current\node.exe and a SessionStart hook running that node.exe by full path
+.github/workflows/test.yml                              — install job runs tests/zero-touch-acceptance.e2e.mjs; job timeout 40 minutes, the Windows e2e 20 minutes
+tests/install-e2e-is-actually-run.test.js               — also checks that zero-touch-acceptance.e2e.mjs exists, skips itself off macOS, and is named by an unconditional step of the install job
+docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md — acceptance section: Step 1 run on this Mac, Step 3 pointer, Step 4 comparison, Step 2 status
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

@@ -16,7 +16,8 @@ import { writeZipFromDir } from '../src/services/zip-writer.js';
  * This runs the real scripts/bootstrap.ps1 and scripts/install-helpers/ensure-node-runtime.ps1
  * under Windows PowerShell 5.1, with a PATH that holds only System32 and the PowerShell folder,
  * against a local HTTP server that plays the OwnMind server, GitHub and nodejs.org. Nothing here
- * touches the network. The zips are written by the same zip writer the server uses, so a zip the
+ * touches the network except the last case (the real install.ps1 with nodejs.org's own Node,
+ * which skips itself when nodejs.org cannot be reached). The zips are written by the same zip writer the server uses, so a zip the
  * server could produce is the zip Expand-Archive has to read. The server must be async and the
  * script spawned: a synchronous child of this process would block the event loop that has to
  * answer its requests.
@@ -106,6 +107,27 @@ before(async () => {
       res.end(body);
     };
     const url = new URL(req.url, 'http://127.0.0.1');
+    // The real-install case: the server's own archive and nodejs.org's own Node, through the
+    // server's own services (see that test).
+    if (fixture.real && url.pathname === '/api/install/archive') {
+      if (req.headers.authorization !== `Bearer ${KEY}`) return send(401, 'unauthorized');
+      if (url.searchParams.get('format') !== 'zip') return send(400, 'the Windows installer must ask for the zip');
+      res.writeHead(200, { 'content-type': 'application/zip', 'x-ownmind-release': fixture.real.archive.version });
+      return fs.createReadStream(fixture.real.archive.path).pipe(res);
+    }
+    if (fixture.real && url.pathname === '/api/install/node') {
+      if (req.headers.authorization !== `Bearer ${KEY}`) return send(401, 'unauthorized');
+      res.writeHead(200, {
+        'content-type': 'application/zip', 'x-node-version': fixture.real.node.version, 'x-sha256': fixture.real.node.sha256,
+      });
+      return fs.createReadStream(fixture.real.node.path).pipe(res);
+    }
+    if (fixture.real && url.pathname.startsWith('/api/memory/init')) {
+      return send(200, JSON.stringify({ profile: null, iron_rules: [], memories: [] }), 'application/json');
+    }
+    if (fixture.real && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/install/')) {
+      return send(200, JSON.stringify({ ok: true }), 'application/json');
+    }
     if (url.pathname === '/api/install/archive') {
       if (fixture.mode !== 'ok') return send(500, 'server error');
       if (req.headers.authorization !== `Bearer ${KEY}`) return send(401, 'unauthorized');
@@ -417,6 +439,59 @@ test('private Node: neither source works, so the person is asked to check the ne
     assert.ok(!fs.existsSync(path.join(win.home, '.ownmind', 'runtime', '.partial')));
   } finally {
     fixture.nodeMode = 'ok';
+    win.cleanup();
+  }
+});
+
+/**
+ * The whole zero-touch path on a bare Windows, with nothing stubbed on the machine's side: the
+ * release zip is the one the server's own archive builder makes from this checkout, the Node zip
+ * is nodejs.org's own (fetched and checksum-checked by the server's own node-archive service),
+ * and install.ps1 is the real one. PATH holds System32 and the PowerShell folder only. What the
+ * colleague needs afterwards is asserted: the release, the private node.exe, and a settings.json
+ * whose OwnMind hook runs that node.exe by its full path (a bare `node` would not be found).
+ *
+ * Needs the network (nodejs.org, the npm registry); skips loudly without it.
+ */
+test('bare Windows: the REAL install.ps1 on the server\'s own archive and nodejs.org\'s Node configures Claude Code to run the private node.exe', { skip, timeout: 20 * 60 * 1000 }, async (t) => {
+  let nodeArchive;
+  try {
+    const { createNodeArchiveService } = await import('../src/services/node-archive.js');
+    const service = createNodeArchiveService({ fetch: globalThis.fetch, cacheDir: path.join(fixture.dir, 'node-cache'), logger: { warn() {}, info() {} } });
+    nodeArchive = await service.getArchive({ os: 'win32', arch: process.arch === 'arm64' ? 'arm64' : 'x64' });
+  } catch (err) {
+    t.skip(`nodejs.org could not be reached (${err.message}), so the real install did NOT run`);
+    return;
+  }
+  const { buildInstallArchive } = await import('../src/services/install-archive.js');
+  fixture.real = { archive: await buildInstallArchive({ repoRoot, version: 'v9.9.9', format: 'zip' }), node: nodeArchive };
+  const win = makeCleanWindows();
+  try {
+    // The watcher would keep polling after this test ends; notifications are printed, not shown.
+    const r = await runBootstrap(win, { OWNMIND_SKIP_FIRST_LOAD_WATCH: '1', OWNMIND_NOTIFY_DRY_RUN: '1' });
+    const tail = r.out.slice(-6000);
+    assert.equal(r.status, 0, tail);
+    assert.match(r.out, /INFO:archive_mode:/, tail);
+    assert.match(r.out, /OK:unpack:release v9\.9\.9 unpacked/, tail);
+    assert.match(r.out, new RegExp(`OK:node:private Node ${nodeArchive.version.replace(/\./g, '\\.')} installed`), tail);
+    const lines = r.out.split(/\r?\n/).filter(Boolean);
+    assert.match(lines[lines.length - 1], /^NEXT:verify:/, lines.slice(-4).join('\n'));
+
+    const dir = path.join(win.home, '.ownmind');
+    assert.equal(readTrim(path.join(dir, '.release')), 'v9.9.9');
+    const runtimeNode = path.join(dir, 'runtime', 'current', 'node.exe');
+    assert.ok(fs.existsSync(runtimeNode), 'runtime\\current\\node.exe must exist');
+
+    const settings = JSON.parse(readTrim(path.join(win.home, '.claude', 'settings.json')));
+    const sessionStart = (settings.hooks?.SessionStart || []).flatMap((g) => g.hooks || [])
+      .map((h) => h.command || '').filter((c) => /ownmind/i.test(c));
+    assert.ok(sessionStart.length > 0, `settings.json has no OwnMind SessionStart hook: ${JSON.stringify(settings.hooks || {})}`);
+    assert.ok(sessionStart.some((c) => /runtime[\\/]current[\\/]node\.exe/i.test(c)),
+      `the SessionStart hook must run the private node.exe by its full path: ${sessionStart.join(' | ')}`);
+    const claudeJson = JSON.parse(readTrim(path.join(win.home, '.claude.json')));
+    assert.ok(claudeJson.mcpServers?.ownmind, '~/.claude.json has no mcpServers.ownmind');
+  } finally {
+    fixture.real = null;
     win.cleanup();
   }
 });

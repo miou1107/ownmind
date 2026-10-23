@@ -89,7 +89,7 @@ jobs:
   install:
     name: clean install / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -105,4 +105,9 @@ jobs:
       - run: node --test --test-timeout=900000 tests/bootstrap-archive-mode.e2e.mjs
       # The Windows twin of the step above: it runs bootstrap.ps1 and ensure-node-runtime.ps1 under
       # Windows PowerShell with no git and no node on PATH. It skips itself on the other two legs.
-      - run: node --test --test-timeout=600000 tests/bootstrap-archive-mode-ps1.e2e.mjs
+      - run: node --test --test-timeout=1200000 tests/bootstrap-archive-mode-ps1.e2e.mjs
+      # Zero-touch acceptance: the prompt's one-liner on a simulated clean Mac against the real
+      # server (real Postgres in Docker, real Node from nodejs.org). It skips itself off macOS, and
+      # loudly wherever Docker is missing, which includes the GitHub macOS runner today; its full
+      # run is on a developer's Mac (docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md).
+      - run: node --test --test-timeout=1800000 tests/zero-touch-acceptance.e2e.mjs
