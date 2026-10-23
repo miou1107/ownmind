@@ -10305,3 +10305,5 @@ docs/superpowers/plans/2026-05-07-me-narrative-report-plan.md    — 新增（pl
 package.json / README* / docs/README*     — 1.17.46 → 1.17.47
 CHANGELOG.md                              — v1.17.47 條目
 ```
+src/routes/install.js                                   — GET /install.sh serves scripts/bootstrap.sh and GET /install.ps1 serves scripts/bootstrap.ps1 (not the root installers, which need git)
+tests/install-routes.test.js                            — the served /install.sh and /install.ps1 bodies are the bootstrap scripts, not the root installers

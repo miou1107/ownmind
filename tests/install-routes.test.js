@@ -36,6 +36,8 @@ function makeFixtureRoot({ withRunbook = false } = {}) {
   };
   put('install.sh', '#!/usr/bin/env bash\necho fixture\n');
   put('install.ps1', '﻿Write-Host fixture\n');
+  put('scripts/bootstrap.sh', '#!/usr/bin/env bash\necho bootstrap-fixture\n');
+  put('scripts/bootstrap.ps1', '﻿Write-Host bootstrap-fixture\n');
   put('package.json', '{"version":"0.0.0"}\n');
   put('hooks/a.js', 'x');
   put('src/secret.js', 'x');
@@ -76,18 +78,24 @@ describe('install routes', () => {
     await srv2.close();
   });
 
-  it('serves install.sh anonymously as plain text', async () => {
+  it('serves install.sh anonymously as plain text, and the body is scripts/bootstrap.sh', async () => {
     const r = await fetch(`${srv.url}/install.sh`);
     assert.equal(r.status, 200);
     assert.match(r.headers.get('content-type'), /^text\/plain; charset=utf-8/);
-    assert.ok((await r.text()).startsWith('#!/usr/bin/env bash'));
+    const body = await r.text();
+    // A colleague without a version-control tool must get the bootstrap script, not the root
+    // install.sh that clones with one.
+    assert.equal(body, fs.readFileSync(path.join(root, 'scripts', 'bootstrap.sh'), 'utf8'));
+    assert.notEqual(body, fs.readFileSync(path.join(root, 'install.sh'), 'utf8'));
   });
 
-  it('serves install.ps1 anonymously without the byte order mark', async () => {
+  it('serves install.ps1 anonymously without the byte order mark, and the body is scripts/bootstrap.ps1', async () => {
     const r = await fetch(`${srv.url}/install.ps1`);
     assert.equal(r.status, 200);
     assert.match(r.headers.get('content-type'), /^text\/plain; charset=utf-8/);
-    assert.equal(await r.text(), 'Write-Host fixture\n');
+    const body = await r.text();
+    assert.equal(body, 'Write-Host bootstrap-fixture\n');
+    assert.notEqual(body, 'Write-Host fixture\n');
   });
 
   it('answers 404 manual_not_available until the runbook file exists', async () => {

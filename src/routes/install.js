@@ -10,8 +10,11 @@ import { SERVER_VERSION } from '../utils/server-version.js';
 /**
  * Zero-touch install, the server half.
  *
- *   GET /install.sh, /install.ps1, /install-manual.md   anonymous; the same files the public
- *                                                       repository carries, so nothing secret
+ *   GET /install.sh, /install.ps1, /install-manual.md   anonymous; /install.sh is scripts/bootstrap.sh and
+ *                                                       /install.ps1 is scripts/bootstrap.ps1 (the entry
+ *                                                       that works without git), /install-manual.md is
+ *                                                       docs/ai-install-runbook.md; the same files the
+ *                                                       public repository carries, so nothing secret
  *   GET /api/install/archive[?format=zip]               the checkout as .tar.gz (or .zip, which is
  *                                                       what Windows PowerShell can unpack), for a
  *                                                       machine without git; behind auth like
@@ -48,8 +51,11 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
     res.type(TEXT).send(body);
   };
 
-  router.get('/install.sh', sendText('install.sh'));
-  router.get('/install.ps1', sendText('install.ps1', { stripBom: true }));
+  // The one-liners the install prompt hands out fetch these two URLs. They serve the bootstrap
+  // scripts, not the root install.sh / install.ps1: those clone with a version-control tool a
+  // colleague's computer may not have, while the bootstrap scripts fall back to the release archive.
+  router.get('/install.sh', sendText('scripts/bootstrap.sh'));
+  router.get('/install.ps1', sendText('scripts/bootstrap.ps1', { stripBom: true }));
   router.get('/install-manual.md', sendText('docs/ai-install-runbook.md'));
 
   // HEAD answers which release the archive holds without building or sending it: an archive
