@@ -396,14 +396,11 @@ fi
 
 # Branch 3 with the key and URL: the install message pasted on a machine that already has a git
 # checkout (a first install that stopped after the clone, or a reinstall). The upgrader would skip
-# install.sh when no credentials were written yet, so the checkout is brought up to date when it
-# can be (a fast-forward only; local changes are left alone) and install.sh runs with the arguments.
+# install.sh when no credentials were written yet, so install.sh runs with the arguments; it
+# moves the checkout to the newest release itself.
 if [ -n "$(ownmind_install_args "$@")" ]; then
   log_info reinstall "Installed (git); re-running install.sh with the key and URL"
   cd "$OWNMIND_DIR"
-  if [ "$HAS_GIT" = "1" ] && ! git pull --ff-only --quiet 2>/dev/null; then
-    log_info reinstall "Could not fast-forward the checkout; installing the code that is here"
-  fi
   bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }
   log_ok done "Install checked"
   ownmind_print_next

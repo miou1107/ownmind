@@ -586,15 +586,11 @@ if (-not (Test-Path "$OwnmindDir\.git")) {
 
 # Branch 3 with the key and URL: the install message pasted on a machine that already has a git
 # checkout (a first install that stopped after the clone, or a reinstall). The upgrader would skip
-# install.ps1 when no credentials were written yet, so the checkout is brought up to date when it
-# can be (a fast-forward only; local changes are left alone) and install.ps1 runs with the arguments.
+# install.ps1 when no credentials were written yet, so install.ps1 runs with the arguments; it
+# moves the checkout to the newest release itself.
 if ($HasInstallArgs) {
   Log-Info reinstall "Installed (git); re-running install.ps1 with the key and URL"
   Set-Location "$OwnmindDir"
-  if ($HasGit) {
-    & git pull --ff-only --quiet 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { Log-Info reinstall "Could not fast-forward the checkout; installing the code that is here" }
-  }
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"; exit 1 }
   Log-Ok done "Install checked"

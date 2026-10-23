@@ -107,7 +107,16 @@ const firstLoadLimiter = rateLimit({
   keyGenerator: (req) => req.headers.authorization || 'no-key',
   message: { error: '請求太頻繁，請稍後再試' },
 });
-app.use('/api/install/first-load', firstLoadLimiter);
+// A ceiling per address as well, high enough for a busy office, so made-up keys cannot buy a
+// fresh budget (and an auth lookup) on every request.
+const firstLoadAddressLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '請求太頻繁，請稍後再試' },
+});
+app.use('/api/install/first-load', firstLoadAddressLimiter, firstLoadLimiter);
 app.use(createInstallRouter({
   query, auth, logger,
   nodeArchive: createNodeArchiveService({
