@@ -96,11 +96,12 @@ function Test-OwnMindFileSha256 {
 function Get-OwnMindNodeFromServer {
   param([string]$Api, [string]$Key, [string]$Arch, [string]$Dest)
   Set-StrictMode -Version Latest
-  $api = $Api.TrimEnd('/')
-  if (-not $api -or -not $Key) { return $null }
+  # A name of its own: PowerShell names ignore case, so `$api` is the -Api parameter itself.
+  $apiBase = $Api.TrimEnd('/')
+  if (-not $apiBase -or -not $Key) { return $null }
   Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
-  Log-Info node "Downloading Node.js from $api"
-  $resp = Invoke-OwnMindDownload -Uri "$api/api/install/node?os=win32&arch=$Arch" -Dest $Dest -Headers @{ Authorization = "Bearer $Key" }
+  Log-Info node "Downloading Node.js from $apiBase"
+  $resp = Invoke-OwnMindDownload -Uri "$apiBase/api/install/node?os=win32&arch=$Arch" -Dest $Dest -Headers @{ Authorization = "Bearer $Key" }
   if ($null -eq $resp) { return $null }
   $version = Get-OwnMindHeader -Response $resp -Name 'X-Node-Version'
   $sha = Get-OwnMindHeader -Response $resp -Name 'X-Sha256'

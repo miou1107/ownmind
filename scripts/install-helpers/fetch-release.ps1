@@ -248,9 +248,11 @@ function Get-OwnMindArchive {
   )
   Set-StrictMode -Version Latest
   $global:OwnMindDiskFull = $false
-  $api = ''
-  if ($Api) { $api = $Api.TrimEnd('/') }
-  $global:OwnMindFixApi = $api
+  # Not $api: PowerShell names ignore case, so `$api = ''` would empty the -Api parameter itself
+  # and every download would skip the OwnMind server.
+  $apiBase = ''
+  if ($Api) { $apiBase = $Api.TrimEnd('/') }
+  $global:OwnMindFixApi = $apiBase
   $source = ''
   if ($env:OWNMIND_SOURCE) { $source = $env:OWNMIND_SOURCE }
   $ghBase = 'https://github.com'
@@ -264,9 +266,9 @@ function Get-OwnMindArchive {
   }
 
   if ($source -ne 'github') {
-    Log-Info download "Downloading the release archive from $api"
-    if ($Key -and $api) {
-      $resp = Invoke-OwnMindDownload -Uri "$api/api/install/archive?format=zip" -Dest $Dest -Headers @{ Authorization = "Bearer $Key" }
+    Log-Info download "Downloading the release archive from $apiBase"
+    if ($Key -and $apiBase) {
+      $resp = Invoke-OwnMindDownload -Uri "$apiBase/api/install/archive?format=zip" -Dest $Dest -Headers @{ Authorization = "Bearer $Key" }
       if ($null -ne $resp) { return $result }
     }
     Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
@@ -276,7 +278,7 @@ function Get-OwnMindArchive {
       return $null
     }
     if ($source -eq 'server') {
-      Log-Err download "Could not download the release archive from $api"
+      Log-Err download "Could not download the release archive from $apiBase"
       Write-Host "FIX:use_fallback_source:$(Get-OwnMindRetryCommand -Source github)"
       Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
       return $null

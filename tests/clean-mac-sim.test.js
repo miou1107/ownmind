@@ -6,12 +6,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { makeCleanMac } from './helpers/clean-mac-sim.mjs';
 
+// The simulated Mac is a POSIX shell with a PATH of symlinks; Windows has its own install e2e.
+const skip = process.platform === 'win32' ? 'the simulated Mac needs a POSIX shell; Windows has its own install e2e' : false;
+
 /** Run a shell snippet inside the simulated machine, the way an installer would see it. */
 function inMac(mac, script) {
   return spawnSync('sh', ['-c', script], { env: mac.env, encoding: 'utf8' });
 }
 
-test('git, node, npm and brew are not found; curl and tar are', () => {
+test('git, node, npm and brew are not found; curl and tar are', { skip }, () => {
   const mac = makeCleanMac();
   try {
     for (const tool of ['git', 'node', 'npm', 'brew']) {
@@ -27,7 +30,7 @@ test('git, node, npm and brew are not found; curl and tar are', () => {
   }
 });
 
-test('HOME is a fresh empty directory and PATH is only the helper bin', () => {
+test('HOME is a fresh empty directory and PATH is only the helper bin', { skip }, () => {
   const mac = makeCleanMac();
   try {
     assert.equal(mac.env.HOME, mac.home);
@@ -42,7 +45,7 @@ test('HOME is a fresh empty directory and PATH is only the helper bin', () => {
   }
 });
 
-test('the real HOME and Claude Code variables do not leak in', () => {
+test('the real HOME and Claude Code variables do not leak in', { skip }, () => {
   const saved = { c: process.env.CLAUDECODE, e: process.env.CLAUDE_CODE_ENTRYPOINT };
   process.env.CLAUDECODE = '1';
   process.env.CLAUDE_CODE_ENTRYPOINT = 'cli';
@@ -63,7 +66,7 @@ test('the real HOME and Claude Code variables do not leak in', () => {
   }
 });
 
-test('the keep list can be changed, and a tool that does not exist is skipped', () => {
+test('the keep list can be changed, and a tool that does not exist is skipped', { skip }, () => {
   const mac = makeCleanMac({ keep: ['sh', 'ls', 'no-such-tool-xyz'] });
   try {
     assert.equal(inMac(mac, 'command -v ls').status, 0);
@@ -74,7 +77,7 @@ test('the keep list can be changed, and a tool that does not exist is skipped', 
   }
 });
 
-test('cleanup removes the home and the bin, and is safe to call twice', () => {
+test('cleanup removes the home and the bin, and is safe to call twice', { skip }, () => {
   const mac = makeCleanMac();
   mac.cleanup();
   assert.equal(fs.existsSync(mac.home), false);
@@ -82,7 +85,7 @@ test('cleanup removes the home and the bin, and is safe to call twice', () => {
   mac.cleanup();
 });
 
-test('xcodeStub puts a git on PATH that only complains, and an xcode-select that says no tools', () => {
+test('xcodeStub puts a git on PATH that only complains, and an xcode-select that says no tools', { skip }, () => {
   const mac = makeCleanMac({ xcodeStub: true });
   try {
     assert.equal(inMac(mac, 'command -v git').status, 0, 'a real clean Mac has /usr/bin/git, so git must be found');
@@ -98,7 +101,7 @@ test('xcodeStub puts a git on PATH that only complains, and an xcode-select that
   }
 });
 
-test('without xcodeStub there is no git, no xcode-select and no marker seam in env', () => {
+test('without xcodeStub there is no git, no xcode-select and no marker seam in env', { skip }, () => {
   const mac = makeCleanMac();
   try {
     assert.notEqual(inMac(mac, 'command -v xcode-select').status, 0);

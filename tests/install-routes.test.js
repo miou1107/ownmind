@@ -239,7 +239,8 @@ describe('buildInstallArchive', () => {
     const a = await buildInstallArchive({ repoRoot: root, version: 'v9.9.9' });
     try {
       assert.equal(a.version, 'v9.9.9');
-      assert.equal(a.path, path.join(os.tmpdir(), 'ownmind-install-v9.9.9.tar.gz'));
+      assert.equal(path.dirname(a.path), os.tmpdir());
+      assert.match(path.basename(a.path), /^ownmind-install-v9\.9\.9-[0-9a-f]{12}\.tar\.gz$/);
       assert.match(a.sha256, /^[0-9a-f]{64}$/);
       const out = execFileSync('tar', ['-xzOf', a.path, '.release'], { encoding: 'utf8' });
       assert.equal(out.trim(), 'v9.9.9');

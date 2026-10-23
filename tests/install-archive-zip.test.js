@@ -176,7 +176,12 @@ describe('the archive in zip format', () => {
   it('buildInstallArchive builds the zip once per process and version', async () => {
     const a = await buildInstallArchive({ repoRoot: root, version: 'v9.9.8', format: 'zip' });
     try {
-      assert.ok(a.path.endsWith('ownmind-install-v9.9.8.zip'));
+      assert.match(path.basename(a.path), /^ownmind-install-v9\.9\.8-[0-9a-f]{12}\.zip$/);
+      // Another tree packing the same version gets a file of its own.
+      const other = makeFixtureRoot();
+      const c = await buildInstallArchive({ repoRoot: other, version: 'v9.9.8', format: 'zip' });
+      assert.notEqual(c.path, a.path);
+      fs.rmSync(c.path, { force: true });
       assert.match(a.sha256, /^[0-9a-f]{64}$/);
       const b = await buildInstallArchive({ repoRoot: root, version: 'v9.9.8', format: 'zip' });
       assert.equal(b.path, a.path);

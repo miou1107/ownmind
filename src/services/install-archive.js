@@ -71,7 +71,10 @@ function sha256Of(file) {
 
 async function build({ repoRoot, version, format }) {
   const stage = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-install-stage-'));
-  const target = path.join(os.tmpdir(), `ownmind-install-${version}.${format}`);
+  // The source folder is part of the name: two servers (or two test files) on one machine
+  // packing the same version from different trees must not write, and serve, one another's file.
+  const tree = crypto.createHash('sha256').update(path.resolve(repoRoot)).digest('hex').slice(0, 12);
+  const target = path.join(os.tmpdir(), `ownmind-install-${version}-${tree}.${format}`);
   const partial = `${target}.${process.pid}.partial`;
   try {
     await fsp.cp(repoRoot, stage, {

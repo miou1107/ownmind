@@ -183,7 +183,11 @@ docs/ai-install-runbook.md                              — troubleshooting row:
 scripts/install-helpers/preflight.sh                    — the failure list is filtered with the shell's own read, not awk: a missing tool in the pipeline used to empty the list and report the machine ready
 tests/first-load-watch.test.js                          — the hanging-request case holds a timer open, so Node 20 does not see an empty event loop and cancel the rest of the file
 tests/self-check-memory-load.test.js                    — the post_install case writes its own hook file instead of relying on the developer's home
-tests/clean-mac-sim.test.js                             — osascript is required only when the test runs on a Mac
+tests/clean-mac-sim.test.js                             — osascript is required only when the test runs on a Mac; the whole file is skipped on Windows
+scripts/install-helpers/fetch-release.ps1, scripts/bootstrap.ps1, scripts/install-helpers/ensure-node-runtime.ps1 — the server address lives in $apiBase: PowerShell names ignore case, so `$api = ''` emptied the -Api parameter and every Windows install skipped the OwnMind server for GitHub's previous release
+tests/ps-param-case-shadow.test.js                      — new: fails when a PowerShell function assigns to a variable that matches one of its parameters except in case
+src/services/install-archive.js, tests/install-archive-zip.test.js, tests/install-routes.test.js — the archive file name carries a fingerprint of the source folder, so two trees packing the same version on one machine no longer overwrite each other's file
+tests/bootstrap-archive-mode-ps1.e2e.mjs                — the private-Node case checks the folder OWNMIND_NODE sits in (Windows has a short and a long name for the temp folder)
 ```
 
 ## v1.33.2 修改（2026-10-23，規矩內文猜錯技能名字的誤報，#197）

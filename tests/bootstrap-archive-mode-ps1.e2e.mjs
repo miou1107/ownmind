@@ -359,7 +359,9 @@ test('private Node: downloaded from the server, unpacked, linked with a junction
       'Write-Output "RESULT=$ok"',
       'Write-Output "NODE=$($env:OWNMIND_NODE)"',
       'Write-Output "PRIVATE=$($env:OWNMIND_PRIVATE_NODE)"',
-      'Write-Output "ONPATH=$(($env:Path -split \';\') -contains (Join-Path $env:OWNMIND_DIR \'runtime\\current\'))"',
+      // The folder OWNMIND_NODE sits in, not a string built from OWNMIND_DIR: the temp folder has
+      // a short name (RUNNER~1) and a long one (runneradmin), and the installer exports the long one.
+      'Write-Output "ONPATH=$(($env:Path -split \';\') -contains (Split-Path -Parent $env:OWNMIND_NODE))"',
       '$item = Get-Item -LiteralPath (Join-Path $env:OWNMIND_DIR \'runtime\\current\') -Force',
       'Write-Output "LINK=$($item.LinkType)"',
       'Write-Output "VERSION=$(& (Join-Path $env:OWNMIND_DIR \'runtime\\current\\node.exe\') --version)"',
