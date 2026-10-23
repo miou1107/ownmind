@@ -184,7 +184,8 @@ Download sources, tried in order, each with a retry:
 
 1. Vin's own server, with the API key the one-liner already carries:
    `GET <API_URL>/api/install/archive` (the server's own checkout, packed once per server
-   start, version = the server's version) and `GET <API_URL>/api/install/node?os=...&arch=...`
+   start, version = the server's version; the pack keeps `src/utils/`, which the MCP server
+   and the hooks import, and drops the rest of `src/`) and `GET <API_URL>/api/install/node?os=...&arch=...`
    (fetched once from nodejs.org, checksum verified against `SHASUMS256.txt`, cached in a
    named volume). These need the key because the archive reveals the server's version, which
    `/api/version` deliberately hides from anonymous scanners. They get their own rate limit
