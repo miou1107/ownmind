@@ -226,21 +226,25 @@ A machine without git must still receive every automatic update. The existing up
 `scripts/install-helpers/update-to-release.mjs`, `scripts/check-sync.sh/.ps1`) branch on
 `~/.ownmind/.git` versus `~/.ownmind/.release`:
 
-- **Is there a newer release?** Archive mode compares `.release` with the server's version,
-  which the session-start sync already receives.
-- **Apply it**: download the archive to `~/.ownmind.next`, run `npm install` in its `mcp/`
-  with the private Node, copy over `credentials`, `cache/`, `state/`, `logs/`, `runtime/`,
-  then swap directories (`~/.ownmind` to `~/.ownmind.prev`, `~/.ownmind.next` to `~/.ownmind`)
-  and re-run the host configuration step. `~/.ownmind.prev` is the rollback. The seven-day
-  sweep in `interactive-upgrade.sh` is extended from `.bak.*` to `.broken.*` and `.prev`,
-  which also makes bootstrap's existing message true.
+- **Is there a newer release?** Archive mode compares `.release` with the release the server
+  ships (`HEAD /api/install/archive`, header `X-OwnMind-Release`).
+- **Apply it, code only**: the release is staged in `~/.ownmind/.next/` (unpacked, `npm install`
+  in its `mcp/`, the root dependencies), then each top-level entry of `.next/` is swapped in
+  with a journal: the live entry moves to `~/.ownmind/.prev/`, the staged one takes its place,
+  `.release` last. `runtime/` and every other piece of runtime state (`credentials`, `cache/`,
+  `state/`, `logs/`, markers) are never renamed, copied or deleted, so a Windows machine running
+  its private `node.exe` from `runtime/` can still update; a release that would collide with
+  one of them is refused before any rename. A swap stopped by a held file is resumed from the
+  journal by the next run, never rolled back; `.prev/` is the previous code for a person to fall
+  back on. The seven-day sweep covers `.bak.*`, `.broken.*` and `.prev`, which also makes
+  bootstrap's existing message true.
 - `check-sync`'s `L1_REMOTE` line reports `release=vX.Y.Z` instead of `not_git` on these
   machines, so the upgrade skill and the console do not flag a healthy archive install as
   broken.
 
-Builder's call: whether the swap is done by `mv` or by copying over in place. `mv` is
-preferred; on Windows a file held open by a running MCP server may block it, in which case
-the swap is deferred to the next session start.
+Decided 2026-10-23: the swap renames code entries one at a time. On Windows a running MCP
+server can still hold a file in `mcp/`; that entry's rename fails, the journal stays, and the
+next update continues from it.
 
 ### 4. Every stop is an instruction for the AI, not a question for the human
 

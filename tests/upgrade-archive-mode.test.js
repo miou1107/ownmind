@@ -45,26 +45,23 @@ describe('both upgraders carry the archive branch', () => {
     assert.ok(end > backup && step5 > end, 'steps 1-4 are closed off before step 5, which both kinds run');
   });
 
-  it('interactive-upgrade.ps1: the same branch, plus the swap PowerShell does when node could not', () => {
+  it('interactive-upgrade.ps1: the same branch; a stopped swap is resumed by the next run, never redone in PowerShell', () => {
     const ps = read('scripts/interactive-upgrade.ps1');
     assert.match(ps, /\$ArchiveMode = \(-not \(Test-Path \(Join-Path \$OwnMindDir "\.git"\)\)\) -and \(Test-Path \(Join-Path \$OwnMindDir "\.release"\)\)/);
     assert.match(ps, /if \(-not \$ArchiveMode -and -not \(Test-Path \(Join-Path \$OwnMindDir "\.git"\)\)\) \{ Fail "no_git"/);
     const preflight = ps.indexOf("Assert-OwnMindRequirements -Stage 'upgrade'");
     const branch = ps.indexOf('if ($ArchiveMode) {');
     const cli = ps.indexOf("& node (Join-Path $OwnMindDir 'shared\\archive-update-cli.mjs') --dir $OwnMindDir 2>&1");
-    const swap = ps.indexOf('$archiveResult = Complete-OwnMindArchiveSwap -ApiKey $apiKey -ApiUrl $apiUrl');
     const backup = ps.indexOf('# --- 1. Backup ---');
     const end = ps.indexOf('} # end of steps 1-4 for a git checkout (ARCHIVE_MODE off)');
     const step5 = ps.indexOf('# --- 5. Re-register Task Scheduler ---');
     assert.ok(preflight > 0 && branch > preflight);
-    assert.ok(cli > branch && swap > cli && backup > swap);
+    assert.ok(cli > branch && backup > cli);
     assert.ok(end > backup && step5 > end);
-    // The swap takes the junction out of the old .prev before deleting it.
-    const fn = ps.slice(ps.indexOf('function Complete-OwnMindArchiveSwap'), ps.indexOf('# --- v1.17.66 Self-check'));
-    assert.match(fn, /Remove-OwnMindTreeSafe -Path \$prev/);
-    assert.match(fn, /Move-Item -LiteralPath \$OwnMindDir -Destination \$prev -ErrorAction Stop/);
-    assert.match(fn, /return 'FAILED file_locked'/);
-    assert.match(fn, /\$env:OWNMIND_PRIVATE_NODE = '1'/);
+    // The code-only swap never renames the install itself, so PowerShell has no swap of its own.
+    assert.doesNotMatch(ps, /Complete-OwnMindArchiveSwap|Move-Item -LiteralPath \$OwnMindDir/);
+    assert.match(ps, /\$archiveResult -match '\^FAILED \(swap_pending\|swap\)\$'/);
+    assert.match(ps, /\$BackupDir = Join-Path \$OwnMindDir "\.prev"/);
   });
 });
 

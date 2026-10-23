@@ -3,6 +3,9 @@
 // Mirrors tests/auto-update-shared.test.js: the process runner, fetch and the file system are
 // injected. `tar` is the real one, so the unpack step works on a real archive; npm and the
 // installer are recorded instead of run.
+//
+// The update swaps code entries only: runtime/ (the private Node) and every other piece of
+// runtime state must come out of an update as the very same files (same inodes), never copied.
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,8 +17,8 @@ import { tempDir } from './helpers/temp-dir.js';
 
 const realExecFile = promisify(execFileCb);
 const {
-  runArchiveUpdate, compareReleases, rootDependencySpecs, privateNodeFor, removeTree,
-  SKIPPED, CLEAN, APPLIED, FAILED,
+  runArchiveUpdate, compareReleases, rootDependencySpecs, privateNodeFor, removeTree, codeEntries,
+  isStateEntry, SKIPPED, CLEAN, APPLIED, FAILED,
 } = await import('../shared/archive-update.js');
 
 const API_URL = 'https://ownmind.example.com';
@@ -36,8 +39,8 @@ function writeTree(base, files) {
 }
 
 /** A release archive (.tar.gz) the way the server builds one: .release at the root. */
-function buildArchive(release, { omitInstaller = false } = {}) {
-  const src = path.join(ROOT, `src-${release}-${omitInstaller ? 'broken' : 'ok'}`);
+function buildArchive(release, { omitInstaller = false, extra = {}, tag = 'ok' } = {}) {
+  const src = path.join(ROOT, `src-${release}-${tag}`);
   writeTree(src, {
     '.release': `${release}\n`,
     ...(omitInstaller ? {} : { 'install.sh': '#!/bin/sh\nexit 0\n', 'install.ps1': '# installer\n' }),
@@ -55,15 +58,16 @@ function buildArchive(release, { omitInstaller = false } = {}) {
       'fi',
       '',
     ].join('\n'),
+    ...extra,
   });
-  const out = path.join(ROOT, `${release}-${omitInstaller ? 'broken' : 'ok'}.tar.gz`);
+  const out = path.join(ROOT, `${release}-${tag}.tar.gz`);
   const r = spawnSync('tar', ['-czf', out, '-C', src, ...fs.readdirSync(src)], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   return fs.readFileSync(out);
 }
 
 /** The live archive install: v1.0.0, a key file, logs, opt-outs and a private Node. */
-function seedInstall({ absoluteRuntimeTarget = null } = {}) {
+function seedInstall() {
   writeTree(dir, {
     '.release': 'v1.0.0\n',
     'install.sh': '#!/bin/sh\n',
@@ -78,11 +82,22 @@ function seedInstall({ absoluteRuntimeTarget = null } = {}) {
     'git-hooks/pre-push': '#!/bin/sh\n# the user\'s own hook\n',
     'judge.json': '{"model":"x"}',
     '.no-usage-scanner': '',
-    '.git-bash-path': 'C:/Git/bin/bash.exe\n',
     'runtime/node-v22.1.0/bin/node': '#!/bin/sh\necho v22.1.0\n',
   });
   fs.writeFileSync(path.join(dir, '.node-path'), `${path.join(dir, 'runtime', 'current', 'bin', 'node')}\n`);
-  fs.symlinkSync(absoluteRuntimeTarget || 'node-v22.1.0', path.join(dir, 'runtime', 'current'));
+  fs.symlinkSync('node-v22.1.0', path.join(dir, 'runtime', 'current'));
+}
+
+/** Inode (and link target) of every piece of runtime state, to prove none was moved or copied. */
+const STATE = ['runtime', 'runtime/current', 'runtime/node-v22.1.0/bin/node', 'credentials', 'cache',
+  'cache/enforcement.json', 'state', 'logs', 'logs/hook.log', 'reports', 'git-hooks', 'judge.json',
+  '.no-usage-scanner', '.node-path'];
+function stateSnapshot() {
+  return Object.fromEntries(STATE.map((rel) => {
+    const p = path.join(dir, rel);
+    const st = fs.lstatSync(p);
+    return [rel, { ino: st.ino, link: st.isSymbolicLink() ? fs.readlinkSync(p) : null }];
+  }));
 }
 
 /** fetch: HEAD answers the server's release; GET answers the archive. */
@@ -115,6 +130,22 @@ function fakeExec({ failNpm = false, failInstaller = false } = {}) {
   return { calls, execFile };
 }
 
+/** A file system whose renameSync throws `code` for the rename that `when(from, to)` picks. */
+function failingRename(when, code = 'EBUSY') {
+  const renames = [];
+  return {
+    renames,
+    fileSystem: {
+      ...fs,
+      renameSync: (a, b) => {
+        if (when(a, b)) throw Object.assign(new Error('resource busy'), { code });
+        renames.push([a, b]);
+        return fs.renameSync(a, b);
+      },
+    },
+  };
+}
+
 function opts(over = {}) {
   const events = [];
   return {
@@ -135,8 +166,8 @@ function opts(over = {}) {
 }
 
 const read = (...p) => fs.readFileSync(path.join(...p), 'utf8');
-const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
-const leftovers = () => fs.readdirSync(ROOT).filter((n) => n.startsWith('.ownmind.next'));
+const leftovers = () => fs.readdirSync(dir).filter((n) => ['.next', '.swap-journal.json', '.next.download'].includes(n));
+const live = (rel) => path.join(dir, rel);
 
 beforeEach(() => {
   ROOT = tempDir('ownmind-archive-update-');
@@ -157,23 +188,25 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
     assert.equal(f.calls[0].url, `${API_URL}/api/install/archive`);
     assert.equal(f.calls[0].auth, `Bearer ${API_KEY}`);
     assert.equal(x.calls.length, 0);
-    assert.ok(!fs.existsSync(`${dir}.prev`));
+    assert.ok(!fs.existsSync(live('.prev')));
   });
 
   it('a server behind this machine is not a reason to go back', async () => {
     seedInstall();
-    fs.writeFileSync(path.join(dir, '.release'), 'v1.2.0\n');
+    fs.writeFileSync(live('.release'), 'v1.2.0\n');
     const f = fakeFetch({ release: 'v1.1.0' });
     const r = await opts({ fetch: f.fetch, execFile: fakeExec().execFile }).run();
     assert.equal(r.outcome, CLEAN);
     assert.deepEqual(f.calls.map((c) => c.method), ['HEAD']);
   });
 
-  it('newer release: APPLIED; the old tree is .prev and the runtime state came along', async () => {
+  it('newer release: APPLIED; code swapped into place, the old code in .prev, runtime and state the very same files', async () => {
     seedInstall();
-    const f = fakeFetch({ release: 'v1.1.0' });
+    const before = stateSnapshot();
+    const rec = failingRename(() => false);
     const x = fakeExec();
-    const o = opts({ fetch: f.fetch, execFile: x.execFile });
+    let pings = 0;
+    const o = opts({ fetch: fakeFetch().fetch, execFile: x.execFile, fileSystem: rec.fileSystem, keepAlive: () => { pings += 1; } });
     const r = await o.run();
     assert.equal(r.outcome, APPLIED, JSON.stringify(o.events));
     assert.equal(r.from, 'v1.0.0');
@@ -182,60 +215,52 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
 
     assert.equal(read(dir, '.release').trim(), 'v1.1.0');
     assert.equal(read(dir, 'mcp', 'index.js'), '// v1.1.0\n');
-    assert.equal(read(`${dir}.prev`, '.release').trim(), 'v1.0.0');
-    assert.deepEqual(leftovers(), [], 'no .next or .next.partial may be left behind');
+    assert.equal(read(dir, 'install.sh'), '#!/bin/sh\nexit 0\n');
+    assert.equal(read(dir, '.prev', '.release').trim(), 'v1.0.0');
+    assert.equal(read(dir, '.prev', 'mcp', 'index.js'), '// v1.0.0\n');
+    assert.ok(fs.existsSync(live('mcp/node_modules/dep/index.js')), 'the staged mcp was seeded from the live node_modules');
+    assert.deepEqual(leftovers(), [], 'no .next, journal or download left behind');
 
-    // Carried over.
+    // Runtime and state: same inodes, same link, never in .prev.
+    assert.deepEqual(stateSnapshot(), before);
     assert.equal(read(dir, 'credentials'), 'secret-key-file\n');
-    assert.equal(read(dir, 'cache', 'enforcement.json'), '{"guards":[]}');
-    assert.equal(read(dir, 'logs', 'hook.log'), 'line\n');
-    assert.ok(fs.existsSync(path.join(dir, 'state', 'session.json')));
-    assert.ok(fs.existsSync(path.join(dir, 'reports', 'touch.json')));
-    assert.match(read(dir, 'git-hooks', 'pre-push'), /the user's own hook/);
-    assert.equal(read(dir, 'judge.json'), '{"model":"x"}');
-    assert.ok(fs.existsSync(path.join(dir, '.no-usage-scanner')));
-    assert.ok(fs.existsSync(path.join(dir, '.git-bash-path')));
-    assert.equal(read(dir, '.node-path').trim(), path.join(dir, 'runtime', 'current', 'bin', 'node'));
-    assert.equal(read(dir, '.gitignore'), 'node_modules/\n', 'a dotfile the release ships is the release\'s');
-    assert.ok(fs.existsSync(path.join(dir, 'mcp', 'node_modules', 'dep', 'index.js')), 'dependencies seeded from the old tree');
+    assert.ok(!fs.existsSync(live('.prev/runtime')) && !fs.existsSync(live('.prev/credentials')));
+    // Only code entries were renamed, and .release last.
+    const moved = rec.renames.filter(([a]) => !a.endsWith('.tmp')).map(([a]) => path.relative(dir, a));
+    assert.ok(moved.every((m) => !/^(runtime|credentials|cache|state|logs|reports|git-hooks)(\/|$)/.test(m)), moved.join(','));
+    assert.equal(moved.at(-1), path.join('.next', '.release'));
 
-    // The private Node: still a link, same target, and the copy it points to is there.
-    const current = path.join(dir, 'runtime', 'current');
-    assert.ok(isLink(current), 'runtime/current must stay a symlink');
-    assert.equal(fs.readlinkSync(current), 'node-v22.1.0');
-    assert.match(read(current, 'bin', 'node'), /v22\.1\.0/);
-    assert.ok(fs.existsSync(path.join(`${dir}.prev`, 'runtime', 'node-v22.1.0', 'bin', 'node')));
-
-    // npm ran in .next/mcp before the swap, then the root dependencies update.sh names.
+    // npm ran in .next/mcp, then the root dependencies update.sh names, in .next.
     const npmCalls = x.calls.filter((c) => c.cmd === 'npm');
     assert.equal(npmCalls.length, 2);
     assert.deepEqual(npmCalls[0].args, ['install', '-q', '--ignore-scripts']);
-    assert.equal(npmCalls[0].opts.cwd, path.join(`${dir}.next`, 'mcp'));
+    assert.equal(npmCalls[0].opts.cwd, path.join(dir, '.next', 'mcp'));
     assert.deepEqual(npmCalls[1].args.slice(0, 3), ['install', 'js-yaml@4.3.2', 'node-machine-id@1.1.12']);
     assert.ok(npmCalls[1].args.includes('--ignore-scripts'));
-    assert.equal(npmCalls[1].opts.cwd, `${dir}.next`);
+    assert.equal(npmCalls[1].opts.cwd, path.join(dir, '.next'));
 
-    // The installer re-ran from the new tree, the key in the environment, the private Node named.
+    // The installer re-ran from the new code, the key in the environment, the private Node named.
     const install = x.calls.find((c) => c.cmd === 'bash');
-    assert.deepEqual(install.args, [path.join(dir, 'install.sh'), '', API_URL]);
+    assert.deepEqual(install.args, [live('install.sh'), '', API_URL]);
     assert.equal(install.opts.env.OWNMIND_INSTALL_KEY, API_KEY);
     assert.equal(install.opts.env.OWNMIND_PRIVATE_NODE, '1');
-    assert.equal(install.opts.env.OWNMIND_NODE, path.join(dir, 'runtime', 'current', 'bin', 'node'));
+    assert.equal(install.opts.env.OWNMIND_NODE, live('runtime/current/bin/node'));
     assert.ok(!install.args.includes(API_KEY), 'the key never goes on a command line');
-    assert.ok(!fs.existsSync(path.join(dir, '.reconfigure-pending')));
+    assert.ok(!fs.existsSync(live('.reconfigure-pending')));
+    assert.ok(pings >= 3, `the lock was refreshed only ${pings} times`);
     assert.ok(o.events.some((e) => e.event === 'update_applied' && e.details.mode === 'archive'));
   });
 
-  it('npm failing: FAILED, the live tree untouched, .next gone', async () => {
+  it('npm failing: FAILED, the live tree untouched, staging gone', async () => {
     seedInstall();
+    const mcpIno = fs.statSync(live('mcp')).ino;
     const x = fakeExec({ failNpm: true });
     const r = await opts({ fetch: fakeFetch().fetch, execFile: x.execFile }).run();
     assert.equal(r.outcome, FAILED);
     assert.equal(r.reason, 'npm');
     assert.equal(read(dir, '.release').trim(), 'v1.0.0');
-    assert.equal(read(dir, 'mcp', 'index.js'), '// v1.0.0\n');
-    assert.ok(isLink(path.join(dir, 'runtime', 'current')));
-    assert.ok(!fs.existsSync(`${dir}.prev`));
+    assert.equal(fs.statSync(live('mcp')).ino, mcpIno);
+    assert.ok(!fs.existsSync(live('.prev')));
     assert.deepEqual(leftovers(), []);
     assert.ok(!x.calls.some((c) => c.cmd === 'bash'), 'no installer run without a swap');
   });
@@ -251,7 +276,7 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
 
   it('an archive without the installer is refused before anything moves', async () => {
     seedInstall();
-    const f = fakeFetch({ archive: buildArchive('v1.1.0', { omitInstaller: true }) });
+    const f = fakeFetch({ archive: buildArchive('v1.1.0', { omitInstaller: true, tag: 'broken' }) });
     const r = await opts({ fetch: f.fetch, execFile: fakeExec().execFile }).run();
     assert.equal(r.outcome, FAILED);
     assert.equal(r.reason, 'unpack');
@@ -259,42 +284,70 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
     assert.deepEqual(leftovers(), []);
   });
 
-  it('EBUSY on the swap: .swap-pending is written, and the next run only swaps', async () => {
+  it('a release with an entry named like runtime state is refused before any rename', async () => {
     seedInstall();
-    let blocked = 0;
-    const busyFs = {
-      ...fs,
-      renameSync: (a, b) => {
-        if (path.resolve(a) === path.resolve(dir)) {
-          blocked += 1;
-          throw Object.assign(new Error('resource busy'), { code: 'EBUSY' });
-        }
-        return fs.renameSync(a, b);
-      },
-    };
-    const first = await opts({ fetch: fakeFetch().fetch, execFile: fakeExec().execFile, fileSystem: busyFs }).run();
+    const before = stateSnapshot();
+    const rec = failingRename(() => false);
+    const f = fakeFetch({ archive: buildArchive('v1.1.0', { extra: { 'logs/oops.log': 'x' }, tag: 'collide' }) });
+    const r = await opts({ fetch: f.fetch, execFile: fakeExec().execFile, fileSystem: rec.fileSystem }).run();
+    assert.equal(r.outcome, FAILED);
+    assert.equal(r.reason, 'state_collision');
+    assert.deepEqual(rec.renames, [], 'nothing was renamed');
+    assert.deepEqual(stateSnapshot(), before);
+    assert.equal(read(dir, '.release').trim(), 'v1.0.0');
+    assert.ok(!fs.existsSync(live('.prev')));
+    assert.deepEqual(leftovers(), []);
+  });
+
+  it('EBUSY on the third entry: a journal, entries 1-2 new and the rest old; the next run finishes without a download', async () => {
+    seedInstall();
+    const before = stateSnapshot();
+    // Entries in order: .gitignore, install.ps1, install.sh, mcp, package.json, scripts, .release.
+    const busy = failingRename((a) => path.resolve(a) === path.resolve(live('install.sh')));
+    const first = await opts({ fetch: fakeFetch().fetch, execFile: fakeExec().execFile, fileSystem: busy.fileSystem }).run();
     assert.equal(first.outcome, FAILED);
     assert.equal(first.reason, 'swap_pending');
-    assert.equal(blocked, 1);
-    assert.equal(read(dir, '.release').trim(), 'v1.0.0', 'the live tree is untouched');
-    assert.equal(read(dir, '.swap-pending').split('\n')[0], `${dir}.next`);
-    assert.equal(read(`${dir}.next`, '.release').trim(), 'v1.1.0', 'the prepared tree waits beside it');
+    const journal = JSON.parse(read(dir, '.swap-journal.json'));
+    assert.deepEqual(journal.entries, ['.gitignore', 'install.ps1', 'install.sh', 'mcp', 'package.json', 'scripts', '.release']);
+    assert.deepEqual(journal.done, ['.gitignore', 'install.ps1']);
+    assert.equal(read(dir, '.gitignore'), 'node_modules/\n', 'entry 1 is new');
+    assert.equal(read(dir, 'install.ps1'), '# installer\n', 'entry 2 is new');
+    assert.equal(read(dir, 'install.sh'), '#!/bin/sh\n', 'entry 3 is still the old one');
+    assert.equal(read(dir, 'mcp', 'index.js'), '// v1.0.0\n');
+    assert.equal(read(dir, '.release').trim(), 'v1.0.0', '.release changes last');
+    assert.equal(read(dir, '.next', 'install.sh'), '#!/bin/sh\nexit 0\n', 'the new copy waits in .next');
 
-    // Written after the first run: must still reach the new tree.
-    fs.writeFileSync(path.join(dir, 'logs', 'later.log'), 'later\n');
+    fs.writeFileSync(live('logs/later.log'), 'later\n');
     const f = fakeFetch();
     const x = fakeExec();
     const second = await opts({ fetch: f.fetch, execFile: x.execFile }).run();
     assert.equal(second.outcome, APPLIED);
     assert.equal(second.to, 'v1.1.0');
-    assert.equal(f.calls.length, 0, 'the retry does not ask the server or download again');
+    assert.equal(f.calls.length, 0, 'the resume does not ask the server or download again');
     assert.ok(!x.calls.some((c) => c.cmd.startsWith('npm')), 'nor run npm again');
     assert.ok(x.calls.some((c) => c.cmd === 'bash'), 'the installer runs after the swap');
     assert.equal(read(dir, '.release').trim(), 'v1.1.0');
-    assert.ok(!fs.existsSync(path.join(dir, '.swap-pending')));
+    assert.equal(read(dir, 'install.sh'), '#!/bin/sh\nexit 0\n');
+    assert.equal(read(dir, 'mcp', 'index.js'), '// v1.1.0\n');
+    assert.equal(read(dir, '.prev', 'install.sh'), '#!/bin/sh\n');
     assert.equal(read(dir, 'logs', 'later.log'), 'later\n');
-    assert.ok(isLink(path.join(dir, 'runtime', 'current')));
+    const { 'logs': _logs, ...rest } = before;
+    const { 'logs': _logsAfter, ...restAfter } = stateSnapshot();
+    assert.deepEqual(restAfter, rest);
     assert.deepEqual(leftovers(), []);
+  });
+
+  it('a failure between the two renames of one entry puts its old copy back, and the next run completes it', async () => {
+    seedInstall();
+    const busy = failingRename((a, b) => path.resolve(a) === path.resolve(live('.next/mcp')) && path.resolve(b) === path.resolve(live('mcp')));
+    const first = await opts({ fetch: fakeFetch().fetch, execFile: fakeExec().execFile, fileSystem: busy.fileSystem }).run();
+    assert.equal(first.reason, 'swap_pending');
+    assert.equal(read(dir, 'mcp', 'index.js'), '// v1.0.0\n', 'the live tree is whole: old mcp back in place');
+    assert.ok(!fs.existsSync(live('.prev/mcp')));
+    const second = await opts({ fetch: fakeFetch().fetch, execFile: fakeExec().execFile }).run();
+    assert.equal(second.outcome, APPLIED);
+    assert.equal(read(dir, 'mcp', 'index.js'), '// v1.1.0\n');
+    assert.equal(read(dir, '.prev', 'mcp', 'index.js'), '// v1.0.0\n');
   });
 
   it('the installer failing after the swap is retried by the next run', async () => {
@@ -303,37 +356,29 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
     assert.equal(first.outcome, FAILED);
     assert.equal(first.reason, 'reconfigure');
     assert.equal(read(dir, '.release').trim(), 'v1.1.0');
-    assert.ok(fs.existsSync(path.join(dir, '.reconfigure-pending')));
+    assert.ok(fs.existsSync(live('.reconfigure-pending')));
 
     const x = fakeExec();
     const second = await opts({ fetch: fakeFetch().fetch, execFile: x.execFile }).run();
     assert.equal(second.outcome, APPLIED);
     assert.ok(x.calls.some((c) => c.cmd === 'bash'));
-    assert.ok(!fs.existsSync(path.join(dir, '.reconfigure-pending')));
+    assert.ok(!fs.existsSync(live('.reconfigure-pending')));
   });
 
-  it('an absolute runtime link: the swap and the next sweep of .prev never delete its target', async () => {
-    const external = path.join(ROOT, 'external-node');
-    writeTree(external, { 'bin/node': '#!/bin/sh\necho external\n' });
-    seedInstall({ absoluteRuntimeTarget: external });
-
-    const r1 = await opts({ fetch: fakeFetch().fetch, execFile: fakeExec().execFile }).run();
-    assert.equal(r1.outcome, APPLIED);
-    assert.equal(fs.readlinkSync(path.join(dir, 'runtime', 'current')), external);
-    assert.ok(fs.existsSync(path.join(external, 'bin', 'node')));
-
-    // The next update replaces .prev, which holds a link to the same target.
+  it('a second update empties .prev first and still never touches runtime', async () => {
+    seedInstall();
+    const before = stateSnapshot();
+    assert.equal((await opts({ fetch: fakeFetch().fetch, execFile: fakeExec().execFile }).run()).outcome, APPLIED);
     archives['v1.2.0'] = buildArchive('v1.2.0');
     const r2 = await opts({ fetch: fakeFetch({ release: 'v1.2.0' }).fetch, execFile: fakeExec().execFile }).run();
     assert.equal(r2.outcome, APPLIED);
-    assert.equal(read(`${dir}.prev`, '.release').trim(), 'v1.1.0');
-    assert.ok(fs.existsSync(path.join(external, 'bin', 'node')), 'removing the old .prev followed the link');
-    assert.ok(isLink(path.join(dir, 'runtime', 'current')));
+    assert.equal(read(dir, '.prev', '.release').trim(), 'v1.1.0');
+    assert.deepEqual(stateSnapshot(), before);
   });
 
   it('a git checkout is not an archive install and is left alone', async () => {
     seedInstall();
-    fs.mkdirSync(path.join(dir, '.git'));
+    fs.mkdirSync(live('.git'));
     const f = fakeFetch();
     const r = await opts({ fetch: f.fetch, execFile: fakeExec().execFile }).run();
     assert.equal(r.outcome, SKIPPED);
@@ -373,6 +418,18 @@ describe('helpers', () => {
     assert.equal(compareReleases('v1.2.3', 'v1.3.0'), -1);
     assert.equal(compareReleases('main', 'v0.0.1'), -1);
     assert.equal(compareReleases('v0.0.1', 'main'), 1);
+  });
+
+  it('codeEntries puts .release last and throws on a runtime-state name', () => {
+    const d = tempDir('ownmind-archive-entries-');
+    writeTree(d, { '.release': 'v1\n', 'mcp/x': '', 'install.sh': '', '.gitignore': '' });
+    assert.deepEqual(codeEntries(fs, d), ['.gitignore', 'install.sh', 'mcp', '.release']);
+    for (const name of ['runtime', 'credentials', 'cache', 'state', 'logs', 'reports', '.node-path', '.no-usage-scanner',
+      'judge.json', '.swap-pending', '.prev', '.next', '.no-anything-new', '.last-whatever']) {
+      assert.ok(isStateEntry(name), name);
+    }
+    fs.mkdirSync(path.join(d, 'runtime'));
+    assert.throws(() => codeEntries(fs, d), { code: 'state_collision' });
   });
 
   it('rootDependencySpecs reads the floors scripts/update.sh installs', () => {

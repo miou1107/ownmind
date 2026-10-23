@@ -11,7 +11,8 @@
 //   CURRENT vX.Y.Z               it already has the server's release
 //   FAILED <reason>              nothing changed, except after `reconfigure` (the new release is
 //                                in place and the next run re-runs the installer) and
-//                                `swap_pending` (the new release waits beside the live one)
+//                                `swap_pending` / `swap` (part of the code is swapped; the next
+//                                run resumes from the journal, without a download)
 //   --check: in_sync release=vX.Y.Z | behind release=vX.Y.Z server=vA.B.C
 //            | unknown release=vX.Y.Z reason=<code>
 // Exit:   0 on UPDATED, CURRENT and every --check line; 1 on FAILED.
@@ -20,6 +21,7 @@
 // the key never appears on a command line.
 
 import { execFile as execFileCb } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -68,6 +70,8 @@ async function update() {
     const { apiUrl, apiKey } = credentials();
     const r = await runArchiveUpdate({
       ownmindDir, apiUrl, apiKey, execFile: promisify(execFileCb),
+      // Refreshes the lock's time after each long step, so a slow network does not make it stale.
+      keepAlive: () => { const t = new Date(); fs.utimesSync(lockFile, t, t); },
       logEvent: (event, details) => {
         if (event === 'update_failed' || event === 'update_swap_pending') {
           process.stderr.write(`archive-update: ${event} ${JSON.stringify(details)}\n`);
@@ -78,8 +82,7 @@ async function update() {
     if (r.outcome === CLEAN) return { line: `CURRENT ${r.to || r.from}`, code: 0 };
     return { line: `FAILED ${r.reason || r.outcome}`, code: 1 };
   } finally {
-    // The lock was carried into the new tree with this run's token, so after a swap this
-    // releases it there; before a swap, in the old tree.
+    // The lock is runtime state: the update never moves it, so it is released where it was taken.
     releaseUpdateLock(lockFile, lock.token);
   }
 }

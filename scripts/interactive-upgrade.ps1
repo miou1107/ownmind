@@ -183,60 +183,6 @@ function Copy-OwnMindTreeSafe {
   }
 }
 
-# ARCHIVE_MODE: the swap an archive update could not do itself. The update runs on node.exe from
-# runtime\current, inside the tree it has to rename, and Windows refuses to rename a folder that
-# holds a running program; it leaves the new release ready at .ownmind.next and answers
-# "FAILED swap_pending". PowerShell is not inside the tree, so it can do the swap once node has
-# exited, provided nothing else (a running MCP server) holds a file there.
-# Returns the same one-line result the update prints.
-function Complete-OwnMindArchiveSwap {
-  param([string]$ApiKey, [string]$ApiUrl)
-  $next = "$OwnMindDir.next"
-  $prev = "$OwnMindDir.prev"
-  if (-not (Test-Path -LiteralPath (Join-Path $next '.release')) -or -not (Test-Path -LiteralPath (Join-Path $next 'install.ps1'))) {
-    return 'FAILED swap_pending'
-  }
-  $to = "$(Get-Content -LiteralPath (Join-Path $next '.release') -TotalCount 1 -Encoding UTF8)".Trim()
-  try {
-    if (Test-Path -LiteralPath $prev) { Remove-OwnMindTreeSafe -Path $prev }
-    Move-Item -LiteralPath $OwnMindDir -Destination $prev -ErrorAction Stop
-  } catch {
-    "archive swap: $(ConvertTo-OneLine $_)" | Out-File -Append $LogFile -Encoding utf8
-    return 'FAILED file_locked'
-  }
-  try {
-    Move-Item -LiteralPath $next -Destination $OwnMindDir -ErrorAction Stop
-  } catch {
-    "archive swap: $(ConvertTo-OneLine $_)" | Out-File -Append $LogFile -Encoding utf8
-    try { Move-Item -LiteralPath $prev -Destination $OwnMindDir -ErrorAction Stop } catch { return 'FAILED swap_rollback' }
-    return 'FAILED file_locked'
-  }
-  try { (Get-Item -LiteralPath $prev -Force -ErrorAction Stop).LastWriteTime = Get-Date } catch { }
-  try { Remove-Item -LiteralPath (Join-Path $prev '.swap-pending') -Force -ErrorAction SilentlyContinue } catch { }
-  if ($ApiKey -and $ApiUrl) {
-    # The installer from the new release, the key in the environment as in step 4.
-    $env:OWNMIND_API_KEY = $ApiKey
-    $env:OWNMIND_API_URL = $ApiUrl
-    $nodePathFile = Join-Path $OwnMindDir '.node-path'
-    if (Test-Path -LiteralPath $nodePathFile) {
-      $named = "$(Get-Content -LiteralPath $nodePathFile -TotalCount 1 -Encoding UTF8)".Trim()
-      if ($named -and $named.ToLower().StartsWith((Join-Path $OwnMindDir 'runtime\').ToLower())) {
-        $env:OWNMIND_PRIVATE_NODE = '1'
-        $env:OWNMIND_NODE = $named
-      }
-    }
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $OwnMindDir 'install.ps1') 2>&1 | Out-File -Append $LogFile -Encoding utf8
-    $installCode = $LASTEXITCODE
-    Remove-Item Env:OWNMIND_API_KEY, Env:OWNMIND_API_URL, Env:OWNMIND_PRIVATE_NODE, Env:OWNMIND_NODE -ErrorAction SilentlyContinue
-    if ($installCode -ne 0) {
-      # The next automatic update re-runs the installer (shared/archive-update.js).
-      try { [System.IO.File]::WriteAllText((Join-Path $OwnMindDir '.reconfigure-pending'), "$to`n") } catch { }
-      return 'FAILED reconfigure'
-    }
-  }
-  return "UPDATED $to"
-}
-
 # --- v1.17.66 Self-check 觀測管道保證執行（IR-038） ---
 # 用 try { 主流程 } catch { 印錯記 exit code } finally { 跑 self-check }
 # 確保升級任何階段失敗，server 都能收到當下狀態 + 7 項本機 check + env。
@@ -258,8 +204,8 @@ Step "check" "Checking OwnMind directory"
 if (-not (Test-Path $OwnMindDir)) { Fail "no_ownmind" "$OwnMindDir not found; run install.ps1 for fresh install" }
 # ARCHIVE_MODE: an install unpacked from a release archive by bootstrap on a machine without git
 # (a .release file and no .git). It updates from the OwnMind server through
-# shared\archive-update-cli.mjs, which downloads, prepares and swaps in the new release and re-runs
-# install.ps1; steps 1-4 below (backup, pull, npm, install re-run) are the git checkout's version
+# shared\archive-update-cli.mjs, which stages the new release, swaps its code entries in (runtime\
+# and the other runtime state are never moved) and re-runs install.ps1; steps 1-4 below (backup, pull, npm, install re-run) are the git checkout's version
 # of that, and are skipped. bootstrap.ps1 delegates archive installs here only while this file
 # contains the literal ARCHIVE_MODE.
 $ArchiveMode = (-not (Test-Path (Join-Path $OwnMindDir ".git"))) -and (Test-Path (Join-Path $OwnMindDir ".release"))
@@ -287,11 +233,12 @@ if (Test-Path $preflightHelper) {
 $apiKey = ""
 $apiUrl = ""
 if ($ArchiveMode) {
-  # --- 1-4 (archive install). Nothing in the live tree changes until the new release is
-  # unpacked, carried over and installed beside it; the swap leaves the old one at .prev.
+  # --- 1-4 (archive install). The update stages the new release in $OwnMindDir\.next and swaps
+  # code entries only (mcp, hooks, scripts, ...); runtime\ (where node.exe may be running) and
+  # the other runtime state are never moved. The previous release's code is kept in .prev.
   $archiveRelease = "$(Get-Content -LiteralPath (Join-Path $OwnMindDir '.release') -TotalCount 1 -Encoding UTF8)".Trim()
   Step "archive_mode" "Archive install ($archiveRelease); updating from the OwnMind server instead of git"
-  # Step 7 dismisses the upgrade broadcasts with these, and the swap below re-runs install.ps1.
+  # Step 7 dismisses the upgrade broadcasts with these.
   $claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
   if (Test-Path $claudeSettings) {
     try {
@@ -302,31 +249,27 @@ if ($ArchiveMode) {
       }
     } catch { }
   }
-  # Out of the tree that is about to be renamed; popped after step 6 as the checkout's is.
+  # Not inside a folder whose code is about to be swapped; popped after step 6 as the checkout's is.
   Push-Location $HOME
   $archiveOut = & node (Join-Path $OwnMindDir 'shared\archive-update-cli.mjs') --dir $OwnMindDir 2>&1
   $archiveOut | Out-File -Append $LogFile -Encoding utf8
   # stdout lines arrive as strings, stderr lines as ErrorRecords; the result is the last string.
   $archiveResult = "$($archiveOut | Where-Object { $_ -is [string] } | Select-Object -Last 1)".Trim()
-  if ($archiveResult -eq 'FAILED swap_pending') {
-    Step "archive_swap" "The new release is ready beside the current one; swapping it in"
-    $archiveResult = Complete-OwnMindArchiveSwap -ApiKey $apiKey -ApiUrl $apiUrl
-    "archive swap: $archiveResult" | Out-File -Append $LogFile -Encoding utf8
-  }
   if ($archiveResult -match '^UPDATED (.+)$') {
     $ArchiveSwapped = $true
-    $BackupDir = "$OwnMindDir.prev"
+    $BackupDir = Join-Path $OwnMindDir ".prev"
     OK "archive_update" "Updated $archiveRelease -> $($Matches[1]); install.ps1 re-ran from the new release"
   } elseif ($archiveResult -match '^CURRENT (.+)$') {
     OK "archive_update" "Already on the server's release ($($Matches[1]))"
-  } elseif ($archiveResult -match '^FAILED (swap_pending|file_locked)$') {
-    Report-Error -Kind "upgrade_file_locked" -Detail "archive swap blocked: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
+  } elseif ($archiveResult -match '^FAILED (swap_pending|swap)$') {
+    # Part of the code may already be swapped; the journal lets the next run continue from there.
+    Report-Error -Kind "upgrade_file_locked" -Detail "archive swap stopped: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
-    Fail "file_locked" "Files in $OwnMindDir are in use by another process (likely Claude Code); nothing was changed and the new release waits beside it. Close Claude Code completely, then re-run upgrade."
+    Fail "file_locked" "Files in $OwnMindDir are in use by another process (likely Claude Code); the update stopped and the next run continues where it stopped. Close Claude Code completely, then re-run upgrade."
   } elseif ($archiveResult -eq 'FAILED reconfigure') {
     Report-Error -Kind "upgrade_archive_install_failed" -Detail "install.ps1 failed after the swap: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
-    Fail "install" "The new release is in place but install.ps1 failed (see $LogFile); the next update re-runs it. Previous release kept at $OwnMindDir.prev"
+    Fail "install" "The new release is in place but install.ps1 failed (see $LogFile); the next update re-runs it. The previous release's code is in $OwnMindDir\.prev"
   } else {
     $shown = if ($archiveResult) { $archiveResult } else { 'no output' }
     Report-Error -Kind "upgrade_archive_failed" -Detail "archive update failed (${shown}): $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
@@ -670,13 +613,21 @@ $RetentionDays = if ($env:OWNMIND_BACKUP_RETENTION_DAYS) {
 Step "sweep" "Sweeping backups older than $RetentionDays days (if any)"
 try {
   $cutoff = (Get-Date).AddDays(-$RetentionDays)
-  # Also the folders bootstrap set aside as broken (.ownmind.broken.<ts>) and the release an
-  # archive update replaced (.ownmind.prev). Each may hold the runtime\current junction, which
+  # Also the folders bootstrap set aside as broken (.ownmind.broken.<ts>) and a .ownmind.prev
+  # beside the install. Each may hold the runtime\current junction, which
   # Remove-OwnMindTreeSafe takes out first; a junction named like one of these is skipped, not followed.
   Get-ChildItem -LiteralPath $HOME -Directory -Force -ErrorAction SilentlyContinue |
     Where-Object { ($_.Name -like '.ownmind.bak.*' -or $_.Name -like '.ownmind.broken.*' -or $_.Name -eq '.ownmind.prev') `
       -and (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) -and $_.LastWriteTime -lt $cutoff } |
     ForEach-Object { try { Remove-OwnMindTreeSafe -Path $_.FullName } catch { } }
+  # An archive update keeps the previous release's code in .ownmind\.prev (inside the install).
+  $innerPrev = Join-Path $OwnMindDir '.prev'
+  if (Test-Path -LiteralPath $innerPrev) {
+    $innerItem = Get-Item -LiteralPath $innerPrev -Force -ErrorAction SilentlyContinue
+    if ($innerItem -and (($innerItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) -and $innerItem.LastWriteTime -lt $cutoff) {
+      try { Remove-OwnMindTreeSafe -Path $innerPrev } catch { }
+    }
+  }
   OK "sweep" "Old backup sweep complete"
 } catch {
   Step "sweep" "Sweep skipped (error: $($_.Exception.Message))"

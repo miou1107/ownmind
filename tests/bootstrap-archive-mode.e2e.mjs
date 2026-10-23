@@ -266,7 +266,7 @@ test('server failing without a forced source falls back to GitHub, newest tag, f
  * `.no-usage-scanner` so the real installer leaves the machine's scheduler alone (see that file
  * for why).
  */
-function buildRealArchive(workDir, release = 'v9.9.9') {
+function buildRealArchive(workDir, release = 'v9.9.9', { optOut = true } = {}) {
   const src = path.join(workDir, `src-real-${release}`);
   const files = execFileSync('git', ['-C', repoRoot, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
@@ -282,7 +282,9 @@ function buildRealArchive(workDir, release = 'v9.9.9') {
     fs.chmodSync(to, fs.statSync(from).mode);
   }
   fs.writeFileSync(path.join(src, '.release'), `${release}\n`);
-  fs.writeFileSync(path.join(src, '.no-usage-scanner'), '');
+  // Only the first install needs the opt-out in the archive; from then on it is runtime state,
+  // which a later release must not carry (the archive update refuses one that does).
+  if (optOut) fs.writeFileSync(path.join(src, '.no-usage-scanner'), '');
   const out = path.join(workDir, `real-${release}.tar.gz`);
   const r = spawnSync('tar', ['-czf', out, '-C', src, ...fs.readdirSync(src)], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
@@ -335,18 +337,19 @@ test('no git: the REAL install.sh runs to the end on the unpacked release, and t
     // The server now ships a newer release: the archive update downloads it, swaps it in and
     // re-runs the real installer, with no git anywhere.
     fs.writeFileSync(path.join(dir, 'logs', 'before-update.log'), 'kept\n');
-    fixture.realArchive = buildRealArchive(fixture.dir, 'v9.9.10');
+    fixture.realArchive = buildRealArchive(fixture.dir, 'v9.9.10', { optOut: false });
     fixture.realRelease = 'v9.9.10';
     const update = await runNode(mac, [path.join(dir, 'shared', 'archive-update-cli.mjs')], { npm_config_cache: path.join(os.homedir(), '.npm') });
     assert.equal(update.status, 0, update.out.slice(-4000));
     assert.equal(update.stdout.trim(), 'UPDATED v9.9.10', update.out.slice(-4000));
     assert.equal(fs.readFileSync(path.join(dir, '.release'), 'utf8').trim(), 'v9.9.10');
-    assert.equal(fs.readFileSync(path.join(`${dir}.prev`, '.release'), 'utf8').trim(), 'v9.9.9');
+    assert.equal(fs.readFileSync(path.join(dir, '.prev', '.release'), 'utf8').trim(), 'v9.9.9', 'the previous code is in .prev');
     assert.equal(fs.readFileSync(path.join(dir, 'logs', 'before-update.log'), 'utf8'), 'kept\n', 'logs survive the swap');
     assert.ok(fs.existsSync(path.join(dir, '.no-usage-scanner')), 'the opt-out survives the swap');
     assert.ok(fs.existsSync(path.join(dir, 'mcp', 'node_modules')), 'dependencies are in the new tree');
     assert.ok(fs.existsSync(path.join(dir, 'node_modules', 'js-yaml', 'package.json')), 'the root js-yaml the skill sync needs is installed');
-    assert.ok(!fs.existsSync(`${dir}.next`) && !fs.existsSync(`${dir}.next.partial`));
+    assert.ok(!fs.existsSync(path.join(dir, '.next')) && !fs.existsSync(path.join(dir, '.swap-journal.json')), 'staging and journal are gone');
+    assert.ok(!fs.existsSync(`${dir}.prev`), 'the install itself is never renamed');
     assert.ok(!fs.existsSync(path.join(dir, '.reconfigure-pending')), 'the installer re-ran and finished');
 
     const again = await runNode(mac, [path.join(dir, 'shared', 'archive-update-cli.mjs')]);

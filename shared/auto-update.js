@@ -258,6 +258,9 @@ export async function runAutoUpdate({
         ownmindDir, apiUrl: url, apiKey: key, execFile, fetch, fileSystem,
         logEvent: (event, details) => logEvent(event, { source, ...details }),
         platform, nodeBin: execPath, env,
+        // The lock goes stale after STALE_MS; download, npm and the installer can take longer
+        // on a slow network, so its time is refreshed after each long step.
+        keepAlive: () => { const t = new Date(); fs.utimesSync(lockFile, t, t); },
       });
       if (r.outcome === CLEAN || r.outcome === APPLIED) markToday();
       release();

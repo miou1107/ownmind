@@ -124,9 +124,9 @@ STEP "check" "Checking OwnMind directory"
 [ -d "${OWNMIND_DIR}" ] || FAIL "no_ownmind" "${OWNMIND_DIR} not found; run install.sh for fresh install"
 # ARCHIVE_MODE: an install unpacked from a release archive by bootstrap on a machine without git
 # (a .release file and no .git). It updates from the OwnMind server through
-# shared/archive-update-cli.mjs, which downloads, prepares and swaps in the new release and re-runs
-# install.sh; steps 1-4 below (backup, pull, npm, install re-run) are the git checkout's version
-# of that, and are skipped. bootstrap.sh delegates archive installs here only while this file
+# shared/archive-update-cli.mjs, which stages the new release, swaps its code entries in (runtime/
+# and the other runtime state are never moved) and re-runs install.sh; steps 1-4 below (backup,
+# pull, npm, install re-run) are the git checkout's version of that, and are skipped. bootstrap.sh delegates archive installs here only while this file
 # contains the literal ARCHIVE_MODE.
 ARCHIVE_MODE=0
 ARCHIVE_SWAPPED=0
@@ -171,42 +171,27 @@ read_settings_creds() {
 }
 
 if [ "${ARCHIVE_MODE}" = "1" ]; then
-  # --- 1-4 (archive install). Nothing in the live tree changes until the new release is
-  # unpacked, carried over and installed beside it; the swap leaves the old one at .prev.
+  # --- 1-4 (archive install). The update stages the new release in ${OWNMIND_DIR}/.next and then
+  # swaps code entries only (mcp, hooks, scripts, ...); runtime/ and every other piece of
+  # runtime state stay where they are. The previous release's code is kept in .prev.
   ARCHIVE_RELEASE=$(head -n 1 "${OWNMIND_DIR}/.release" 2>/dev/null | tr -d '[:space:]')
   ARCHIVE_SWAPPED=0
   ROLLBACK_FAILED=0
-  BACKUP_DIR="${OWNMIND_DIR}.prev"
-  # Step 6 rolls back when local verification fails: here that puts .prev back.
+  BACKUP_DIR="${OWNMIND_DIR}/.prev"
+  # Step 6 calls this when local verification fails. An archive update is never rolled back
+  # automatically (a half-swapped tree is finished by the next run, not undone); the previous
+  # code stays in .prev for a person to put back.
   rollback() {
     ROLLBACK_FAILED=0
-    if [ "${ARCHIVE_SWAPPED}" != "1" ]; then
-      OK "rollback" "Nothing to restore; the update had not replaced ${OWNMIND_DIR}"
-      return 0
-    fi
-    STEP "rollback" "Restoring ${OWNMIND_DIR}.prev -> ${OWNMIND_DIR}"
-    if mv "${OWNMIND_DIR}" "${OWNMIND_DIR}.broken.${TS}" >>"${LOG_FILE}" 2>&1 \
-       && mv "${OWNMIND_DIR}.prev" "${OWNMIND_DIR}" >>"${LOG_FILE}" 2>&1; then
-      # A rename keeps the old modification time; the 7-day sweep counts from now.
-      touch "${OWNMIND_DIR}.broken.${TS}" 2>/dev/null || true
-      OK "rollback" "Restored ${ARCHIVE_RELEASE}"
-    else
-      ROLLBACK_FAILED=1
-      echo "ERROR:rollback_failed:could not move ${OWNMIND_DIR}.prev back to ${OWNMIND_DIR} ($(last_log_lines "${LOG_FILE}"))"
-      report_error "upgrade_rollback_failed" "archive rollback failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
-    fi
+    STEP "rollback" "Not rolled back automatically; the previous release's code is in ${OWNMIND_DIR}/.prev"
   }
   rollback_note() {
-    if [ "${ROLLBACK_FAILED}" -eq 1 ]; then
-      printf 'ROLLBACK ALSO FAILED - the previous release is still at %s.prev; move it back manually' "${OWNMIND_DIR}"
-    else
-      printf 'previous release restored'
-    fi
+    printf 'not rolled back; the previous release code is in %s/.prev' "${OWNMIND_DIR}"
   }
 
   STEP "archive_mode" "Archive install (${ARCHIVE_RELEASE:-unknown release}); updating from the OwnMind server instead of git"
   read_settings_creds
-  # Out of the tree that is about to be renamed.
+  # Not inside a folder whose code is about to be swapped.
   cd "${HOME}" || true
   ARCHIVE_RESULT=$(node "${OWNMIND_DIR_WIN}/shared/archive-update-cli.mjs" --dir "${OWNMIND_DIR_WIN}" 2>>"${LOG_FILE}")
   echo "archive-update: ${ARCHIVE_RESULT}" >>"${LOG_FILE}"
@@ -216,12 +201,12 @@ if [ "${ARCHIVE_MODE}" = "1" ]; then
       OK "archive_update" "Updated ${ARCHIVE_RELEASE} -> ${ARCHIVE_RESULT#UPDATED }; install.sh re-ran from the new release" ;;
     CURRENT*)
       OK "archive_update" "Already on the server's release (${ARCHIVE_RESULT#CURRENT })" ;;
-    "FAILED swap_pending")
-      report_error "upgrade_file_locked" "archive swap blocked: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
-      FAIL "file_locked" "Files in ${OWNMIND_DIR} are in use by another process (likely Claude Code); nothing was changed and the new release waits beside it. Close Claude Code completely, then re-run upgrade." ;;
+    "FAILED swap_pending"|"FAILED swap")
+      report_error "upgrade_file_locked" "archive swap stopped: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
+      FAIL "file_locked" "Files in ${OWNMIND_DIR} are in use by another process (likely Claude Code); the update stopped and the next run continues where it stopped. Close Claude Code completely, then re-run upgrade." ;;
     "FAILED reconfigure")
       report_error "upgrade_archive_install_failed" "install.sh failed after the swap: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
-      FAIL "install" "The new release is in place but install.sh failed (see ${LOG_FILE}); the next update re-runs it. Previous release kept at ${OWNMIND_DIR}.prev" ;;
+      FAIL "install" "The new release is in place but install.sh failed (see ${LOG_FILE}); the next update re-runs it. The previous release's code is in ${OWNMIND_DIR}/.prev" ;;
     *)
       report_error "upgrade_archive_failed" "archive update failed (${ARCHIVE_RESULT:-no output}): $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
       FAIL "archive_update" "Archive update failed (${ARCHIVE_RESULT:-no output}); nothing was changed. See ${LOG_FILE}" ;;

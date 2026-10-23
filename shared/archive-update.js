@@ -6,27 +6,33 @@
  * fallback without tags) and no `.git`. Every git-based update path skips such a directory, so
  * without this file those machines would stay on the release they were installed with.
  *
- * The update, in order:
+ * The update swaps CODE only. What the client writes at runtime (the private Node in runtime/,
+ * key files, caches, logs, markers: see STATE_ENTRIES) is never renamed, copied or deleted. A
+ * Windows machine runs its private node.exe from inside ~/.ownmind\runtime, and Windows refuses
+ * to rename a folder that holds a running program, so a whole-tree swap could never finish
+ * there; and copying ~100 MB of runtime on every update would be waste everywhere.
  *
  *   1. ask the server which release it ships (HEAD /api/install/archive, header X-OwnMind-Release);
- *   2. download that archive next to the live tree (`<dir>.next.partial`), unpack, check it has
- *      `.release` and the installer, rename it to `<dir>.next`;
- *   3. carry over everything the client wrote at runtime (key files, caches, logs, the private
- *      Node runtime, opt-out markers...) and install the dependencies there;
- *   4. swap: `<dir>` -> `<dir>.prev`, `<dir>.next` -> `<dir>`;
- *   5. re-run the installer from the new tree to rewrite the host configuration.
+ *   2. stage it in `<dir>/.next/` (same volume as the live tree): download, unpack, check it has
+ *      `.release` and the installer, `npm install --ignore-scripts` in `.next/mcp`, and the root
+ *      dependencies scripts/update.sh installs, in `.next`;
+ *   3. the code entries are the top-level entries of `.next/`. State entries are never in the
+ *      archive; a code entry that collides with one stops the update before any rename;
+ *   4. swap entry by entry with a journal (`<dir>/.swap-journal.json`): `<dir>/<e>` -> `.prev/<e>`,
+ *      then `.next/<e>` -> `<dir>/<e>`, marking each entry done. `.release` goes last, so the live
+ *      `.release` only names the new release once every other entry is in place;
+ *   5. delete the journal and `.next`, then re-run the installer to rewrite the host configuration.
  *
- * Nothing touches the live tree before step 4. A failure in 1-3 removes `.next*` and leaves
- * the machine exactly as it was. On Windows the rename in step 4 fails while a process holds a
- * file inside the tree (a running MCP server); that writes `<dir>/.swap-pending`, and a later
- * run that finds it with a complete `.next` only retries the swap.
+ * Failure rules. Anything before the first rename leaves the live tree exactly as it was (the
+ * staged `.next` is removed). A failure after some renames is RESUMED, never rolled back: the
+ * journal stays, and the next run continues from the first entry not done (its new copy is still
+ * in `.next`). Each entry's step is idempotent, so a run that stopped between the two renames of
+ * one entry is finished correctly. An EBUSY/EPERM/EACCES rename (a running MCP server holding a
+ * file in mcp/ on Windows) returns `{ outcome: FAILED, reason: 'swap_pending' }`. `.prev/` holds
+ * the previous release's code for a person to fall back on; the upgraders sweep it after 7 days.
  *
- * `<dir>/runtime/current` is a symlink (macOS) or a directory junction (Windows) to the private
- * Node. Every recursive copy and delete here handles that link itself, so the target is neither
- * duplicated nor deleted through it.
- *
- * Everything is injected (process runner, fetch, file system, clock, logger), as in
- * shared/auto-update.js, so the interesting half is testable without a server or a network.
+ * Everything is injected (process runner, fetch, file system, clock, logger, lock keep-alive), as
+ * in shared/auto-update.js, so the interesting half is testable without a server or a network.
  */
 
 import fs from 'fs';
@@ -46,41 +52,42 @@ const INSTALL_TIMEOUT_MS = 10 * 60_000;
 // The installer and npm print a lot; execFile kills a child whose output passes maxBuffer.
 const OUTPUT_LIMIT = 32 * 1024 * 1024;
 
-/** Marker files this module writes inside the live tree. */
-export const SWAP_PENDING = '.swap-pending';
+/** Names this module uses inside the live tree. */
+export const NEXT_DIR = '.next';
+export const PREV_DIR = '.prev';
+export const SWAP_JOURNAL = '.swap-journal.json';
 export const RECONFIGURE_PENDING = '.reconfigure-pending';
+const DOWNLOAD_FILE = '.next.download';
 
 /**
- * What the client writes under ~/.ownmind at runtime, and so must survive a swap to a tree
- * unpacked from an archive. Found by reading install.sh/.ps1, hooks/, mcp/, shared/ and
- * scripts/ for paths written under the OwnMind directory:
+ * What the client writes under ~/.ownmind at runtime. Found by reading install.sh/.ps1, hooks/,
+ * mcp/, shared/ and scripts/ for paths written under the OwnMind directory:
  *
+ *   runtime/            the private Node (runtime/current is a symlink or a directory junction)
  *   credentials         key file (scripts/install-helpers/ensure-key-file.cjs, secure-key-files.cjs)
  *   cache/ state/       enforcement cache, init cache, session state (hooks/)
  *   logs/ reports/      hook and update logs, the self-check upload spool, touch reports
- *   runtime/            the private Node (handled by copyRuntime: runtime/current is a link)
  *   git-hooks/          the git hook wrappers, and any hook of the user's own that install.sh kept
  *   bin/                run-scanner.sh, which the launchd/systemd units point at
- *   mods/               not listed: it ships in the archive; install.sh re-links it
  *   judge.json          the judge model choice
  *   queue.jsonl         the MCP's offline queue (mcp/offline.js)
+ *   .node-path .no-usage-scanner .no-key-file .no-session-hook .no-monitor-mod .no-touch-report
+ *   .no-self-check-upload .git-bash-path .session-hook-installed .last-update-check
+ *   .last-mcp-update-check .last-usage-roundtrip .update-lock     markers and opt-outs
  *
- * plus every top-level dotfile the new tree does not have: .node-path, .no-usage-scanner,
- * .no-key-file, .no-session-hook, .no-monitor-mod, .no-touch-report, .no-self-check-upload,
- * .git-bash-path, .session-hook-installed, .last-update-check, .last-mcp-update-check,
- * .last-usage-roundtrip and .update-lock (so the lock this run holds is held in the new tree
- * too, and released there). A dotfile is picked up by that rule without being named here.
+ * plus this module's own names. None of them is ever in the archive; isStateEntry is the guard
+ * that refuses a release that would put code where one of them lives.
  */
-export const PRESERVED_ENTRIES = [
-  'credentials', 'cache', 'state', 'logs', 'reports', 'git-hooks', 'bin', 'judge.json', 'queue.jsonl',
-];
-/** Top-level dotfiles never carried over: they describe this tree, not the machine. */
-const NOT_CARRIED = new Set(['.git', '.release', SWAP_PENDING, RECONFIGURE_PENDING]);
-const notCarriedDotfile = (name) =>
-  NOT_CARRIED.has(name) || name.startsWith('.update-lock.') || name.endsWith('.partial');
-
-/** Seeded from the old tree so `npm install` only fetches what changed (and works on a slow network). */
-const SEEDED_DEPENDENCIES = [path.join('mcp', 'node_modules'), 'node_modules'];
+export const STATE_ENTRIES = new Set([
+  'runtime', 'credentials', 'cache', 'state', 'logs', 'reports', 'git-hooks', 'bin', 'judge.json', 'queue.jsonl',
+  '.node-path', '.no-usage-scanner', '.no-key-file', '.no-session-hook', '.no-monitor-mod', '.no-touch-report',
+  '.no-self-check-upload', '.git-bash-path', '.session-hook-installed', '.last-update-check',
+  '.last-mcp-update-check', '.last-usage-roundtrip', '.update-lock', '.git',
+  NEXT_DIR, PREV_DIR, SWAP_JOURNAL, RECONFIGURE_PENDING, DOWNLOAD_FILE, '.swap-pending',
+]);
+export function isStateEntry(name) {
+  return STATE_ENTRIES.has(name) || /^\.(no|last)-/.test(name) || name.startsWith('.update-lock');
+}
 
 /** -1, 0, 1 for two release names; anything that is not vX.Y.Z (such as `main`) sorts lowest. */
 export function compareReleases(a, b) {
@@ -140,6 +147,8 @@ function isLink(fileSystem, p) {
   try { return fileSystem.lstatSync(p).isSymbolicLink(); } catch { return false; }
 }
 
+const exists = (fileSystem, p) => fileSystem.existsSync(p) || isLink(fileSystem, p);
+
 /** Remove a link without following it: unlink, or rmdir for a Windows directory junction. */
 function removeLink(fileSystem, p) {
   try {
@@ -153,75 +162,38 @@ function removeLink(fileSystem, p) {
 }
 
 /**
- * Delete a tree that may contain runtime/current, without deleting the Node it points to.
- * Removing the link first means no recursive delete ever meets it, whatever the platform's
- * rules for following links are.
+ * Delete a tree without following a runtime/current link inside it. `.prev` and `.next` never
+ * hold runtime/ by construction; the link is taken out first anyway, so no recursive delete can
+ * ever reach the Node it points to, whatever the platform's rules for following links are.
  */
 export function removeTree(fileSystem, dir) {
-  if (!fileSystem.existsSync(dir) && !isLink(fileSystem, dir)) return;
+  if (!exists(fileSystem, dir)) return;
   if (isLink(fileSystem, dir)) { removeLink(fileSystem, dir); return; }
   const current = path.join(dir, 'runtime', 'current');
   if (isLink(fileSystem, current)) removeLink(fileSystem, current);
   fileSystem.rmSync(dir, { recursive: true, force: true });
 }
 
-/** Recursive copy that copies links as links (relative targets stay relative). */
+/** Recursive copy that copies links as links, with a copy-on-write clone where the disk has one. */
 function copyEntry(fileSystem, from, to) {
   fileSystem.cpSync(from, to, {
-    recursive: true,
-    force: true,
-    verbatimSymlinks: true,
-    // A copy-on-write clone where the file system has one (APFS): the Node runtime is ~100 MB.
-    mode: fs.constants.COPYFILE_FICLONE,
+    recursive: true, force: true, verbatimSymlinks: true, mode: fs.constants.COPYFILE_FICLONE,
   });
 }
 
 /**
- * Copy runtime/ with runtime/current excluded from the recursive copy, then re-create the link
- * with the same target. On Windows the junction's target is absolute
- * (…\.ownmind\runtime\node-vX), which after the swap names the copy in the new tree.
+ * The code entries of a staged release: its top-level entries, `.release` last. Throws (code
+ * `state_collision`) when one of them is a name the client keeps its runtime state under.
  */
-export function copyRuntime(fileSystem, fromDir, toDir, platform = process.platform) {
-  if (!fileSystem.existsSync(fromDir)) return;
-  fileSystem.mkdirSync(toDir, { recursive: true });
-  for (const name of fileSystem.readdirSync(fromDir)) {
-    if (name === 'current' || name.endsWith('.partial')) continue;
-    copyEntry(fileSystem, path.join(fromDir, name), path.join(toDir, name));
+export function codeEntries(fileSystem, nextDir) {
+  const names = fileSystem.readdirSync(nextDir).sort();
+  const collisions = names.filter(isStateEntry);
+  if (collisions.length > 0) {
+    const err = new Error(`the release would overwrite runtime state: ${collisions.join(', ')}`);
+    err.code = 'state_collision';
+    throw err;
   }
-  const from = path.join(fromDir, 'current');
-  const to = path.join(toDir, 'current');
-  if (isLink(fileSystem, from)) {
-    const target = fileSystem.readlinkSync(from);
-    if (isLink(fileSystem, to) || fileSystem.existsSync(to)) removeTree(fileSystem, to);
-    fileSystem.symlinkSync(target, to, platform === 'win32' ? 'junction' : undefined);
-  } else if (fileSystem.existsSync(from)) {
-    // A real directory named current (an older layout): copied as it is.
-    copyEntry(fileSystem, from, to);
-  }
-}
-
-/** Carry the runtime state of `oldDir` into `newDir` (see PRESERVED_ENTRIES). */
-export function carryOverState(fileSystem, oldDir, newDir, { platform = process.platform, includeRuntime = true } = {}) {
-  const carried = [];
-  for (const name of PRESERVED_ENTRIES) {
-    const from = path.join(oldDir, name);
-    if (!fileSystem.existsSync(from)) continue;
-    copyEntry(fileSystem, from, path.join(newDir, name));
-    carried.push(name);
-  }
-  for (const name of fileSystem.readdirSync(oldDir)) {
-    if (!name.startsWith('.') || notCarriedDotfile(name)) continue;
-    const to = path.join(newDir, name);
-    // A dotfile the release ships (.gitignore, .editorconfig...) is the release's to own.
-    if (fileSystem.existsSync(to)) continue;
-    copyEntry(fileSystem, path.join(oldDir, name), to);
-    carried.push(name);
-  }
-  if (includeRuntime && fileSystem.existsSync(path.join(oldDir, 'runtime'))) {
-    copyRuntime(fileSystem, path.join(oldDir, 'runtime'), path.join(newDir, 'runtime'), platform);
-    carried.push('runtime');
-  }
-  return carried;
+  return [...names.filter((n) => n !== '.release'), ...(names.includes('.release') ? ['.release'] : [])];
 }
 
 /** Has `dir` everything an unpacked release must have? */
@@ -279,6 +251,9 @@ const swapBlocked = (e) => ['EBUSY', 'EPERM', 'EACCES'].includes(e?.code);
  * @param {string} [deps.platform]
  * @param {string} [deps.nodeBin]    the node to take npm from (npm sits beside it)
  * @param {object} [deps.env]
+ * @param {Function} [deps.keepAlive] called after each long step (download, npm, root deps) and
+ *                                   before the swap; the callers refresh the update lock's time
+ *                                   there, so a slow network does not make it look stale
  * @param {boolean} [deps.reconfigure] re-run the installer after the swap (default true)
  * @returns {Promise<{outcome: string, from: string, to: string|null, reason?: string, version?: string|null}>}
  */
@@ -294,26 +269,29 @@ export async function runArchiveUpdate({
   platform = process.platform,
   nodeBin = process.execPath,
   env = process.env,
+  keepAlive = () => {},
   reconfigure = true,
 }) {
   const isWindows = platform === 'win32';
   const from = readRelease(ownmindDir, fileSystem);
-  const nextDir = `${ownmindDir}.next`;
-  const partialDir = `${nextDir}.partial`;
-  const prevDir = `${ownmindDir}.prev`;
-  const swapPendingFile = path.join(ownmindDir, SWAP_PENDING);
+  const nextDir = path.join(ownmindDir, NEXT_DIR);
+  const prevDir = path.join(ownmindDir, PREV_DIR);
+  const journalFile = path.join(ownmindDir, SWAP_JOURNAL);
+  const downloadFile = path.join(ownmindDir, DOWNLOAD_FILE);
   const reconfigurePendingFile = path.join(ownmindDir, RECONFIGURE_PENDING);
   const nodeDir = nodeBin ? path.dirname(nodeBin) : '';
   const childEnv = withDirOnPath(env, nodeDir, isWindows);
+  const ping = () => { try { keepAlive(); } catch { /* best effort */ } };
 
   const result = (outcome, extra = {}) => ({ outcome, from, to: null, ...extra });
   const fail = (step, err, extra = {}) => {
     logEvent('update_failed', { mode: 'archive', step, from, error: errText(err) });
     return result(FAILED, { reason: step, ...extra });
   };
-  const cleanNext = () => {
-    for (const d of [partialDir, nextDir]) {
-      try { removeTree(fileSystem, d); } catch (e) { logEvent('update_cleanup_failed', { mode: 'archive', dir: path.basename(d), error: errText(e) }); }
+  /** Remove what staging left; only ever called while no rename has happened. */
+  const cleanStaging = () => {
+    for (const p of [nextDir, downloadFile]) {
+      try { removeTree(fileSystem, p); } catch (e) { logEvent('update_cleanup_failed', { mode: 'archive', path: path.basename(p), error: errText(e) }); }
     }
   };
 
@@ -331,39 +309,59 @@ export async function runArchiveUpdate({
     cwd, timeout: NPM_TIMEOUT_MS, maxBuffer: OUTPUT_LIMIT, windowsHide: true, shell: isWindows, env: childEnv,
   });
 
-  /** Swap the trees. Returns null on success, or the result to hand back. */
-  const swap = (to) => {
-    try { removeTree(fileSystem, prevDir); } catch (e) { return fail('remove_prev', e, { to }); }
-    try {
-      fileSystem.renameSync(ownmindDir, prevDir);
-    } catch (e) {
-      if (swapBlocked(e)) {
-        // The live tree is untouched; the prepared one waits beside it.
-        try { fileSystem.writeFileSync(swapPendingFile, `${nextDir}\n${now().toISOString()}\n`); } catch { /* best effort */ }
-        logEvent('update_swap_pending', { mode: 'archive', from, to, error: errText(e) });
-        return result(FAILED, { reason: 'swap_pending', to });
+  const writeJournal = (journal) => {
+    const tmp = `${journalFile}.tmp`;
+    fileSystem.writeFileSync(tmp, `${JSON.stringify(journal, null, 2)}\n`);
+    fileSystem.renameSync(tmp, journalFile);
+  };
+
+  /**
+   * Swap the entries the journal lists, from the first one not done. Returns null when every
+   * entry is done (journal and .next removed), or the result to hand back (journal kept).
+   */
+  const runJournal = (journal) => {
+    for (const entry of journal.entries) {
+      if (journal.done.includes(entry)) continue;
+      const live = path.join(ownmindDir, entry);
+      const staged = path.join(nextDir, entry);
+      const parked = path.join(prevDir, entry);
+      if (!exists(fileSystem, staged)) {
+        // Both renames of this entry happened before the journal could say so; or the new copy
+        // is gone and the old one is still parked, in which case the old one goes back in place.
+        if (!exists(fileSystem, live) && exists(fileSystem, parked)) {
+          try { fileSystem.renameSync(parked, live); } catch (e) { return fail('swap_restore', e, { to: journal.to }); }
+          logEvent('update_swap_restored', { mode: 'archive', entry, to: journal.to });
+        }
+      } else {
+        if (exists(fileSystem, live)) {
+          try {
+            if (exists(fileSystem, parked)) removeTree(fileSystem, parked);
+            fileSystem.renameSync(live, parked);
+          } catch (e) {
+            logEvent('update_swap_pending', { mode: 'archive', entry, from, to: journal.to, error: errText(e) });
+            return swapBlocked(e) ? result(FAILED, { reason: 'swap_pending', to: journal.to }) : fail('swap', e, { to: journal.to });
+          }
+        }
+        try {
+          fileSystem.renameSync(staged, live);
+        } catch (e) {
+          // Put this entry's old copy back so the live tree is whole until the next run resumes.
+          if (!exists(fileSystem, live) && exists(fileSystem, parked)) {
+            try { fileSystem.renameSync(parked, live); } catch { /* the next run resumes from the journal */ }
+          }
+          logEvent('update_swap_pending', { mode: 'archive', entry, from, to: journal.to, error: errText(e) });
+          return swapBlocked(e) ? result(FAILED, { reason: 'swap_pending', to: journal.to }) : fail('swap', e, { to: journal.to });
+        }
       }
-      cleanNext();
-      return fail('swap', e, { to });
+      journal.done.push(entry);
+      try { writeJournal(journal); } catch { /* the per-entry check above makes a lost mark harmless */ }
     }
-    try {
-      fileSystem.renameSync(nextDir, ownmindDir);
-    } catch (e) {
-      // Put the old tree back where it was.
-      try { fileSystem.renameSync(prevDir, ownmindDir); } catch (e2) {
-        logEvent('update_failed', { mode: 'archive', step: 'swap_rollback', from, to, error: errText(e2) });
-        return result(FAILED, { reason: 'swap_rollback', to });
-      }
-      cleanNext();
-      return fail('swap', e, { to });
-    }
-    // A rename keeps the old tree's modification time; the upgraders' 7-day sweep of .prev
-    // should count from the swap.
-    try { const t = now(); fileSystem.utimesSync(prevDir, t, t); } catch { /* best effort */ }
+    try { fileSystem.unlinkSync(journalFile); } catch { /* already gone */ }
+    try { removeTree(fileSystem, nextDir); } catch (e) { logEvent('update_cleanup_failed', { mode: 'archive', path: NEXT_DIR, error: errText(e) }); }
     return null;
   };
 
-  /** Re-run the installer from the (new) live tree. Returns null on success. */
+  /** Re-run the installer from the live tree. Returns null on success. */
   const runInstaller = async (to) => {
     if (!reconfigure) return null;
     try { fileSystem.writeFileSync(reconfigurePendingFile, `${to}\n`); } catch { /* best effort */ }
@@ -404,22 +402,23 @@ export async function runArchiveUpdate({
     return result(APPLIED, { to, version: readVersion() });
   };
 
-  // A swap that was blocked earlier: the prepared tree is waiting, only the swap is retried.
-  if (fileSystem.existsSync(swapPendingFile)) {
-    let named = '';
-    try { named = fileSystem.readFileSync(swapPendingFile, 'utf8').split(/\r?\n/)[0].trim(); } catch { /* unreadable */ }
-    if (path.resolve(named || nextDir) === path.resolve(nextDir) && isCompleteTree(fileSystem, nextDir, platform)) {
-      const to = readRelease(nextDir, fileSystem);
-      logEvent('update_swap_retry', { mode: 'archive', from, to });
-      // Logs, caches and markers written since the tree was prepared are carried again.
-      try { carryOverState(fileSystem, ownmindDir, nextDir, { platform, includeRuntime: false }); } catch (e) { return fail('carry_over', e, { to }); }
-      const swapped = swap(to);
-      if (swapped) return swapped;
-      const reconfigured = await runInstaller(to);
-      return reconfigured || applied(to);
+  // A swap that stopped part-way: resume it from the journal, without a download.
+  if (fileSystem.existsSync(journalFile)) {
+    let journal = null;
+    try {
+      journal = JSON.parse(fileSystem.readFileSync(journalFile, 'utf8'));
+      if (!Array.isArray(journal.entries) || !Array.isArray(journal.done)) journal = null;
+    } catch { journal = null; }
+    if (journal) {
+      logEvent('update_swap_resume', { mode: 'archive', from, to: journal.to, done: journal.done.length, of: journal.entries.length });
+      ping();
+      const stopped = runJournal(journal);
+      if (stopped) return stopped;
+      const reconfigured = await runInstaller(journal.to);
+      return reconfigured || applied(journal.to);
     }
-    try { fileSystem.unlinkSync(swapPendingFile); } catch { /* already gone */ }
-    cleanNext();
+    // An unreadable journal: whether any entry moved cannot be told, so nothing is undone.
+    return fail('journal_unreadable', new Error(`${SWAP_JOURNAL} cannot be read`));
   }
 
   if (!apiUrl || !apiKey) return result(SKIPPED, { reason: 'no_credentials' });
@@ -445,11 +444,10 @@ export async function runArchiveUpdate({
     return result(CLEAN, { to: from });
   }
 
-  // 2. Download and unpack next to the live tree.
-  cleanNext();
-  const archiveFile = path.join(partialDir, isWindows ? 'archive.zip' : 'archive.tar.gz');
+  // 2. Stage the release in .next. A .next without a journal is an earlier attempt's leftover.
+  cleanStaging();
   try {
-    fileSystem.mkdirSync(partialDir, { recursive: true });
+    fileSystem.mkdirSync(nextDir, { recursive: true });
     const url = `${String(apiUrl).replace(/\/+$/, '')}/api/install/archive${isWindows ? '?format=zip' : ''}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -460,11 +458,12 @@ export async function runArchiveUpdate({
       err.code = `http_${res.status}`;
       throw err;
     }
-    fileSystem.writeFileSync(archiveFile, Buffer.from(await res.arrayBuffer()));
+    fileSystem.writeFileSync(downloadFile, Buffer.from(await res.arrayBuffer()));
   } catch (e) {
-    cleanNext();
+    cleanStaging();
     return fail('download', e, { to });
   }
+  ping();
 
   try {
     if (isWindows) {
@@ -473,33 +472,38 @@ export async function runArchiveUpdate({
       await execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
         "$ProgressPreference='SilentlyContinue'; Expand-Archive -LiteralPath $env:OWNMIND_ARCHIVE -DestinationPath $env:OWNMIND_ARCHIVE_DEST -Force"],
       { timeout: UNPACK_TIMEOUT_MS, windowsHide: true,
-        env: { ...childEnv, OWNMIND_ARCHIVE: archiveFile, OWNMIND_ARCHIVE_DEST: partialDir } });
+        env: { ...childEnv, OWNMIND_ARCHIVE: downloadFile, OWNMIND_ARCHIVE_DEST: nextDir } });
     } else {
-      await execFile('tar', ['-xzf', archiveFile, '-C', partialDir], { timeout: UNPACK_TIMEOUT_MS });
+      await execFile('tar', ['-xzf', downloadFile, '-C', nextDir], { timeout: UNPACK_TIMEOUT_MS });
     }
-    fileSystem.rmSync(archiveFile, { force: true });
-    if (!isCompleteTree(fileSystem, partialDir, platform)) {
+    fileSystem.rmSync(downloadFile, { force: true });
+    if (!isCompleteTree(fileSystem, nextDir, platform)) {
       const err = new Error('the archive is missing .release or the installer');
       err.code = 'incomplete_archive';
       throw err;
     }
-    to = readRelease(partialDir, fileSystem) || to;
-    fileSystem.renameSync(partialDir, nextDir);
+    to = readRelease(nextDir, fileSystem) || to;
   } catch (e) {
-    cleanNext();
+    cleanStaging();
     return fail('unpack', e, { to });
   }
 
-  // 3. Runtime state and dependencies, all inside .next.
+  // Dependencies, all inside .next. The live mcp/node_modules seeds the staged one (a copy; the
+  // live tree is not touched) so npm only fetches what changed.
+  const specs = (() => {
+    try { return rootDependencySpecs(fileSystem.readFileSync(path.join(nextDir, 'scripts', 'update.sh'), 'utf8')); } catch { return []; }
+  })();
   try {
-    carryOverState(fileSystem, ownmindDir, nextDir, { platform });
-    for (const rel of SEEDED_DEPENDENCIES) {
+    const seeds = [path.join('mcp', 'node_modules'), ...(specs.length > 0 ? ['node_modules'] : [])];
+    for (const rel of seeds) {
       const seed = path.join(ownmindDir, rel);
-      if (fileSystem.existsSync(seed)) copyEntry(fileSystem, seed, path.join(nextDir, rel));
+      if (fileSystem.existsSync(seed) && !fileSystem.existsSync(path.join(nextDir, rel))) {
+        copyEntry(fileSystem, seed, path.join(nextDir, rel));
+      }
     }
   } catch (e) {
-    cleanNext();
-    return fail('carry_over', e, { to });
+    cleanStaging();
+    return fail('seed', e, { to });
   }
 
   try {
@@ -507,25 +511,47 @@ export async function runArchiveUpdate({
     // a dependency that turned malicious most often strikes through one.
     await npm(['install', '-q', '--ignore-scripts'], path.join(nextDir, 'mcp'));
   } catch (e) {
-    cleanNext();
+    cleanStaging();
     return fail('npm', e, { to });
   }
+  ping();
 
   // The root dependencies scripts/update.sh installs (js-yaml for the conditional skill sync,
   // node-machine-id): a git install gets them from its daily sync. Not fatal there, not here.
-  let specs = [];
-  try { specs = rootDependencySpecs(fileSystem.readFileSync(path.join(nextDir, 'scripts', 'update.sh'), 'utf8')); } catch { /* none */ }
   if (specs.length > 0) {
     try {
       await npm(['install', ...specs, '--no-save', '--ignore-scripts', '--silent', '--no-audit', '--no-fund'], nextDir);
     } catch (e) {
       logEvent('update_root_deps_failed', { mode: 'archive', to, error: errText(e) });
     }
+    ping();
   }
 
-  // 4. Swap. 5. Host configuration from the new tree.
-  const swapped = swap(to);
-  if (swapped) return swapped;
+  // 3. The code entries; a collision with runtime state stops here, before any rename.
+  let entries;
+  try {
+    entries = codeEntries(fileSystem, nextDir);
+  } catch (e) {
+    cleanStaging();
+    return fail(e.code === 'state_collision' ? 'state_collision' : 'stage', e, { to });
+  }
+
+  // 4. Swap. .prev is the previous release's code; it never holds runtime/ (removeTree is
+  // careful anyway).
+  try {
+    removeTree(fileSystem, prevDir);
+    fileSystem.mkdirSync(prevDir, { recursive: true });
+    writeJournal({ version: 1, from, to, at: now().toISOString(), entries, done: [] });
+  } catch (e) {
+    cleanStaging();
+    try { fileSystem.unlinkSync(journalFile); } catch { /* not written */ }
+    return fail('swap_prepare', e, { to });
+  }
+  ping();
+  const stopped = runJournal({ version: 1, from, to, entries, done: [] });
+  if (stopped) return stopped;
+
+  // 5. Host configuration from the new code.
   const reconfigured = await runInstaller(to);
   return reconfigured || applied(to);
 }

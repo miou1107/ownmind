@@ -61,6 +61,19 @@ describe('ownmind_sweep_old_trees', { skip }, () => {
     assert.equal(fs.readFileSync(path.join(liveNode, 'bin', 'node'), 'utf8'), 'the live node');
   });
 
+  it('the .prev an archive update keeps inside the install is swept the same way', () => {
+    const home = tempDir('ownmind-sweep-trees-');
+    makeTree(path.join(home, '.ownmind', '.prev'), 10);
+    fs.mkdirSync(path.join(home, '.ownmind', 'runtime'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.ownmind', 'runtime', 'node'), 'live');
+    sweep(home);
+    assert.ok(!fs.existsSync(path.join(home, '.ownmind', '.prev')));
+    assert.equal(fs.readFileSync(path.join(home, '.ownmind', 'runtime', 'node'), 'utf8'), 'live');
+    makeTree(path.join(home, '.ownmind', '.prev'), 1);
+    sweep(home);
+    assert.ok(fs.existsSync(path.join(home, '.ownmind', '.prev')), 'a recent .prev stays');
+  });
+
   it('a link named like a candidate is left alone rather than followed', () => {
     const home = tempDir('ownmind-sweep-trees-');
     const elsewhere = path.join(home, 'elsewhere');
@@ -81,6 +94,7 @@ describe('both upgraders use the sweep on every kind of old tree', () => {
     const ps = fs.readFileSync(path.join(repoRoot, 'scripts', 'interactive-upgrade.ps1'), 'utf8');
     assert.match(ps, /\$_\.Name -like '\.ownmind\.broken\.\*'/);
     assert.match(ps, /\$_\.Name -eq '\.ownmind\.prev'/);
+    assert.match(ps, /\$innerPrev = Join-Path \$OwnMindDir '\.prev'[\s\S]*?try \{ Remove-OwnMindTreeSafe -Path \$innerPrev \} catch \{ \}/);
     assert.match(ps, /ForEach-Object \{ try \{ Remove-OwnMindTreeSafe -Path \$_\.FullName \} catch \{ \} \}/);
     // A junction is skipped by the filter, never handed to a recursive delete.
     assert.match(ps, /\(\$_\.Attributes -band \[System\.IO\.FileAttributes\]::ReparsePoint\) -eq 0/);
