@@ -10317,3 +10317,5 @@ tests/ai-install-runbook.test.js                        — new: the manual docu
 tests/readme-install-prompt-consistency.test.js         — new: the three READMEs and the site message carry the same one-liners as the console button and none point at the old raw script URLs
 tests/team-install-prompt.test.js                       — pins the exact install message and the trailing-slash rule
 tests/install-routes.test.js                            — the real runbook is served on /install-manual.md
+tests/upgrade-archive-mode.test.js, tests/upgrade-sweep-covers-broken-and-prev.test.js — hand their generated bash scripts over as files (spawnBashScript), as tests/bash-c-escaping.test.js requires
+docs/ai-install-runbook.md                              — wording for an AI that has no ownmind-upgrade skill yet; removal only when asked; the Summary line may be on the error stream

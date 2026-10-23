@@ -59,6 +59,18 @@ describe('install message surfaces', () => {
     assert.equal(strings['zh-TW'].box2Prompt, consolePrompt);
   });
 
+  it('the Japanese README and site message state the same rules in Japanese', () => {
+    for (const text of [SURFACES['docs/README.ja.md'], strings.ja.box2Prompt]) {
+      assert.match(text, /まず YOUR_API_URL\/install-manual\.md を読み/, 'read the manual first');
+      assert.match(text, /一度だけ実行/, 'run once');
+      assert.match(text, /NEXT が出たら NEXT の指示に従い/);
+      assert.match(text, /FIX が出たら FIX の行のコマンドを先に実行してからインストールコマンドをもう一度実行/);
+      assert.match(text, /ASK が出たときだけ私に聞いてください/, 'ASK only');
+      assert.match(text, /どこを押すか一つずつ教えてください/, 'permissions one step at a time');
+      assert.match(text, /手動でインストールさせないでください/, 'no manual installs');
+    }
+  });
+
   it('the English README and site message state the same rules in English', () => {
     for (const text of [SURFACES['README.md'], strings.en.box2Prompt]) {
       assert.match(text, /First read YOUR_API_URL\/install-manual\.md and follow the manual/);

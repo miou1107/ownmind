@@ -8,9 +8,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
+import { spawnBashScript, toBashPath } from './helpers/bash-script.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const helper = path.join(repoRoot, 'scripts', 'install-helpers', 'sweep-old-trees.sh');
@@ -26,7 +26,7 @@ function makeTree(dir, ageDays, { link = null } = {}) {
 }
 
 function sweep(home, days = 7) {
-  const r = spawnSync('bash', ['-c', `. "$1"; ownmind_sweep_old_trees "$2" "$3"`, 'sweep', helper, home, String(days)], { encoding: 'utf8' });
+  const r = spawnBashScript(`. "${toBashPath(helper)}"; ownmind_sweep_old_trees "${toBashPath(home)}" "${Number(days)}"`, { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
 }
 

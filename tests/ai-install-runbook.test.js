@@ -110,6 +110,12 @@ describe('docs/ai-install-runbook.md', () => {
     for (const word of ['git', 'Node.js', 'Homebrew', 'winget']) assert.ok(list.includes(word), word);
   });
 
+  it('does not claim the AI already has a skill the install is about to put there, and limits removal to when asked', () => {
+    assert.doesNotMatch(manual, /your skill/i);
+    assert.match(manual, /the `ownmind-upgrade` skill carries once OwnMind is installed/);
+    assert.match(manual, /applies only when the colleague asks to remove OwnMind/);
+  });
+
   it('never tells the user to install a prerequisite by hand', () => {
     assert.doesNotMatch(manual, /brew install/);
     assert.doesNotMatch(manual, /xcode-select/);
@@ -125,6 +131,7 @@ describe('docs/ai-install-runbook.md', () => {
     assert.match(done, /\.claude\.json/);
     assert.match(done, /Summary:\s+N passed, N warnings, N failed/);
     assert.match(done, /next conversation/i);
+    assert.match(done, /error stream/i, 'the summary line may be on stderr');
   });
 
   it('runs the same verification as the skill: save, find, remove, one line per item', () => {

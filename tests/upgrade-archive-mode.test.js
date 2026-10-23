@@ -12,9 +12,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
+import { spawnBashScript } from './helpers/bash-script.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
@@ -85,7 +86,7 @@ describe('the daily sync passes the private Node to the hook helpers', () => {
 
   it('the bare-node expansion is empty without a private runtime, two words with one', () => {
     const run = (value) => {
-      const r = spawnSync('bash', ['-c', 'UPDATE_NODE_BIN="$1"; set -- ${UPDATE_NODE_BIN:+--node-bin "$UPDATE_NODE_BIN"}; echo "$#:$*"', 'x', value], { encoding: 'utf8' });
+      const r = spawnBashScript(`UPDATE_NODE_BIN='${value}'; set -- \${UPDATE_NODE_BIN:+--node-bin "$UPDATE_NODE_BIN"}; echo "$#:$*"`, { encoding: 'utf8' });
       return r.stdout.trim();
     };
     assert.equal(run(''), '0:');

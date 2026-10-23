@@ -14,13 +14,13 @@ Use this section when the colleague asks "what did you do to my computer".
 - **Files the installer writes in the host AI tools.** For Claude Code and the Claude desktop app: `~/.claude/settings.json` (the OwnMind hooks, so memory loads when a conversation starts and rules are checked before actions), `~/.claude.json` (the OwnMind memory connector entry), and the skills `~/.claude/skills/ownmind-memory` and `~/.claude/skills/ownmind-upgrade`. When Cursor, Gemini CLI, GitHub Copilot, Windsurf, OpenCode, OpenClaw or Antigravity is present, the same kind of hook or rules file is written in that tool's own folder in the home folder (for example `~/.cursor`, `~/.gemini`). Tools that are not present are left alone.
 - **Also inside the home folder.** The colleague's API key is stored in those two connector entries, nowhere else. A scheduled job sends usage numbers to the OwnMind server (a launchd agent in `~/Library/LaunchAgents` on macOS, a Task Scheduler task for the same user on Windows). If git is present, the installer also sets git's global hooks folder to `~/.ownmind/git-hooks`, which holds the pre-commit and post-commit checks; any hooks folder the colleague had before is remembered and its hooks still run.
 - **No administrator password.** Nothing in the install needs one. Nothing outside the colleague's own home folder (and their own user's scheduled job) is changed. No system settings, no other users' folders.
-- **Removing it** is deleting `~/.ownmind` and the entries above; no uninstaller is needed for a trial.
+- **Removing it** applies only when the colleague asks to remove OwnMind: delete `~/.ownmind` and the entries above; no uninstaller is needed. During an install, never delete `~/.ownmind` yourself; a re-run repairs it.
 
 ## The command and the output grammar
 
 The command is the one-liner in the install message, one for macOS and one for Windows PowerShell. Both fetch a script from the OwnMind server (`<API_URL>/install.sh` or `<API_URL>/install.ps1`), which does everything. Run the line for this computer's operating system, once.
 
-Every line the installer prints starts with one of six prefixes: `INFO:`, `OK:`, `ERROR:`, `FIX:`, `ASK:`, `NEXT:`. The rules for reading them are below. They are the same rules your skill `ownmind-upgrade` carries, word for word.
+Every line the installer prints starts with one of six prefixes: `INFO:`, `OK:`, `ERROR:`, `FIX:`, `ASK:`, `NEXT:`. The rules for reading them are below. They are the same rules the `ownmind-upgrade` skill carries once OwnMind is installed, word for word.
 
 <!-- rules:start -->
 1. Run the one-liner from the install message the colleague pasted, once. Read every line of its output.
@@ -126,7 +126,7 @@ The install is finished when all of this is true, and the last line of the outpu
 - `~/.ownmind/mcp/node_modules` exists, so the memory connector can start.
 - `~/.claude/settings.json` holds the OwnMind hook entries (session start, and the checks before actions).
 - `~/.claude.json` holds the OwnMind memory connector entry.
-- The installer's own check printed a summary line like `Summary:  N passed, N warnings, N failed`, with no failures. Warnings are fine to report as they are.
+- The installer's own check printed a summary line like `Summary:  N passed, N warnings, N failed`, with no failures. The line may appear on the error stream, so look for it in the error output as well as the normal output. Warnings are fine to report as they are.
 
 The proof the colleague can feel: the next conversation they start shows the OwnMind context at its start (memories loaded, a version line). A conversation that was already open before the install does not show it; that is why the last step opens a new one.
 
