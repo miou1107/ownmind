@@ -172,6 +172,44 @@ describe('#98 bootstrap without git: both bootstraps install from the release ar
   });
 });
 
+describe('the assert on a machine that needs nothing from the person', () => {
+  /** Runs Assert-OwnMindRequirements in a child with the given PATH and a folder that has no .git. */
+  function assertOn(pathValue) {
+    const home = tempDir('om-preflight-assert-');
+    const script = [
+      `. '${path.join(repoRoot, 'scripts', 'install-helpers', 'preflight.ps1').replace(/'/g, "''")}'`,
+      '$r = @(Assert-OwnMindRequirements) | Select-Object -Last 1',
+      'Write-Output "RESULT=$r"',
+    ].join('\n');
+    const file = path.join(home, 'probe.ps1');
+    fs.writeFileSync(file, script, 'utf8');
+    const r = spawnSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', file], {
+      encoding: 'utf8',
+      env: { ...process.env, Path: pathValue, PATH: pathValue, OWNMIND_DIR: path.join(home, '.ownmind') },
+    });
+    return `${r.stdout}${r.stderr}`;
+  }
+
+  it('a machine with its tools passes, and says nothing about failures', {
+    skip: isWindows ? false : 'the PowerShell path only exists on Windows',
+  }, () => {
+    // Test-OwnMindRequirements hands back its array wrapped; piping that wrapper straight into
+    // Where-Object made it one object, and a healthy machine was told it was missing one thing.
+    const said = assertOn(process.env.Path || process.env.PATH || '');
+    assert.match(said, /RESULT=True/, said);
+    assert.doesNotMatch(said, /ERROR:preflight/, said);
+  });
+
+  it('a machine with no node and no git passes: the private runtime is not a failure and git is not needed without .git', {
+    skip: isWindows ? false : 'the PowerShell path only exists on Windows',
+  }, () => {
+    const bare = `${process.env.SystemRoot || 'C:\\Windows'}\\System32;${process.env.SystemRoot || 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0`;
+    const said = assertOn(bare);
+    assert.match(said, /RESULT=True/, said);
+    assert.doesNotMatch(said, /ERROR:preflight/, said);
+  });
+});
+
 describe('#98 the upgrade stops before the backup', () => {
   it('interactive-upgrade.sh leaves no .ownmind.bak.* behind when git is missing', (t) => {
     const staged = stagedShell(['date', 'uname', 'mkdir', 'cat', 'grep', 'cut', 'tr', 'tail']);

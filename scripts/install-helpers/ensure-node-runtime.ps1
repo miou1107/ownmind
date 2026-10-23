@@ -160,18 +160,49 @@ function Get-OwnMindNodeFromNodejs {
   return @{ Version = $version; Sha = $sha }
 }
 
-# Remove runtime\current whatever it is: a junction goes without touching what it points at, and a
-# real folder (left by hand or an older layout) is deleted, because New-Item would otherwise fail
-# or link inside it.
+# The attributes of a path WITHOUT following it, or $null when nothing is there. Test-Path and
+# Get-Item follow a directory junction, so a junction whose target is gone looks like "no such
+# path" to them, while the junction itself is still there and still blocks a new one.
+function Get-OwnMindPathAttributes {
+  param([string]$Path)
+  try { return [System.IO.File]::GetAttributes($Path) } catch { return $null }
+}
+
+# Remove runtime\current whatever it is, including a junction whose target is gone: a junction
+# goes without touching what it points at, and a real folder (left by hand or an older layout)
+# is deleted, because New-Item would otherwise fail or link inside it.
 function Remove-OwnMindCurrent {
   param([string]$Current)
   Set-StrictMode -Version Latest
-  if (-not (Test-Path -LiteralPath $Current)) { return }
-  $item = Get-Item -LiteralPath $Current -Force
-  if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+  $attrs = Get-OwnMindPathAttributes -Path $Current
+  if ($null -eq $attrs) { return }
+  if (($attrs -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
     [System.IO.Directory]::Delete($Current)
   } else {
     Remove-Item -LiteralPath $Current -Recurse -Force
+  }
+}
+
+# Where runtime\current points, or an empty string when it is not a junction (or its target cannot be read).
+function Get-OwnMindCurrentTarget {
+  param([string]$Current)
+  Set-StrictMode -Version Latest
+  $attrs = Get-OwnMindPathAttributes -Path $Current
+  if ($null -eq $attrs -or ($attrs -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) { return '' }
+  try {
+    $target = @((Get-Item -LiteralPath $Current -Force -ErrorAction Stop).Target)
+    if ($target.Count -gt 0 -and $target[0]) { return [string]$target[0] }
+  } catch { }
+  return ''
+}
+
+# Put runtime\current back where it pointed before this attempt (nothing when it pointed nowhere).
+function Restore-OwnMindCurrent {
+  param([string]$Current, [string]$Previous)
+  Set-StrictMode -Version Latest
+  try { Remove-OwnMindCurrent -Current $Current } catch { }
+  if ($Previous -and (Test-Path -LiteralPath $Previous)) {
+    try { New-Item -ItemType Junction -Path $Current -Value $Previous -ErrorAction Stop | Out-Null } catch { }
   }
 }
 
@@ -198,6 +229,9 @@ function Ensure-OwnMindNode {
   param([string]$ApiUrl = '', [string]$ApiKey = '')
   Set-StrictMode -Version Latest
   $api = $ApiUrl.TrimEnd('/')
+  # Windows PowerShell 5.1 redraws a progress bar for every entry of the Node zip (about 2,500),
+  # which is most of the unpack time; with it off the unpack takes seconds.
+  $ProgressPreference = 'SilentlyContinue'
   $key = $ApiKey
   if (-not $key -and $env:OWNMIND_INSTALL_KEY) { $key = $env:OWNMIND_INSTALL_KEY }
   $base = $env:OWNMIND_DIR
@@ -296,28 +330,31 @@ function Ensure-OwnMindNode {
     return $false
   }
 
-  # Remember where current pointed, so a failed attempt can put it back.
-  $prev = ''
-  if (Test-Path -LiteralPath $current) {
-    $item = Get-Item -LiteralPath $current -Force
-    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-      $target = @($item.Target)
-      if ($target.Count -gt 0 -and $target[0]) { $prev = [string]$target[0] }
-    }
+  # Remember where current pointed, so a failed attempt can put it back. Then take current out of
+  # the way BEFORE node-<version> is deleted: a junction left pointing at a folder that is about
+  # to disappear (or that already has) would otherwise block the new one for good.
+  $prev = Get-OwnMindCurrentTarget -Current $current
+  try {
+    Remove-OwnMindCurrent -Current $current
+  } catch {
+    Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
+    Log-Err node_download "Could not replace $current"
+    return $false
   }
   $dest = Join-Path $runtime "node-$version"
   Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
   try {
     Move-Item -LiteralPath $inner[0].FullName -Destination $dest -ErrorAction Stop
   } catch {
+    Restore-OwnMindCurrent -Current $current -Previous $prev
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
     Log-Err node_download "Could not move Node.js into $runtime"
     return $false
   }
   try {
-    Remove-OwnMindCurrent -Current $current
     New-Item -ItemType Junction -Path $current -Value $dest -ErrorAction Stop | Out-Null
   } catch {
+    Restore-OwnMindCurrent -Current $current -Previous $prev
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
     Log-Err node_download "Could not link $current to the new Node.js"
@@ -326,12 +363,9 @@ function Ensure-OwnMindNode {
   $gotVer = Get-OwnMindNodeVersionOf $currentNode
   if ($gotVer -ne $version) {
     # Put things back the way they were before this attempt.
-    Remove-OwnMindCurrent -Current $current
     Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
+    Restore-OwnMindCurrent -Current $current -Previous $prev
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
-    if ($prev -and (Test-Path -LiteralPath $prev)) {
-      try { New-Item -ItemType Junction -Path $current -Value $prev -ErrorAction Stop | Out-Null } catch { }
-    }
     $said = $gotVer
     if (-not $said) { $said = 'nothing' }
     Log-Err node_download "The downloaded Node.js did not run (expected $version, got $said)"

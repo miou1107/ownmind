@@ -131,7 +131,7 @@ test('ensure-node-runtime.ps1 downloads the win32 zip, verifies SHA-256, and lin
   assert.match(ensurePs1, /\$env:Path = "\$current;\$env:Path"/);
   assert.match(ensurePs1, /'\.node-path'/);
   // the junction is made only after the unpack succeeded, and verified by running it
-  assert.ok(ensurePs1.indexOf('Expand-Archive') < ensurePs1.indexOf('New-Item -ItemType Junction'));
+  assert.ok(ensurePs1.indexOf('Expand-Archive') < ensurePs1.indexOf('New-Item -ItemType Junction -Path $current -Value $dest'));
   assert.match(ensurePs1, /if \(\$gotVer -ne \$version\)/);
   // the key is never sent to nodejs.org
   const nodejsFn = ensurePs1.slice(ensurePs1.indexOf('function Get-OwnMindNodeFromNodejs'), ensurePs1.indexOf('function Remove-OwnMindCurrent'));
@@ -157,4 +157,33 @@ test('ensure-node-runtime.ps1 reuses fetch-release.ps1 and keeps strict mode out
     assert.deepEqual(topLevel, [], 'a file-level Set-StrictMode would leak into install.ps1 when this file is dot-sourced');
   }
   assert.match(code(ensurePs1), /function Ensure-OwnMindNode \{[\s\S]*?Set-StrictMode -Version Latest/);
+});
+
+test('a junction whose target is gone is found and removed before node-<version> is deleted', () => {
+  // Test-Path and Get-Item follow a junction, so a dangling one looks absent and then blocks New-Item.
+  assert.match(ensurePs1, /\[System\.IO\.File\]::GetAttributes\(\$Path\)/);
+  assert.match(ensurePs1, /\[System\.IO\.Directory\]::Delete\(\$Current\)/);
+  const fn = ensurePs1.slice(ensurePs1.indexOf('function Remove-OwnMindCurrent'), ensurePs1.indexOf('function Get-OwnMindCurrentTarget'));
+  assert.doesNotMatch(code(fn), /Test-Path/, 'Remove-OwnMindCurrent must not follow the junction');
+  const main = ensurePs1.slice(ensurePs1.indexOf('function Ensure-OwnMindNode'));
+  assert.ok(main.indexOf('Remove-OwnMindCurrent -Current $current') < main.indexOf('Remove-Item -LiteralPath $dest -Recurse -Force'),
+    'current must be removed before runtime\\node-<version> is deleted');
+  assert.doesNotMatch(code(main), /Test-Path -LiteralPath \$current\b/);
+});
+
+test('the zip unpacks run with the progress bar off', () => {
+  const fetchPs1 = read('scripts', 'install-helpers', 'fetch-release.ps1');
+  for (const [name, src] of [['fetch-release.ps1', fetchPs1], ['ensure-node-runtime.ps1', ensurePs1]]) {
+    const at = src.indexOf('Expand-Archive -LiteralPath');
+    const before = src.slice(0, at);
+    assert.ok(before.lastIndexOf("$ProgressPreference = 'SilentlyContinue'") > before.lastIndexOf('\nfunction '),
+      name + ': the function that runs Expand-Archive turns the progress bar off first');
+  }
+});
+
+test('preflight.ps1 assigns the wrapped requirements array before it pipes it', () => {
+  const assertFn = preflightPs1.slice(preflightPs1.indexOf('function Assert-OwnMindRequirements'));
+  assert.match(assertFn, /\$all = Test-OwnMindRequirements\n/);
+  assert.match(assertFn, /\$failures = @\(\$all \| Where-Object/);
+  assert.doesNotMatch(code(assertFn), /Test-OwnMindRequirements \|/);
 });

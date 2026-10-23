@@ -206,6 +206,9 @@ function Expand-OwnMindRelease {
     [string]$Release = ''
   )
   Set-StrictMode -Version Latest
+  # Windows PowerShell 5.1 redraws a progress bar for every entry of the zip, and that drawing is
+  # most of the unpack time; with it off the same unpack takes seconds.
+  $ProgressPreference = 'SilentlyContinue'
   $unpack = Join-Path $Partial 'unpack'
   try {
     New-Item -ItemType Directory -Force -Path $unpack | Out-Null

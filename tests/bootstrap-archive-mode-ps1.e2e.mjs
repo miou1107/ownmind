@@ -45,7 +45,7 @@ const fixture = {
 };
 
 /** A zip holding a release: .release, an install.ps1 stub that records it ran, and one script. */
-async function buildArchive(workDir, name, { top = '', release } = {}) {
+async function buildArchive(workDir, name, { top = '', release, withHelpers = false } = {}) {
   const src = path.join(workDir, `src-${name}`);
   const rootDir = top ? path.join(src, top) : src;
   fs.mkdirSync(path.join(rootDir, 'scripts'), { recursive: true });
@@ -53,11 +53,21 @@ async function buildArchive(workDir, name, { top = '', release } = {}) {
   fs.writeFileSync(path.join(rootDir, 'install.ps1'), [
     '$args | Set-Content -LiteralPath (Join-Path $env:USERPROFILE "install-stub-args")',
     '(Get-Location).Path | Set-Content -LiteralPath (Join-Path $env:USERPROFILE "install-stub-cwd")',
+    '@("OWNMIND_NODE=$($env:OWNMIND_NODE)", "OWNMIND_PRIVATE_NODE=$($env:OWNMIND_PRIVATE_NODE)", "PATH=$($env:Path)") | Set-Content -LiteralPath (Join-Path $env:USERPROFILE "install-stub-env")',
     'if ($env:STUB_EXIT) { exit [int]$env:STUB_EXIT }',
     'exit 0',
     '',
   ].join('\r\n'));
   fs.writeFileSync(path.join(rootDir, 'scripts', 'marker.ps1'), '# present\r\n');
+  if (withHelpers) {
+    // The same two files a real release carries, so bootstrap's call into Ensure-OwnMindNode
+    // (guarded by Test-Path on the helper) is the branch that runs, not the guard-absent one.
+    const helpers = path.join(rootDir, 'scripts', 'install-helpers');
+    fs.mkdirSync(helpers, { recursive: true });
+    for (const f of ['fetch-release.ps1', 'ensure-node-runtime.ps1']) {
+      fs.copyFileSync(path.join(repoRoot, 'scripts', 'install-helpers', f), path.join(helpers, f));
+    }
+  }
   const out = path.join(workDir, `${name}.zip`);
   await writeZipFromDir({ dir: src, out });
   return fs.readFileSync(out);
@@ -83,7 +93,7 @@ async function buildNodeZip(workDir) {
 before(async () => {
   if (skip) return;
   fixture.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bootstrap-ps1-fixture-'));
-  fixture.archive = await buildArchive(fixture.dir, 'server', { release: 'v9.9.9' });
+  fixture.archive = await buildArchive(fixture.dir, 'server', { release: 'v9.9.9', withHelpers: true });
   // GitHub archives have one top-level folder and no .release of their own.
   fixture.githubArchive = await buildArchive(fixture.dir, 'github', { top: 'ownmind-1.10.0' });
   const node = await buildNodeZip(fixture.dir);
@@ -151,7 +161,8 @@ function makeCleanWindows() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bootstrap-ps1-home-'));
   const env = { ...process.env };
   for (const k of Object.keys(env)) {
-    if (/^(path|home|userprofile|ownmind_.*|claude.*|node_.*)$/i.test(k)) delete env[k];
+    // PSModulePath: the CI runner's carries PowerShell 7 module folders, which powershell.exe 5.1 would autoload.
+    if (/^(path|psmodulepath|home|userprofile|ownmind_.*|claude.*|node_.*)$/i.test(k)) delete env[k];
   }
   Object.assign(env, { Path: BARE_PATH, USERPROFILE: home, HOME: home, OWNMIND_DIR: path.join(home, '.ownmind') });
   return { home, env, cleanup: () => fs.rmSync(home, { recursive: true, force: true }) };
@@ -198,6 +209,18 @@ test('no git: the release is downloaded, unpacked into ~/.ownmind, and install.p
     assert.equal(fs.realpathSync(readTrim(path.join(win.home, 'install-stub-cwd'))), fs.realpathSync(dir));
     assert.equal(fixture.requests[0].auth, `Bearer ${KEY}`);
     assert.match(fixture.requests[0].url, /format=zip/);
+
+    // The release carries ensure-node-runtime.ps1 and the machine has no node, so bootstrap
+    // installed the private runtime from the fixture server before it ran install.ps1.
+    assert.match(r.out, new RegExp(`OK:node:private Node ${process.version.replace(/\./g, '\\.')} installed`));
+    const runtimeNode = path.join(dir, 'runtime', 'current', 'node.exe');
+    assert.ok(fs.existsSync(runtimeNode), 'runtime\\current\\node.exe must exist');
+    const env = readTrim(path.join(win.home, 'install-stub-env')).split(/\r?\n/);
+    assert.ok(env.includes(`OWNMIND_NODE=${runtimeNode}`), `install.ps1 must see OWNMIND_NODE: ${env.join(' | ')}`);
+    assert.ok(env.includes('OWNMIND_PRIVATE_NODE=1'));
+    assert.ok(env.some((l) => l.startsWith('PATH=') && l.toLowerCase().includes(path.join(dir, 'runtime', 'current').toLowerCase())), 'runtime\\current must be on PATH for install.ps1');
+    const nodeRequest = fixture.requests.find((q) => q.url.startsWith('/api/install/node'));
+    assert.ok(nodeRequest && nodeRequest.auth === `Bearer ${KEY}`);
   } finally {
     win.cleanup();
   }
@@ -348,7 +371,12 @@ test('private Node: downloaded from the server, unpacked, linked with a junction
   }
 });
 
-test('private Node: the server is down, so nodejs.org is used', { skip }, async () => {
+// The nodejs.org path only accepts the v22 line (NODE_LTS_MAJOR), and the fixture advertises the
+// node.exe that runs this test, so the case only means something when that is a v22. The CI
+// install job runs Node 20, where it is skipped; the server path above covers the rest of the helper.
+const skipNodejs = skip || (process.version.startsWith('v22.') ? false : `the runner has Node ${process.version}, and the nodejs.org path accepts only v22.x.y`);
+
+test('private Node: the server is down, so nodejs.org is used', { skip: skipNodejs }, async () => {
   const win = makeCleanWindows();
   try {
     fixture.nodeMode = '503';

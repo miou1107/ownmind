@@ -160,7 +160,14 @@ function Assert-OwnMindRequirements {
 
   # The informational lines are not failures. git is only a failure for a git checkout: an
   # archive install has no .git and never calls it.
-  $failures = @(Test-OwnMindRequirements | Where-Object { $_.Remedy -ne $script:OwnMindPreflightNoAction })
+  #
+  # Assign first, then pipe. Test-OwnMindRequirements returns its array wrapped (`,@(...)`) so that
+  # an empty result stays an array; piped straight into Where-Object that wrapper is ONE object,
+  # `$_` is the whole array, `$_.Remedy` is empty and a healthy machine counts as one failure.
+  # A plain assignment unwraps it, and an empty array stays an empty array.
+  $all = Test-OwnMindRequirements
+  if ($null -eq $all) { $all = @() }
+  $failures = @($all | Where-Object { $_.Remedy -ne $script:OwnMindPreflightNoAction })
   $ownmindDir = $env:OWNMIND_DIR
   if (-not $ownmindDir) { $ownmindDir = Join-Path $HOME '.ownmind' }
   if (-not (Test-Path -LiteralPath (Join-Path $ownmindDir '.git'))) {
