@@ -1,5 +1,20 @@
 # OwnMind 檔案結構
 
+## 尚未發版（零接觸安裝：伺服器發安裝腳本與壓縮檔）
+
+新增檔：
+```
+src/routes/install.js                                   — createInstallRouter：GET /install.sh、/install.ps1、/install-manual.md（不用登入）；GET /api/install/archive（要登入，標頭 X-OwnMind-Release）；GET /api/install/first-load?since=（要登入）
+src/services/install-archive.js                         — buildInstallArchive：把伺服器自己的檔案打成 .tar.gz（不含 node_modules、.git、tests、db、src、client/src），根目錄有 .release，一次行程只建一次
+tests/install-routes.test.js                            — 路由與壓縮檔內容、first-load 兩種結果
+```
+
+修改檔：
+```
+src/app.js                                              — 安裝路徑掛在 apiLimiter 之前，自己一分鐘 30 次
+Dockerfile, .dockerignore                               — 映像裡放進 scripts/、install.sh、install.ps1、mcp/、hooks/、skills/、configs/、docs/ai-install-runbook.md
+```
+
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
 
 修改檔：

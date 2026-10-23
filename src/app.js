@@ -82,6 +82,18 @@ app.use('/api/admin/setup', authLimiter);
 // 10 times per 15 minutes, enough to try password formats; once an admin exists the
 // endpoint auto-returns 403, and the rate limit is just a backstop against stray hits)
 app.use('/api/setup/init', authLimiter);
+// Zero-touch install: the three public scripts, the release archive and the first-load query.
+// Mounted ahead of apiLimiter so that downloading the archive does not count against the
+// 200 requests a minute of /api; these paths carry their own, lower ceiling instead.
+const installLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '請求太頻繁，請稍後再試' },
+});
+app.use(['/install.sh', '/install.ps1', '/install-manual.md', '/api/install'], installLimiter);
+app.use(createInstallRouter({ query, auth, logger }));
 app.use('/api', apiLimiter);
 
 // v1.19.8: first-run redirect middleware
@@ -160,6 +172,7 @@ import { createSessionLessonsRouter } from './routes/session-lessons.js';
 import { createActivityTouchRouter } from './routes/activity-touch.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { createReleaseRouter } from './routes/release.js';
+import { createInstallRouter } from './routes/install.js'; // zero-touch install
 import handoffRoutes from './routes/handoff.js';
 import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';

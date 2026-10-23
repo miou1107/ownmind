@@ -1,0 +1,191 @@
+// Zero-touch install, server half: the bootstrap scripts, the release archive and the
+// first-load query a watcher polls. Query and auth are stubbed; scripts come from a
+// fixture repo root so the test does not depend on the real install.sh contents.
+
+import { describe, it, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import express from 'express';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { startServer } from './helpers/app-server.js';
+import { tempDir } from './helpers/temp-dir.js';
+import { createInstallRouter } from '../src/routes/install.js';
+import { buildInstallArchive } from '../src/services/install-archive.js';
+
+const require = createRequire(import.meta.url);
+const PKG_VERSION = require('../package.json').version;
+const REAL_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const KEY = 'test-key';
+
+function fakeAuth(req, res, next) {
+  if (req.headers.authorization !== `Bearer ${KEY}`) return res.status(401).json({ error: 'unauthorized' });
+  req.user = { id: 7 };
+  next();
+}
+
+function makeFixtureRoot({ withRunbook = false } = {}) {
+  const root = tempDir('install-routes-');
+  const put = (rel, body) => {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root, rel), body);
+  };
+  put('install.sh', '#!/usr/bin/env bash\necho fixture\n');
+  put('install.ps1', '﻿Write-Host fixture\n');
+  put('package.json', '{"version":"0.0.0"}\n');
+  put('hooks/a.js', 'x');
+  put('src/secret.js', 'x');
+  put('db/001.sql', 'x');
+  put('tests/t.js', 'x');
+  put('node_modules/m/index.js', 'x');
+  put('client/node_modules/m/index.js', 'x');
+  put('client/src/main.jsx', 'x');
+  put('client/package.json', '{}');
+  put('.git/HEAD', 'ref');
+  if (withRunbook) put('docs/ai-install-runbook.md', '# runbook\n');
+  return root;
+}
+
+function buildApp({ query, repoRoot }) {
+  const app = express();
+  app.use('/', createInstallRouter({ query, auth: fakeAuth, logger: { warn() {}, error() {} }, repoRoot }));
+  return app;
+}
+
+describe('install routes', () => {
+  let root, rootWithRunbook, srv, srv2, calls, rows;
+
+  before(async () => {
+    root = makeFixtureRoot();
+    rootWithRunbook = makeFixtureRoot({ withRunbook: true });
+    calls = [];
+    rows = [];
+    const query = async (sql, params) => { calls.push({ sql, params }); return { rows }; };
+    srv = await startServer(buildApp({ query, repoRoot: root }));
+    srv2 = await startServer(buildApp({ query, repoRoot: rootWithRunbook }));
+  });
+  after(async () => {
+    await srv.close();
+    await srv2.close();
+  });
+
+  it('serves install.sh anonymously as plain text', async () => {
+    const r = await fetch(`${srv.url}/install.sh`);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/plain; charset=utf-8/);
+    assert.ok((await r.text()).startsWith('#!/usr/bin/env bash'));
+  });
+
+  it('serves install.ps1 anonymously without the byte order mark', async () => {
+    const r = await fetch(`${srv.url}/install.ps1`);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/plain; charset=utf-8/);
+    assert.equal(await r.text(), 'Write-Host fixture\n');
+  });
+
+  it('answers 404 manual_not_available until the runbook file exists', async () => {
+    const r = await fetch(`${srv.url}/install-manual.md`);
+    assert.equal(r.status, 404);
+    assert.deepEqual(await r.json(), { error: 'manual_not_available' });
+  });
+
+  it('serves the runbook as plain text once it exists', async () => {
+    const r = await fetch(`${srv2.url}/install-manual.md`);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/plain; charset=utf-8/);
+    assert.equal(await r.text(), '# runbook\n');
+  });
+
+  it('refuses the archive without a key', async () => {
+    const r = await fetch(`${srv.url}/api/install/archive`);
+    assert.equal(r.status, 401);
+  });
+
+  it('serves the archive with a key, tagged with the release version', async () => {
+    const r = await fetch(`${srv.url}/api/install/archive`, { headers: { authorization: `Bearer ${KEY}` } });
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^application\/gzip/);
+    assert.equal(r.headers.get('x-ownmind-release'), `v${PKG_VERSION}`);
+    const file = path.join(tempDir('install-routes-dl-'), 'archive.tar.gz');
+    fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+    try {
+      const names = execFileSync('tar', ['-tzf', file], { encoding: 'utf8' })
+        .split('\n').filter(Boolean).map((n) => n.replace(/^\.\//, ''));
+      assert.ok(names.includes('.release'));
+      assert.ok(names.includes('install.sh'));
+      assert.ok(names.includes('install.ps1'));
+      assert.ok(names.includes('hooks/a.js'));
+      for (const bad of ['src/', 'db/', 'tests/', '.git/', 'client/src/']) {
+        assert.ok(!names.some((n) => n === bad.replace(/\/$/, '') || n.startsWith(bad)), `${bad} must not be packed`);
+      }
+      assert.ok(!names.some((n) => n.split('/').includes('node_modules')), 'node_modules must not be packed');
+      assert.ok(names.includes('client/package.json'));
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  it('first-load: loaded=false when no init/hook row is newer than since', async () => {
+    rows = [];
+    calls.length = 0;
+    const since = '2026-10-23T00:00:00.000Z';
+    const r = await fetch(`${srv.url}/api/install/first-load?since=${encodeURIComponent(since)}`, { headers: { authorization: `Bearer ${KEY}` } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { loaded: false, at: null });
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].params, [7, since]);
+    assert.match(calls[0].sql, /event\s*=\s*'init'/);
+    assert.match(calls[0].sql, /source\s*=\s*'hook'/);
+  });
+
+  it('first-load: loaded=true with the timestamp when a row exists', async () => {
+    const ts = new Date('2026-10-23T01:02:03.000Z');
+    rows = [{ ts }];
+    const r = await fetch(`${srv.url}/api/install/first-load?since=2026-10-23T00:00:00.000Z`, { headers: { authorization: `Bearer ${KEY}` } });
+    assert.deepEqual(await r.json(), { loaded: true, at: ts.toISOString() });
+  });
+
+  it('first-load: refuses without a key and rejects a missing or malformed since', async () => {
+    const anon = await fetch(`${srv.url}/api/install/first-load?since=2026-10-23T00:00:00.000Z`);
+    assert.equal(anon.status, 401);
+    for (const q of ['', '?since=yesterday']) {
+      const r = await fetch(`${srv.url}/api/install/first-load${q}`, { headers: { authorization: `Bearer ${KEY}` } });
+      assert.equal(r.status, 400, q);
+    }
+  });
+});
+
+describe('buildInstallArchive', () => {
+  it('writes the version into .release and reuses the file within one process', async () => {
+    const root = makeFixtureRoot();
+    const a = await buildInstallArchive({ repoRoot: root, version: 'v9.9.9' });
+    try {
+      assert.equal(a.version, 'v9.9.9');
+      assert.equal(a.path, path.join(os.tmpdir(), 'ownmind-install-v9.9.9.tar.gz'));
+      assert.match(a.sha256, /^[0-9a-f]{64}$/);
+      const out = execFileSync('tar', ['-xzOf', a.path, '.release'], { encoding: 'utf8' });
+      assert.equal(out.trim(), 'v9.9.9');
+      const b = await buildInstallArchive({ repoRoot: root, version: 'v9.9.9' });
+      assert.equal(b.sha256, a.sha256);
+    } finally {
+      fs.rmSync(a.path, { force: true });
+    }
+  });
+
+  it('packs the real checkout without src, node_modules or tests', async () => {
+    const a = await buildInstallArchive({ repoRoot: REAL_ROOT, version: 'v0.0.0-real' });
+    try {
+      const names = execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+        .split('\n').filter(Boolean);
+      assert.ok(names.includes('.release'));
+      assert.ok(names.includes('install.sh'));
+      assert.ok(!names.some((n) => /^(src|db|tests|\.git)(\/|$)/.test(n)));
+      assert.ok(!names.some((n) => n.split('/').includes('node_modules')));
+    } finally {
+      fs.rmSync(a.path, { force: true });
+    }
+  });
+});

@@ -2,6 +2,7 @@
 # 若未來 server code 新增讀檔路徑、要從這份排除清單拿掉
 node_modules
 client/node_modules
+mcp/node_modules
 client/dist
 .git
 .github
@@ -12,6 +13,8 @@ openspec
 tests
 docs
 *.md
+# Zero-touch install: served as /install-manual.md and packed into the release archive.
+!docs/ai-install-runbook.md
 # v1.26.126：例外。src/utils/changelog.js 在啟動時讀這一份，供 GET /api/changelog 用。
 # 少了這行 re-include，Dockerfile 的 COPY CHANGELOG.md 會直接讓 build 失敗
 #（failed to compute cache key: "/CHANGELOG.md": not found）——不是「頁尾空的」而已。
