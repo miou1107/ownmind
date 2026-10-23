@@ -56,5 +56,6 @@
   "install.next.verify_manual_generic": "OwnMind のインストールが完了しました。新しい会話を開始すると、記憶が読み込まれます。",
   "install.verify.session_title": "OwnMind インストール確認",
   "install.notify.loaded": "OwnMind は動作しており、記憶も読み込まれました。",
-  "install.notify.not_loaded": "OwnMind はインストールされましたが、まだ記憶が読み込まれていません。新しい会話を開いてみてください。それでも読み込まれない場合は、AI に「OwnMind を修復して」と貼り付けてください。"
+  "install.notify.not_loaded": "OwnMind はインストールされましたが、まだ記憶が読み込まれていません。新しい会話を開いてみてください。それでも読み込まれない場合は、AI に「OwnMind を修復して」と貼り付けてください。",
+  "install.ask.unsupported_os": "このインストーラーは現在 macOS と Windows のみに対応しているため、このパソコンのシステムにはインストールできません。"
 }

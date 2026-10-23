@@ -40,39 +40,73 @@ function Enable-OwnMindTls12 {
   } catch { }
 }
 
-# Write-OwnMindAsk -Code CODE -Literal "ASK:CODE:<English sentence>"
-# Prints an ASK line the AI relays to the person. When this computer already has a node and the
-# OwnMind checkout's install-messages.cjs, the sentence comes out in the person's own language
-# (the Windows UI culture picks it); otherwise (bootstrap runs before any node is on the
-# machine) the English literal is printed. The literal must equal hooks/locales/en.json:
-# tests/install-messages.test.js checks that.
-function Write-OwnMindAsk {
+# Write-OwnMindLocalized -Prefix TEXT -Command @('ask', CODE) -Literal TEXT
+# Prints Prefix + a sentence in the person's own language (the Windows UI language picks it) when
+# this computer already has a node and the OwnMind checkout's install-messages.cjs; otherwise
+# (bootstrap runs before any node is on the machine) Prefix + the English Literal. The sentence is
+# printed while the console is still switched to UTF-8: the same text printed after the old code
+# page is back would reach the AI as garbage. When the console cannot be switched, the English
+# literal is printed instead. Returns the line it printed. The literal must equal
+# hooks/locales/en.json: tests/install-messages.test.js checks that.
+function Write-OwnMindLocalized {
   param(
-    [Parameter(Mandatory = $true)][string]$Code,
+    [string]$Prefix = '',
+    [Parameter(Mandatory = $true)][string[]]$Command,
     [Parameter(Mandatory = $true)][string]$Literal
   )
-  $line = ''
+  $text = ''
   try {
     $dir = Join-Path $env:USERPROFILE '.ownmind'
     if ($env:OWNMIND_DIR) { $dir = $env:OWNMIND_DIR }
     $helper = Join-Path $dir 'scripts\install-helpers\install-messages.cjs'
     $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
     if ($node -and (Test-Path -LiteralPath $helper)) {
-      $argv = @($helper, 'ask', $Code)
-      if (-not $env:OWNMIND_LOCALE_FORCE) { $argv += @('--locale', (Get-Culture).Name) }
+      $argv = @($helper) + $Command
+      if (-not $env:OWNMIND_LOCALE_FORCE) { $argv += @('--locale', (Get-UICulture).Name) }
+      $exe = [string]@($node)[0].Source
       $previous = [Console]::OutputEncoding
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
       try {
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $exe = [string]@($node)[0].Source
         $out = & $exe @argv 2>$null
+        if ($LASTEXITCODE -eq 0 -and $out) {
+          $text = $Prefix + ("$out").Trim()
+          Write-Host $text
+        }
       } finally {
         [Console]::OutputEncoding = $previous
       }
-      if ($LASTEXITCODE -eq 0 -and $out) { $line = ("$out").Trim() }
     }
   } catch { }
-  if (-not $line) { $line = $Literal }
-  Write-Host $line
+  if (-not $text) {
+    $text = $Prefix + $Literal
+    Write-Host $text
+  }
+  return $text
+}
+
+# Write-OwnMindAsk -Code CODE -Literal "ASK:CODE:<English sentence>"
+function Write-OwnMindAsk {
+  param(
+    [Parameter(Mandatory = $true)][string]$Code,
+    [Parameter(Mandatory = $true)][string]$Literal
+  )
+  Write-OwnMindLocalized -Command @('ask', $Code) -Literal $Literal | Out-Null
+}
+
+# The PowerShell command that runs the installer again: the server's own install.ps1, with the
+# server address when it is known ($global:OwnMindFixApi) and the key left as <KEY> for the AI to
+# fill in from the install message. -Source github or clear adds the OWNMIND_SOURCE setting that
+# is the fix; clear-node resets OWNMIND_NODE_SOURCE.
+function Get-OwnMindRetryCommand {
+  param([string]$Source = '')
+  $api = '<API_URL>'
+  $known = Get-Variable -Name OwnMindFixApi -Scope Global -ErrorAction SilentlyContinue
+  if ($known -and $known.Value) { $api = [string]$known.Value }
+  $set = ''
+  if ($Source -eq 'github') { $set = '$env:OWNMIND_SOURCE=''github''; ' }
+  elseif ($Source -eq 'clear') { $set = '$env:OWNMIND_SOURCE=''''; ' }
+  elseif ($Source -eq 'clear-node') { $set = '$env:OWNMIND_NODE_SOURCE=''''; ' }
+  return ($set + '$env:OWNMIND_API_KEY=''<KEY>''; $env:OWNMIND_API_URL=''' + $api + '''; irm ' + $api + '/install.ps1 | iex')
 }
 
 # Whether an error from a download or an unpack says the disk is full (Windows error 112,
@@ -88,6 +122,24 @@ function Test-OwnMindDiskFull {
     $ex = $ex.InnerException
   }
   return $false
+}
+
+# Write-OwnMindStopWrite -Code CODE -Message TEXT -ErrorRecord $_
+# A step that writes to disk failed. A full disk is something only the person can fix (ASK);
+# anything else is worth one more run (FIX).
+function Write-OwnMindStopWrite {
+  param(
+    [Parameter(Mandatory = $true)][string]$Code,
+    [Parameter(Mandatory = $true)][string]$Message,
+    $ErrorRecord = $null
+  )
+  if (Test-OwnMindDiskFull $ErrorRecord) {
+    Log-Err $Code "$Message (the disk is full)"
+    Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  } else {
+    Log-Err $Code $Message
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
+  }
 }
 
 # Invoke-OwnMindDownload -Uri URL -Dest FILE [-Headers @{...}]
@@ -106,7 +158,12 @@ function Invoke-OwnMindDownload {
   $ProgressPreference = 'SilentlyContinue'
   $dir = Split-Path -Parent $Dest
   if ($dir -and -not (Test-Path -LiteralPath $dir)) {
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    try {
+      New-Item -ItemType Directory -Force -Path $dir -ErrorAction Stop | Out-Null
+    } catch {
+      if (Test-OwnMindDiskFull $_) { $global:OwnMindDiskFull = $true }
+      return $null
+    }
   }
   for ($attempt = 1; $attempt -le 3; $attempt++) {
     try {
@@ -176,6 +233,7 @@ function Get-OwnMindArchive {
   $global:OwnMindDiskFull = $false
   $api = ''
   if ($Api) { $api = $Api.TrimEnd('/') }
+  $global:OwnMindFixApi = $api
   $source = ''
   if ($env:OWNMIND_SOURCE) { $source = $env:OWNMIND_SOURCE }
   $ghBase = 'https://github.com'
@@ -184,7 +242,7 @@ function Get-OwnMindArchive {
 
   if ($source -ne '' -and $source -ne 'server' -and $source -ne 'github') {
     Log-Err download "OWNMIND_SOURCE must be server or github (got: $source)"
-    Write-Host "FIX:retry_install:`$env:OWNMIND_SOURCE=''; <same one-liner>"
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand -Source clear)"
     return $null
   }
 
@@ -202,7 +260,7 @@ function Get-OwnMindArchive {
     }
     if ($source -eq 'server') {
       Log-Err download "Could not download the release archive from $api"
-      Write-Host "FIX:use_fallback_source:`$env:OWNMIND_SOURCE='github'; <same one-liner>"
+      Write-Host "FIX:use_fallback_source:$(Get-OwnMindRetryCommand -Source github)"
       Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
       return $null
     }
@@ -262,7 +320,7 @@ function Expand-OwnMindRelease {
       Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
     } else {
       Log-Err unpack "Could not unpack the archive (it may be damaged)"
-      Write-Host "FIX:retry_install:<same one-liner>"
+      Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     }
     return $false
   }
@@ -272,7 +330,7 @@ function Expand-OwnMindRelease {
     $all = @(Get-ChildItem -LiteralPath $unpack -Force)
     if ($all.Count -ne 1 -or -not $all[0].PSIsContainer) {
       Log-Err unpack "The GitHub archive does not have the one top-level folder that was expected"
-      Write-Host "FIX:retry_install:<same one-liner>"
+      Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
       return $false
     }
     $root = $all[0].FullName
@@ -280,19 +338,18 @@ function Expand-OwnMindRelease {
   }
   if (-not (Test-Path -LiteralPath (Join-Path $root '.release') -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $root 'install.ps1') -PathType Leaf)) {
     Log-Err unpack "The archive is missing .release or install.ps1"
-    Write-Host "FIX:retry_install:<same one-liner>"
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     return $false
   }
   Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
   $parent = Split-Path -Parent $Final
-  if ($parent -and -not (Test-Path -LiteralPath $parent)) {
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
-  }
   try {
+    if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+      New-Item -ItemType Directory -Force -Path $parent -ErrorAction Stop | Out-Null
+    }
     Move-Item -LiteralPath $root -Destination $Final -ErrorAction Stop
   } catch {
-    Log-Err unpack "Could not move the unpacked files into $Final"
-    Write-Host "FIX:retry_install:<same one-liner>"
+    Write-OwnMindStopWrite -Code unpack -Message "Could not move the unpacked files into $Final" -ErrorRecord $_
     return $false
   }
   Remove-Item -LiteralPath $Partial -Recurse -Force -ErrorAction SilentlyContinue

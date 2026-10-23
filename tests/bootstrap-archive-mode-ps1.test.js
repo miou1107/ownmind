@@ -40,7 +40,7 @@ test('a machine without git is no longer turned away', () => {
   assert.match(bootstrap, /Log-Info archive_mode "git is not installed; installing from the release archive"/);
   // Same lookup as before: a profile alias named git is not a program these scripts can run.
   assert.match(bootstrap, /\$gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue\n\$HasGit = \(\$null -ne \$gitCmd\)/);
-  assert.match(bootstrap, /if \(-not \$HasGit\) \{\n\s+Install-FromArchive \$InstallArgs\n\s+exit 0/);
+  assert.match(bootstrap, /if \(-not \$HasGit\) \{\n\s+Install-FromArchive \$InstallArgs\n\s+Write-OwnMindNext\n\s+exit 0/);
 });
 
 test('the git path is still there, unchanged in shape', () => {
@@ -68,8 +68,8 @@ test('the sentences the person reads are byte-identical to the shell side', () =
   const occurrences = block.split(ask[0]).length - 1;
   assert.equal(occurrences, 2, 'both failure paths (server forced, and both sources failed) print the same ASK sentence');
   // The FIX codes are the same; the command is the PowerShell spelling of the shell one.
-  assert.match(bootstrapSh, /FIX:use_fallback_source:OWNMIND_SOURCE=github bash <same one-liner>/);
-  assert.match(block, /FIX:use_fallback_source:`\$env:OWNMIND_SOURCE='github'; <same one-liner>/);
+  assert.match(bootstrapSh, /FIX:use_fallback_source:\$\(ownmind_retry_cmd "OWNMIND_SOURCE=github "\)/);
+  assert.match(block, /FIX:use_fallback_source:\$\(Get-OwnMindRetryCommand -Source github\)/);
   assert.match(bootstrapSh, /FIX:clear_partial:rm -rf ~\/\.ownmind\.partial/);
   assert.match(bootstrap, /FIX:clear_partial:Remove-Item -Recurse -Force "\$env:USERPROFILE\\\.ownmind\.partial"/);
   // The other ERROR / INFO sentences.

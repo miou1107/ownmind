@@ -144,15 +144,15 @@ ownmind_node_from_nodejs() {
 
 # Export the private runtime for the rest of the install.
 ownmind_node_use_private() {
-  local runtime="$1"
+  local runtime="$1" io_out
   export OWNMIND_NODE="$runtime/current/bin/node"
   export OWNMIND_PRIVATE_NODE=1
   case ":$PATH:" in
     *":$runtime/current/bin:"*) ;;
     *) export PATH="$runtime/current/bin:$PATH" ;;
   esac
-  mkdir -p "$(dirname "$runtime")" || return 1
-  printf '%s\n' "$OWNMIND_NODE" > "$(dirname "$runtime")/.node-path"
+  io_out=$(mkdir -p "$(dirname "$runtime")" 2>&1) || { ownmind_stop_write node_download "Could not create the folder for the Node.js runtime" "$io_out"; return 1; }
+  io_out=$({ printf '%s\n' "$OWNMIND_NODE" > "$(dirname "$runtime")/.node-path"; } 2>&1) || { ownmind_stop_write node_download "Could not write .node-path" "$io_out"; return 1; }
 }
 
 # ownmind_ensure_node API_URL KEY
@@ -164,12 +164,16 @@ ownmind_ensure_node() {
   local runtime="$base/runtime"
   local partial="$runtime/.partial"
   local source="${OWNMIND_NODE_SOURCE:-}"
-  local sys_node sys_major sys_ver priv_ver arch version prev got ok tar_out
+  local sys_node sys_major sys_ver priv_ver arch version prev got ok tar_out io_out
   OWNMIND_NODE_DISK_FULL=0
+  [ -n "$api" ] && OWNMIND_FIX_API="${api%/}"
 
   case "$source" in
     ""|server|nodejs) ;;
-    *) log_err node_download "OWNMIND_NODE_SOURCE must be server or nodejs (got: $source)"; return 1 ;;
+    *)
+      log_err node_download "OWNMIND_NODE_SOURCE must be server or nodejs (got: $source)"
+      echo "FIX:retry_install:$(ownmind_retry_cmd "OWNMIND_NODE_SOURCE= ")"
+      return 1 ;;
   esac
 
   # 1. A Node of v20 or newer on PATH is used as it is.
@@ -178,6 +182,7 @@ ownmind_ensure_node() {
     sys_ver=$("$sys_node" --version 2>/dev/null)
     if [ "$sys_node" = "$runtime/current/bin/node" ]; then
       # An earlier step of this same install already put the private runtime first on PATH.
+      # grammar-allow: ownmind_node_use_private has already printed its own ERROR with FIX or ASK
       ownmind_node_use_private "$runtime" || return 1
       log_info node "using private Node $sys_ver"
     else
@@ -191,6 +196,7 @@ ownmind_ensure_node() {
   # 2. A private runtime from an earlier install is reused without a download.
   if [ -x "$runtime/current/bin/node" ] && priv_ver=$("$runtime/current/bin/node" --version 2>/dev/null) \
     && sys_major=$(ownmind_node_major "$runtime/current/bin/node") && [ "$sys_major" -ge "$OWNMIND_NODE_FLOOR_MAJOR" ]; then
+    # grammar-allow: ownmind_node_use_private has already printed its own ERROR with FIX or ASK
     ownmind_node_use_private "$runtime" || return 1
     log_info node "using private Node $priv_ver"
     return 0
@@ -198,15 +204,17 @@ ownmind_ensure_node() {
 
   # 3. Download one.
   if [ "$(uname -s 2>/dev/null)" != "Darwin" ]; then
-    log_err node "Node.js v20 or newer is required; install it with your package manager (https://nodejs.org/) and run the install again"
+    log_err node "No Node.js v20 or newer was found, and the installer can only fetch one on macOS"
+    ownmind_ask_line unsupported_os "ASK:unsupported_os:The installer only supports macOS and Windows for now, so it cannot install on this computer's system."
     return 1
   fi
   if ! arch=$(ownmind_node_arch); then
     log_err node_download "No Node.js download exists for this CPU ($(uname -m 2>/dev/null))"
+    ownmind_ask_line unsupported_os "ASK:unsupported_os:The installer only supports macOS and Windows for now, so it cannot install on this computer's system."
     return 1
   fi
   rm -rf "$partial"
-  mkdir -p "$partial" || { log_err node_download "Could not create $partial"; return 1; }
+  io_out=$(mkdir -p "$partial" 2>&1) || { ownmind_stop_write node_download "Could not create $partial" "$io_out"; return 1; }
 
   log_info node_download "trying the OwnMind server, then nodejs.org (this can take a few minutes when offline)"
   ok=0
@@ -229,7 +237,7 @@ ownmind_ensure_node() {
   fi
   version="$OWNMIND_NODE_VERSION"
 
-  mkdir -p "$partial/unpack" || return 1
+  io_out=$(mkdir -p "$partial/unpack" 2>&1) || { rm -rf "$partial"; ownmind_stop_write node_download "Could not create $partial/unpack" "$io_out"; return 1; }
   if ! tar_out=$(tar -xzf "$partial/node.tar.gz" -C "$partial/unpack" --strip-components=1 2>&1); then
     rm -rf "$partial"
     if ownmind_says_disk_full "$tar_out"; then
@@ -237,7 +245,7 @@ ownmind_ensure_node() {
       ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
     else
       log_err node_download "Could not unpack the Node.js archive (it may be damaged)"
-      echo "FIX:retry_install:bash <same one-liner>"
+      echo "FIX:retry_install:$(ownmind_retry_cmd)"
     fi
     return 1
   fi
@@ -249,8 +257,8 @@ ownmind_ensure_node() {
     rm -rf "$runtime/current"
   fi
   rm -rf "$runtime/node-$version"
-  mv "$partial/unpack" "$runtime/node-$version" || { rm -rf "$partial"; log_err node_download "Could not move Node.js into $runtime"; return 1; }
-  ln -sfn "node-$version" "$runtime/current" || { rm -rf "$partial" "$runtime/node-$version"; return 1; }
+  io_out=$(mv "$partial/unpack" "$runtime/node-$version" 2>&1) || { rm -rf "$partial"; ownmind_stop_write node_download "Could not move Node.js into $runtime" "$io_out"; return 1; }
+  io_out=$(ln -sfn "node-$version" "$runtime/current" 2>&1) || { rm -rf "$partial" "$runtime/node-$version"; ownmind_stop_write node_download "Could not link $runtime/current to the new Node.js" "$io_out"; return 1; }
   got=$("$runtime/current/bin/node" --version 2>/dev/null || true)
   if [ "$got" != "$version" ]; then
     # Put things back the way they were before this attempt.
@@ -262,6 +270,7 @@ ownmind_ensure_node() {
   fi
   rm -rf "$partial"
 
+  # grammar-allow: ownmind_node_use_private has already printed its own ERROR with FIX or ASK
   ownmind_node_use_private "$runtime" || return 1
   log_ok node "private Node $version installed"
   return 0

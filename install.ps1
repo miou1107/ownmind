@@ -32,37 +32,54 @@ function Reload-Path {
 #   ERROR:<code>:<message> then FIX:<code>:<command>   a stop the AI can repair and retry
 #   ASK:<code>:<sentence>                              a stop only the person can resolve
 #   NEXT:<kind>[:<detail>]                             what to do after a successful install
-# Get-OwnMindSentence asks the OwnMind checkout's install-messages.cjs for a sentence in the
+# Write-OwnMindLocalized asks the OwnMind checkout's install-messages.cjs for a sentence in the
 # person's language (the Windows UI culture picks it), and returns the English literal when
-# there is no node or no checkout yet. The literal must equal hooks/locales/en.json:
+# there is no node or no checkout yet, and prints it while the console is still in UTF-8. The literal must equal hooks/locales/en.json:
 # tests/install-messages.test.js checks that.
-function Get-OwnMindSentence {
+function Write-OwnMindLocalized {
   param(
+    [string]$Prefix = '',
     [Parameter(Mandatory = $true)][string[]]$Command,
     [Parameter(Mandatory = $true)][string]$Literal
   )
+  $text = ''
   try {
     $helper = Join-Path $HOME '.ownmind\scripts\install-helpers\install-messages.cjs'
     $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
     if ($node -and (Test-Path -LiteralPath $helper)) {
       $argv = @($helper) + $Command
-      if (-not $env:OWNMIND_LOCALE_FORCE) { $argv += @('--locale', (Get-Culture).Name) }
+      if (-not $env:OWNMIND_LOCALE_FORCE) { $argv += @('--locale', (Get-UICulture).Name) }
+      $exe = [string]@($node)[0].Source
       $previous = [Console]::OutputEncoding
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
       try {
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $exe = [string]@($node)[0].Source
         $out = & $exe @argv 2>$null
+        if ($LASTEXITCODE -eq 0 -and $out) {
+          $text = $Prefix + ("$out").Trim()
+          Write-Host $text
+        }
       } finally {
         [Console]::OutputEncoding = $previous
       }
-      if ($LASTEXITCODE -eq 0 -and $out) { return ("$out").Trim() }
     }
   } catch { }
-  return $Literal
+  if (-not $text) {
+    $text = $Prefix + $Literal
+    Write-Host $text
+  }
+  return $text
 }
 function Write-OwnMindAsk {
   param([Parameter(Mandatory = $true)][string]$Code, [Parameter(Mandatory = $true)][string]$Literal)
-  Write-Host (Get-OwnMindSentence -Command @('ask', $Code) -Literal $Literal)
+  Write-OwnMindLocalized -Command @('ask', $Code) -Literal $Literal | Out-Null
+}
+# The PowerShell command that runs the installer again: the server's own install.ps1, with the
+# key left as <KEY> for the AI to fill in from the install message.
+function Get-OwnMindRetryCommand {
+  $api = '<API_URL>'
+  $known = Get-Variable -Name OwnMindFixApi -Scope Global -ErrorAction SilentlyContinue
+  if ($known -and $known.Value) { $api = [string]$known.Value }
+  return ('$env:OWNMIND_API_KEY=''<KEY>''; $env:OWNMIND_API_URL=''' + $api + '''; irm ' + $api + '/install.ps1 | iex')
 }
 
 # --- 參數處理（同時支援 param 和環境變數，irm | iex 不支援 param）---
@@ -70,16 +87,18 @@ function Write-OwnMindAsk {
 $PosArgs = @($args | Where-Object { $_ -notlike '-*' })
 if ($PosArgs.Count -ge 1) { $ApiKey = $PosArgs[0] } else { $ApiKey = $env:OWNMIND_API_KEY }
 if ($PosArgs.Count -ge 2) { $ApiUrl = $PosArgs[1] } else { $ApiUrl = $env:OWNMIND_API_URL }
+$global:OwnMindFixApi = ''
+if ($ApiUrl) { $global:OwnMindFixApi = "$ApiUrl".TrimEnd('/') }
 
 if (-not $ApiKey) {
   Write-Host "ERROR:missing_args:API Key and API URL required"
-  Write-Host "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
+  Write-Host "FIX:rerun_with_args:`$env:OWNMIND_API_KEY='<KEY>'; `$env:OWNMIND_API_URL='<API_URL>'; irm <API_URL>/install.ps1 | iex"
   Write-Error "API Key required`nUsage:   .\install.ps1 YOUR_API_KEY YOUR_API_URL`nOr env:  `$env:OWNMIND_API_KEY='xxx'; `$env:OWNMIND_API_URL='https://...'"
   exit 1
 }
 if (-not $ApiUrl) {
   Write-Host "ERROR:missing_args:API Key and API URL required"
-  Write-Host "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
+  Write-Host "FIX:rerun_with_args:`$env:OWNMIND_API_KEY='<KEY>'; `$env:OWNMIND_API_URL='<API_URL>'; irm <API_URL>/install.ps1 | iex"
   Write-Error "API URL required`nUsage: .\install.ps1 YOUR_API_KEY YOUR_API_URL"
   exit 1
 }
@@ -170,8 +189,8 @@ function Confirm-NodeVersion {
   $nodeMajor = 0
   try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
   if ($nodeMajor -lt 20) {
-    Write-Host "ERROR:node_missing:Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+."
-    Write-Host "FIX:retry_install:<same one-liner> (it downloads a private Node.js when none is usable)"
+    Write-Host "ERROR:node_missing:Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+. Running the installer again downloads a private Node.js when none is usable."
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     Write-Error "Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+. Run the install again: it downloads a private Node.js when none is usable."
     exit 1
   }
@@ -183,7 +202,7 @@ function Invoke-NodeStep {
   $nodeOk = @(Ensure-OwnMindNode -ApiUrl $ApiUrl -ApiKey $ApiKey) | Select-Object -Last 1
   if (-not $nodeOk) {
     Report-Error -Kind "install_node_runtime_failed" -Detail "no usable Node.js and the private runtime could not be installed"
-    # grammar-allow: Ensure-OwnMindNode has already printed its own ERROR with ASK
+    # grammar-allow: Ensure-OwnMindNode has already printed its own ERROR with FIX or ASK
     exit 1
   }
   $script:NodeStepPending = $false
@@ -195,8 +214,8 @@ if (Test-Path $NodeHelper) {
 } elseif ((Test-NodeUsable) -or -not (Test-Path (Join-Path $HOME '.ownmind'))) {
   $NodeStepPending = $true
 } else {
-  Write-Host "ERROR:node_missing:Node.js is missing or too old, and this OwnMind checkout is too old to install one."
-  Write-Host "FIX:retry_install:<same one-liner> (it brings this checkout up to date first, then installs a private Node.js)"
+  Write-Host "ERROR:node_missing:Node.js is missing or too old, and this OwnMind checkout is too old to install one. Running the installer again brings the checkout up to date and installs a private Node.js."
+  Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
   Write-Error "Node.js is missing or too old, and this OwnMind checkout is too old to install one. Install Node.js v20+ LTS from https://nodejs.org/ and retry"
   exit 1
 }
@@ -317,7 +336,7 @@ if ((Test-Path $OwnmindDir) -and ((Test-Path $ReleaseFile) -or (Test-Path (Join-
     Maybe-LoadReportError
     Report-Error -Kind "install_git_pull_failed" -Detail "更新 $OwnmindDir 失敗（更新到最新正式版，或舊版的 git pull）"
     Write-Host "ERROR:update_failed:Updating OwnMind failed. Run bootstrap or fix manually"
-    Write-Host "FIX:retry_install:<same one-liner>"
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     Write-Error "git pull failed. Run bootstrap or fix manually and retry"
     exit 1
   }
@@ -325,8 +344,8 @@ if ((Test-Path $OwnmindDir) -and ((Test-Path $ReleaseFile) -or (Test-Path (Join-
   Write-Host "[INFO] Cloning OwnMind MCP server"
   if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) {
     Report-Error -Kind "install_git_clone_failed" -Detail "git is not installed and there is no OwnMind folder to update"
-    Write-Host "ERROR:git_missing:git is not installed, and there is no OwnMind folder yet."
-    Write-Host "FIX:retry_install:<same one-liner> (bootstrap installs from the release archive without git)"
+    Write-Host "ERROR:git_missing:git is not installed, and there is no OwnMind folder yet. The installer from the server installs from the release archive without git."
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     Write-Error "git is not installed, and there is no OwnMind folder yet. Run bootstrap.ps1, which installs from the release archive without git."
     exit 1
   }
@@ -360,12 +379,16 @@ Maybe-LoadReportError
 
 Write-Host "[INFO] Installing dependencies"
 Push-Location (Join-Path $OwnmindDir "mcp")
-npm install -q 2>$null
+$npmOutput = "$(cmd /c "npm install -q 2>&1" | Out-String)"
 if ($LASTEXITCODE -ne 0) {
   Pop-Location
   Report-Error -Kind "install_npm_failed" -Detail "npm install 在 $OwnmindDir\mcp 失敗"
   Write-Host "ERROR:npm_install:npm install failed."
-  Write-Host "FIX:retry_install:<same one-liner>"
+  if ($npmOutput -match 'ENOSPC|no space left|not enough space on the disk') {
+    Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  } else {
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
+  }
   Write-Error "npm install failed. Try: npm install -g npm@latest and retry"
   exit 1
 }
@@ -928,10 +951,19 @@ Write-Host ""
 # This is the last line printed: whatever reads the output last reads the instruction.
 $HasTerminal = $false
 try { $HasTerminal = ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) } catch { }
+$NextLine = ''
+$NextEnglish = ''
 if ($env:CLAUDE_CODE_ENTRYPOINT -eq 'claude-desktop' -or $env:CLAUDE_CODE_DESKTOP_APP_VERSION) {
-  Write-Host "NEXT:verify:new-session"
+  $NextEnglish = 'NEXT:verify:new-session:OwnMind install check'
+  $NextLine = Write-OwnMindLocalized -Prefix 'NEXT:verify:new-session:' -Command @('say', 'install.verify.session_title') -Literal "OwnMind install check"
 } elseif ($env:CLAUDE_CODE_ENTRYPOINT -eq 'cli' -or (-not $env:CLAUDE_CODE_ENTRYPOINT -and $HasTerminal)) {
-  Write-Host ("NEXT:verify:manual:" + (Get-OwnMindSentence -Command @('say', 'install.next.verify_manual_terminal') -Literal "OwnMind is installed. Type /exit, then run claude again, and your memory will load."))
+  $NextEnglish = 'NEXT:verify:manual:OwnMind is installed. Type /exit, then run claude again, and your memory will load.'
+  $NextLine = Write-OwnMindLocalized -Prefix 'NEXT:verify:manual:' -Command @('say', 'install.next.verify_manual_terminal') -Literal "OwnMind is installed. Type /exit, then run claude again, and your memory will load."
 } else {
-  Write-Host ("NEXT:verify:manual:" + (Get-OwnMindSentence -Command @('say', 'install.next.verify_manual_generic') -Literal "OwnMind is installed. Start a new conversation and your memory will load."))
+  $NextEnglish = 'NEXT:verify:manual:OwnMind is installed. Start a new conversation and your memory will load.'
+  $NextLine = Write-OwnMindLocalized -Prefix 'NEXT:verify:manual:' -Command @('say', 'install.next.verify_manual_generic') -Literal "OwnMind is installed. Start a new conversation and your memory will load."
+}
+# bootstrap asked for a copy (OWNMIND_NEXT_FILE) so that it can print the line again as its own last line
+if ($env:OWNMIND_NEXT_FILE -and $NextLine) {
+  try { [System.IO.File]::WriteAllText($env:OWNMIND_NEXT_FILE, "$NextLine`n$NextEnglish`n", (New-Object System.Text.UTF8Encoding $false)) } catch { }
 }

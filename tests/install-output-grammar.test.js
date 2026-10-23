@@ -34,20 +34,63 @@ const FILES = [
 
 const WINDOW = 6;
 const EXIT = /\bexit [12]\b/;
+const RETURN_FAIL = /\breturn (1|\$false|\$null)\b/;
+
+// The functions that end a step of the install by returning a failure.
+const FETCH_STOPS = ['ownmind_download_archive', 'ownmind_unpack_release', 'Get-OwnMindArchive', 'Expand-OwnMindRelease'];
+const NODE_STOPS = ['ownmind_ensure_node', 'ownmind_node_use_private', 'Ensure-OwnMindNode', 'Use-OwnMindPrivateNode'];
+const STOP_FUNCTIONS = {
+  'scripts/bootstrap.sh': FETCH_STOPS,
+  'scripts/bootstrap.ps1': FETCH_STOPS,
+  'scripts/install-helpers/fetch-release.sh': FETCH_STOPS,
+  'scripts/install-helpers/fetch-release.ps1': FETCH_STOPS,
+  'scripts/install-helpers/ensure-node-runtime.sh': NODE_STOPS,
+  'scripts/install-helpers/ensure-node-runtime.ps1': NODE_STOPS,
+};
 const ERROR_MARK = /ERROR:|\blog_err\b|\bLog-Err\b/;
 const FIX_MARK = /FIX:|\blog_fix\b|\bLog-Fix\b/;
-const ASK_MARK = /ASK:|\bownmind_ask_line\b|\bAsk-Line\b|\bOwnMind-AskLine\b/;
+const ASK_MARK = /ASK:|\bownmind_ask_line\b|\bWrite-OwnMindAsk\b/;
+// A call to a helper that always prints an ERROR line and then a FIX or an ASK line.
+const STOP_MARK = /\bownmind_stop_write\b|\bWrite-OwnMindStopWrite\b|\bownmind_unpack_failed\b/;
 const ALLOW = /grammar-allow:\s*(\S.{9,})/;
 
-/** The stops in `text` that have neither an ERROR+FIX pair nor an ASK nearby, and no allow comment. */
-export function bareExits(text) {
+/**
+ * The line ranges (0-based, inclusive) of the named functions: `name() {` in shell,
+ * `function Name {` in PowerShell, found by matching braces.
+ */
+function functionRanges(lines, names) {
+  const ranges = [];
+  for (const name of names) {
+    const start = lines.findIndex((l) => new RegExp(`^(function ${name}\\b|${name}\\(\\))`).test(l));
+    if (start === -1) continue;
+    let depth = 0;
+    let opened = false;
+    for (let i = start; i < lines.length; i += 1) {
+      for (const ch of lines[i].replace(/'[^']*'|"[^"]*"/g, '')) {
+        if (ch === '{') { depth += 1; opened = true; }
+        if (ch === '}') depth -= 1;
+      }
+      if (opened && depth <= 0) { ranges.push([start, i]); break; }
+    }
+  }
+  return ranges;
+}
+
+/**
+ * The stops in `text` that have neither an ERROR+FIX pair nor an ASK nearby, and no allow comment.
+ * An `exit` anywhere counts; so does a failing `return` (`return 1`, `return $false`,
+ * `return $null`) inside the named stop functions, the helpers that end a step of the install.
+ */
+export function bareExits(text, stopFunctions = []) {
   const lines = text.split('\n');
+  const inStopFunction = functionRanges(lines, stopFunctions);
   const bare = [];
   lines.forEach((line, i) => {
-    if (!EXIT.test(line)) return;
+    const isReturn = RETURN_FAIL.test(line) && inStopFunction.some(([a, b]) => i >= a && i <= b);
+    if (!EXIT.test(line) && !isReturn) return;
     if (/^\s*(#|\/\/)/.test(line)) return;
     const near = lines.slice(Math.max(0, i - WINDOW), i + 1);
-    const ok = near.some((l) => ASK_MARK.test(l))
+    const ok = near.some((l) => ASK_MARK.test(l) || STOP_MARK.test(l))
       || (near.some((l) => ERROR_MARK.test(l)) && near.some((l) => FIX_MARK.test(l)));
     if (ok) return;
     if (lines.slice(Math.max(0, i - 5), i + 1).some((l) => ALLOW.test(l))) return;
@@ -60,7 +103,7 @@ describe('every installer stop is an instruction for the AI', () => {
   for (const rel of FILES) {
     it(`${rel}: no exit without ERROR+FIX, ASK or a reasoned grammar-allow`, () => {
       const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
-      const bare = bareExits(text);
+      const bare = bareExits(text, STOP_FUNCTIONS[rel] || []);
       assert.deepEqual(bare, [], `bare exits in ${rel}:\n${bare.map((b) => `  line ${b.line}: ${b.text}`).join('\n')}`);
     });
   }
@@ -72,6 +115,16 @@ describe('every installer stop is an instruction for the AI', () => {
     assert.equal(bareExits('echo "ASK:no_network:text"\nexit 1\n').length, 0);
     assert.equal(bareExits('# grammar-allow: the callee already printed its lines\nexit 1\n').length, 0);
     assert.equal(bareExits('exit 1 # grammar-allow: x\n').length, 1);
+  });
+
+  it('the checker also sees a bare failing return inside a stop function, and nowhere else', () => {
+    const sh = 'step() {\n  mkdir x || return 1\n}\nother() {\n  false || return 1\n}\n';
+    assert.equal(bareExits(sh, ['step']).length, 1);
+    assert.equal(bareExits(sh, []).length, 0);
+    assert.equal(bareExits('step() {\n  ownmind_stop_write a b "$o"; return 1\n}\n', ['step']).length, 0);
+    const ps = 'function Step {\n  Log-Err a "b"\n  return $false\n}\n';
+    assert.equal(bareExits(ps, ['Step']).length, 1);
+    assert.equal(bareExits('function Step {\n  Log-Err a "b"\n  Write-Host "FIX:retry_install:cmd"\n  return $false\n}\n', ['Step']).length, 0);
   });
 
   it('every FIX and ASK line has the code:payload shape', () => {

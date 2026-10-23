@@ -104,6 +104,17 @@ tests/install-next-line.test.js                         — new: three NEXT bran
 tests/hook-english-fallbacks-match-dictionary.test.js   — also pins the English install.* literals in the eight scripts
 tests/node-runtime-mac.test.js, tests/install-ps1-private-node.test.js, tests/bootstrap-archive-mode-ps1.e2e.mjs — the Node download failure asserts ASK:node_download (was ASK:no_network)
 tests/install-clean-machine.e2e.mjs                     — the real install.sh prints no ERROR or ASK line and ends on the NEXT line; the run pins the Claude entry point and the locale
+scripts/bootstrap.sh, scripts/bootstrap.ps1             — fix round: a failed git clone prints ERROR:git_clone with ASK:no_network instead of ending silently (the re-clone after an old folder was set aside too); install.sh's NEXT line is captured through OWNMIND_NEXT_FILE and printed again as the very last line of a successful run; the install.sh failure line is followed by FIX:retry_install
+scripts/install-helpers/fetch-release.sh, fetch-release.ps1, ensure-node-runtime.sh, ensure-node-runtime.ps1 — every stop function ends with ERROR plus FIX:retry_install or ASK (ownmind_stop_write / Write-OwnMindStopWrite for failed writes, ASK:unsupported_os where no Node.js download exists); FIX payloads are runnable commands (ownmind_retry_cmd / Get-OwnMindRetryCommand: the server's install.sh or install.ps1 with <KEY> left for the AI); the localized sentence is printed while the console is UTF-8 (Write-OwnMindLocalized), the UI culture picks the language
+install.sh, install.ps1                                 — NEXT:verify:new-session now carries the localized conversation title; the NEXT line is also written to OWNMIND_NEXT_FILE; a log that cannot be created and an incomplete install report ASK:disk_full; install.ps1 tells a full disk from other npm failures; Linux and unknown systems end with ASK:unsupported_os
+scripts/install-helpers/install-messages.cjs            — a line break inside a sentence is collapsed to a space (flat)
+hooks/locales/zh.json, en.json, en.override.json, ja.json, ja.override.json — install.ask.unsupported_os added (Chinese pending the product owner's approval)
+skills/ownmind-upgrade.md                               — install section: ASK wins over FIX, an ERROR with nothing after it, sentence boundaries, the title comes from the NEXT line, the verification brief drops the status button and removes its test memory, click the card when the session does not start by itself; the older error table is marked as git upgrades only
+tests/bootstrap-clone-failure.test.js                   — new: bootstrap.sh with a git whose clone fails prints ERROR and ASK for a first install and for a re-clone
+tests/install-skill-runbook.test.js                     — new: the install section of the upgrade skill keeps its rules
+tests/install-output-grammar.test.js                    — also scans failing returns inside the stop functions of the six helper scripts; helper calls that always print ERROR with FIX or ASK count
+tests/install-messages.test.js, tests/install-next-line.test.js, tests/hook-english-fallbacks-match-dictionary.test.js — FIX payload checks, the Windows UTF-8 print scope, the title on the NEXT line, the copy file for bootstrap
+tests/bootstrap-archive-mode.e2e.mjs, tests/bootstrap-archive-mode.test.js, tests/bootstrap-archive-mode-ps1.test.js — a bootstrap run ends on the NEXT line (stub and real install.sh); FIX payload pins follow the runnable commands
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

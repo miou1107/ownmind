@@ -219,7 +219,13 @@ function Use-OwnMindPrivateNode {
   }
   if (-not $onPath) { $env:Path = "$current;$env:Path" }
   $noBom = New-Object System.Text.UTF8Encoding $false
-  [System.IO.File]::WriteAllText((Join-Path (Split-Path -Parent $Runtime) '.node-path'), "$($env:OWNMIND_NODE)`n", $noBom)
+  try {
+    [System.IO.File]::WriteAllText((Join-Path (Split-Path -Parent $Runtime) '.node-path'), "$($env:OWNMIND_NODE)`n", $noBom)
+  } catch {
+    Write-OwnMindStopWrite -Code node_download -Message 'Could not write .node-path' -ErrorRecord $_
+    return $false
+  }
+  return $true
 }
 
 # Ensure-OwnMindNode -ApiUrl URL -ApiKey KEY
@@ -229,6 +235,7 @@ function Ensure-OwnMindNode {
   param([string]$ApiUrl = '', [string]$ApiKey = '')
   Set-StrictMode -Version Latest
   $api = $ApiUrl.TrimEnd('/')
+  if ($api) { $global:OwnMindFixApi = $api }
   # Windows PowerShell 5.1 redraws a progress bar for every entry of the Node zip (about 2,500),
   # which is most of the unpack time; with it off the unpack takes seconds.
   $ProgressPreference = 'SilentlyContinue'
@@ -250,6 +257,7 @@ function Ensure-OwnMindNode {
 
   if ($source -ne '' -and $source -ne 'server' -and $source -ne 'nodejs') {
     Log-Err node_download "OWNMIND_NODE_SOURCE must be server or nodejs (got: $source)"
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand -Source clear-node)"
     return $false
   }
 
@@ -261,7 +269,8 @@ function Ensure-OwnMindNode {
     if ($sysVer -and (Get-OwnMindNodeMajorOf $sysVer) -ge $script:OwnMindNodeFloorMajor) {
       if ($sysNode -ieq $currentNode) {
         # An earlier step of this same install already put the private runtime first on PATH.
-        Use-OwnMindPrivateNode -Runtime $runtime
+        # grammar-allow: Use-OwnMindPrivateNode has already printed its own ERROR with FIX or ASK
+        if (-not (Use-OwnMindPrivateNode -Runtime $runtime)) { return $false }
         Log-Info node "using private Node $sysVer"
       } else {
         $env:OWNMIND_NODE = $sysNode
@@ -275,7 +284,8 @@ function Ensure-OwnMindNode {
   # 2. A private runtime from an earlier install is reused without a download.
   $privVer = Get-OwnMindNodeVersionOf $currentNode
   if ($privVer -and (Get-OwnMindNodeMajorOf $privVer) -ge $script:OwnMindNodeFloorMajor) {
-    Use-OwnMindPrivateNode -Runtime $runtime
+    # grammar-allow: Use-OwnMindPrivateNode has already printed its own ERROR with FIX or ASK
+    if (-not (Use-OwnMindPrivateNode -Runtime $runtime)) { return $false }
     Log-Info node "using private Node $privVer"
     return $true
   }
@@ -284,13 +294,14 @@ function Ensure-OwnMindNode {
   $arch = Get-OwnMindNodeArch
   if (-not $arch) {
     Log-Err node_download "No Node.js download exists for this CPU ($($env:PROCESSOR_ARCHITECTURE))"
+    Write-OwnMindAsk -Code unsupported_os -Literal "ASK:unsupported_os:The installer only supports macOS and Windows for now, so it cannot install on this computer's system."
     return $false
   }
   try {
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $partial -ErrorAction Stop | Out-Null
   } catch {
-    Log-Err node_download "Could not create $partial"
+    Write-OwnMindStopWrite -Code node_download -Message "Could not create $partial" -ErrorRecord $_
     return $false
   }
 
@@ -332,7 +343,7 @@ function Ensure-OwnMindNode {
       Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
     } else {
       Log-Err node_download "Could not unpack the Node.js archive (it may be damaged)"
-      Write-Host "FIX:retry_install:<same one-liner>"
+      Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     }
     return $false
   }
@@ -340,6 +351,7 @@ function Ensure-OwnMindNode {
   if ($inner.Count -ne 1 -or -not $inner[0].PSIsContainer) {
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
     Log-Err node_download "The Node.js archive does not have the one top-level folder that was expected"
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     return $false
   }
 
@@ -350,8 +362,9 @@ function Ensure-OwnMindNode {
   try {
     Remove-OwnMindCurrent -Current $current
   } catch {
+    $stopError = $_
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
-    Log-Err node_download "Could not replace $current"
+    Write-OwnMindStopWrite -Code node_download -Message "Could not replace $current" -ErrorRecord $stopError
     return $false
   }
   $dest = Join-Path $runtime "node-$version"
@@ -359,18 +372,20 @@ function Ensure-OwnMindNode {
   try {
     Move-Item -LiteralPath $inner[0].FullName -Destination $dest -ErrorAction Stop
   } catch {
+    $stopError = $_
     Restore-OwnMindCurrent -Current $current -Previous $prev
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
-    Log-Err node_download "Could not move Node.js into $runtime"
+    Write-OwnMindStopWrite -Code node_download -Message "Could not move Node.js into $runtime" -ErrorRecord $stopError
     return $false
   }
   try {
     New-Item -ItemType Junction -Path $current -Value $dest -ErrorAction Stop | Out-Null
   } catch {
+    $stopError = $_
     Restore-OwnMindCurrent -Current $current -Previous $prev
     Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
-    Log-Err node_download "Could not link $current to the new Node.js"
+    Write-OwnMindStopWrite -Code node_download -Message "Could not link $current to the new Node.js" -ErrorRecord $stopError
     return $false
   }
   $gotVer = Get-OwnMindNodeVersionOf $currentNode
@@ -387,7 +402,8 @@ function Ensure-OwnMindNode {
   }
   Remove-Item -LiteralPath $partial -Recurse -Force -ErrorAction SilentlyContinue
 
-  Use-OwnMindPrivateNode -Runtime $runtime
+  # grammar-allow: Use-OwnMindPrivateNode has already printed its own ERROR with FIX or ASK
+  if (-not (Use-OwnMindPrivateNode -Runtime $runtime)) { return $false }
   Log-Ok node "private Node $version installed"
   return $true
 }

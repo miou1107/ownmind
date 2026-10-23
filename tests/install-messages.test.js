@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * The installer's ASK:/FIX:/NEXT: lines (zero-touch-install, Tasks 10 and 12).
@@ -30,6 +31,7 @@ const KEYS = [
   'install.ask.no_network',
   'install.ask.node_download',
   'install.ask.disk_full',
+  'install.ask.unsupported_os',
   'install.next.verify_manual_terminal',
   'install.next.verify_manual_generic',
   'install.verify.session_title',
@@ -79,6 +81,13 @@ describe('askLine / fixLine / nextLine', () => {
   it('nextLine returns NEXT:<kind> with an optional detail', () => {
     assert.equal(messages.nextLine('verify:new-session'), 'NEXT:verify:new-session');
     assert.equal(messages.nextLine('verify:manual', 'hello there'), 'NEXT:verify:manual:hello there');
+  });
+
+  it('a line break inside a sentence is collapsed so the ASK or NEXT line stays one line', () => {
+    assert.equal(messages.flat('first\r\nsecond\nthird'), 'first second third');
+    for (const key of KEYS) {
+      for (const lang of ['zh', 'en', 'ja']) assert.doesNotMatch(messages.sentence(key, lang), /[\r\n]/);
+    }
   });
 
   it('sentence returns one dictionary value, English when the language lacks it', () => {
@@ -174,7 +183,9 @@ describe('English literals in the installer scripts equal en.json byte for byte'
     for (const rel of ['scripts/install-helpers/ensure-node-runtime.sh', 'scripts/install-helpers/ensure-node-runtime.ps1']) {
       assert.ok(has(rel, 'node_download'), `${rel} lacks ASK:node_download`);
       assert.ok(has(rel, 'disk_full'), `${rel} lacks ASK:disk_full`);
+      assert.ok(has(rel, 'unsupported_os'), `${rel} lacks ASK:unsupported_os`);
     }
+    assert.ok(has('install.sh', 'unsupported_os'), 'install.sh lacks ASK:unsupported_os');
   });
 
   it('the English sentence in the next-line fallback (install.sh and install.ps1) equals en.json', () => {
@@ -182,6 +193,79 @@ describe('English literals in the installer scripts equal en.json byte for byte'
       const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
       assert.ok(text.includes(en['install.next.verify_manual_terminal']), `${rel} lacks the terminal sentence`);
       assert.ok(text.includes(en['install.next.verify_manual_generic']), `${rel} lacks the generic sentence`);
+      assert.ok(text.includes(en['install.verify.session_title']), `${rel} lacks the verification session title`);
     }
   });
+});
+
+describe('FIX payloads are commands the AI can run as printed', () => {
+  const ALL = [
+    'scripts/bootstrap.sh', 'scripts/bootstrap.ps1', 'install.sh', 'install.ps1',
+    'scripts/install-helpers/fetch-release.sh', 'scripts/install-helpers/fetch-release.ps1',
+    'scripts/install-helpers/ensure-node-runtime.sh', 'scripts/install-helpers/ensure-node-runtime.ps1',
+  ];
+
+  it('no script still prints the placeholder "<same one-liner>"', () => {
+    for (const rel of ALL) {
+      assert.doesNotMatch(fs.readFileSync(path.join(repoRoot, rel), 'utf8'), /<same one-liner/, `${rel} still has a placeholder instead of a command`);
+    }
+  });
+
+  it('ownmind_retry_cmd prints the server install.sh pipe, with the key left as <KEY>', () => {
+    const dir = tempDir('retry-cmd-');
+    const script = path.join(dir, 'retry.sh');
+    fs.writeFileSync(script, [
+      `. "${path.join(repoRoot, 'scripts', 'install-helpers', 'fetch-release.sh')}"`,
+      'OWNMIND_FIX_API="http://example.test/ownmind"',
+      'ownmind_retry_cmd',
+      'echo',
+      'ownmind_retry_cmd "OWNMIND_SOURCE=github "',
+      'echo',
+      'unset OWNMIND_FIX_API',
+      'ownmind_retry_cmd',
+      '',
+    ].join('\n'));
+    const r = spawnSync('bash', [script], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(r.stdout.split('\n').slice(0, 3), [
+      'curl -fsSL http://example.test/ownmind/install.sh | bash -s -- <KEY> http://example.test/ownmind',
+      'curl -fsSL http://example.test/ownmind/install.sh | OWNMIND_SOURCE=github bash -s -- <KEY> http://example.test/ownmind',
+      'curl -fsSL <API_URL>/install.sh | bash -s -- <KEY> <API_URL>',
+    ]);
+  });
+});
+
+describe('Windows: a localized sentence is printed while the console is still UTF-8', () => {
+  const PS = ['scripts/bootstrap.ps1', 'scripts/install-helpers/fetch-release.ps1', 'install.ps1'];
+
+  /** The body of `function NAME { ... }`, found by matching braces. */
+  function functionBody(text, name) {
+    const at = text.indexOf(`function ${name} {`);
+    assert.ok(at >= 0, `function ${name} not found`);
+    let depth = 0;
+    for (let i = text.indexOf('{', at); i < text.length; i += 1) {
+      if (text[i] === '{') depth += 1;
+      if (text[i] === '}') { depth -= 1; if (depth === 0) return text.slice(at, i + 1); }
+    }
+    throw new Error(`unbalanced braces in ${name}`);
+  }
+
+  for (const rel of PS) {
+    const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8').replace(/\r\n/g, '\n');
+    it(`${rel}: Write-Host sits between the switch to UTF-8 and the finally that restores the old code page`, () => {
+      const body = functionBody(text, 'Write-OwnMindLocalized');
+      const switched = body.indexOf('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8');
+      const restored = body.indexOf('finally');
+      const printedInside = body.indexOf('Write-Host $text');
+      assert.ok(switched >= 0 && restored > switched, 'the UTF-8 switch and the finally must both exist');
+      assert.ok(printedInside > switched && printedInside < restored, 'the sentence must be printed inside the UTF-8 scope');
+      const literal = body.indexOf('Write-Host $text', restored);
+      assert.ok(literal > restored, 'the English literal is printed when no sentence was printed');
+      assert.match(body.slice(restored), /if \(-not \$text\)/, 'the English literal is the fallback only');
+    });
+    it(`${rel}: the language comes from the UI culture, not the regional format`, () => {
+      assert.doesNotMatch(text, /Get-Culture/);
+      assert.match(text, /\(Get-UICulture\)\.Name/);
+    });
+  }
 });

@@ -54,5 +54,6 @@
   "install.next.verify_manual_generic": "OwnMind is installed. Start a new conversation and your memory will load.",
   "install.verify.session_title": "OwnMind install check",
   "install.notify.loaded": "OwnMind is running and your memory has loaded.",
-  "install.notify.not_loaded": "OwnMind is installed but has not loaded your memory yet. Open a new conversation; if it still does not load, paste \"repair OwnMind\" to the AI."
+  "install.notify.not_loaded": "OwnMind is installed but has not loaded your memory yet. Open a new conversation; if it still does not load, paste \"repair OwnMind\" to the AI.",
+  "install.ask.unsupported_os": "The installer only supports macOS and Windows for now, so it cannot install on this computer's system."
 }

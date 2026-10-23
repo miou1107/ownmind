@@ -43,6 +43,19 @@ log_info() { echo "INFO:$1:$2"; }
 log_ok()   { echo "OK:$1:$2"; }
 log_err()  { echo "ERROR:$1:$2" >&2; }
 
+# install.sh writes its NEXT line to this file as well as printing it (OWNMIND_NEXT_FILE), and
+# this script prints it again as the very last line of a successful run, so the AI that reads the
+# output reads the instruction last.
+OWNMIND_NEXT_FILE="${TMPDIR:-/tmp}/ownmind-next.$$"
+export OWNMIND_NEXT_FILE
+ownmind_print_next() {
+  if [ -s "$OWNMIND_NEXT_FILE" ]; then cat "$OWNMIND_NEXT_FILE"; fi
+  rm -f "$OWNMIND_NEXT_FILE" 2>/dev/null || true
+}
+# The server address the FIX lines name; the arguments are KEY URL.
+OWNMIND_FIX_API="${2:-${OWNMIND_API_URL:-}}"
+OWNMIND_FIX_API="${OWNMIND_FIX_API%/}"
+
 # Without git, OwnMind is installed from a release archive (see "Archive mode" above). The
 # git check and the download and unpack functions below are embedded copies of
 # scripts/install-helpers/preflight.sh (git-usable) and scripts/install-helpers/fetch-release.sh:
@@ -132,6 +145,28 @@ ownmind_says_disk_full() {
   return 1
 }
 
+# The command that runs the installer again, exactly as the person's AI can run it: the server's
+# own install.sh, with the server address when it is known (OWNMIND_FIX_API) and the key left as
+# <KEY> for the AI to fill in from the install message. $1 is an optional environment prefix for
+# the bash side of the pipe, such as "OWNMIND_SOURCE=github ".
+ownmind_retry_cmd() {
+  local api="${OWNMIND_FIX_API:-<API_URL>}"
+  printf 'curl -fsSL %s/install.sh | %sbash -s -- <KEY> %s' "$api" "${1:-}" "$api"
+}
+
+# ownmind_stop_write CODE MESSAGE OUTPUT
+# A step that writes to disk failed. OUTPUT is what the failing command said: a full disk is
+# something only the person can fix (ASK), anything else is worth one more run (FIX).
+ownmind_stop_write() {
+  if ownmind_says_disk_full "$3"; then
+    log_err "$1" "$2 (the disk is full)"
+    ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  else
+    log_err "$1" "$2"
+    echo "FIX:retry_install:$(ownmind_retry_cmd)"
+  fi
+}
+
 # ownmind_download_archive KEY API_URL DEST_FILE
 # Sources in order: the OwnMind server, then GitHub. OWNMIND_SOURCE=server|github forces one.
 # Sets OWNMIND_ARCHIVE_STRIP (1 when the archive has one top-level folder to strip) and
@@ -141,7 +176,8 @@ ownmind_download_archive() {
   local key="$1" api="${2%/}" dest="$3"
   local source="${OWNMIND_SOURCE:-}"
   local gh_codeload="${OWNMIND_GITHUB_CODELOAD:-https://codeload.github.com}"
-  local tag ref rc
+  local tag ref rc mk_out
+  OWNMIND_FIX_API="$api"
   OWNMIND_ARCHIVE_STRIP=0
   OWNMIND_ARCHIVE_RELEASE=""
 
@@ -149,10 +185,10 @@ ownmind_download_archive() {
     ""|server|github) ;;
     *)
       log_err download "OWNMIND_SOURCE must be server or github (got: $source)"
-      echo "FIX:retry_install:unset OWNMIND_SOURCE; bash <same one-liner>"
+      echo "FIX:retry_install:$(ownmind_retry_cmd "OWNMIND_SOURCE= ")"
       return 1 ;;
   esac
-  mkdir -p "$(dirname "$dest")" || return 1
+  mk_out=$(mkdir -p "$(dirname "$dest")" 2>&1) || { ownmind_stop_write download "Could not create the folder for the download" "$mk_out"; return 1; }
 
   if [ "$source" != "github" ]; then
     log_info download "Downloading the release archive from $api"
@@ -172,7 +208,7 @@ ownmind_download_archive() {
     fi
     if [ "$source" = "server" ]; then
       log_err download "Could not download the release archive from $api"
-      echo "FIX:use_fallback_source:OWNMIND_SOURCE=github bash <same one-liner>"
+      echo "FIX:use_fallback_source:$(ownmind_retry_cmd "OWNMIND_SOURCE=github ")"
       ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
       return 1
     fi
@@ -211,23 +247,23 @@ ownmind_download_archive() {
 # Unpacks into PARTIAL_DIR, checks that .release and install.sh are there, and only then
 # renames PARTIAL_DIR to FINAL_DIR, so FINAL_DIR never exists half-unpacked.
 ownmind_unpack_release() {
-  local archive="$1" partial="$2" final="$3" release tar_out
-  mkdir -p "$partial" || return 1
+  local archive="$1" partial="$2" final="$3" release tar_out io_out
+  io_out=$(mkdir -p "$partial" 2>&1) || { ownmind_stop_write unpack "Could not create $partial" "$io_out"; return 1; }
   # tar's own words are kept: they say whether the disk filled up or the archive is damaged.
   if [ "${OWNMIND_ARCHIVE_STRIP:-0}" = "1" ]; then
     # GitHub archives wrap everything in one folder, and carry no .release of their own.
     tar_out=$(tar -xzf "$archive" -C "$partial" --strip-components 1 2>&1) || { ownmind_unpack_failed "$tar_out"; return 1; }
-    printf '%s\n' "$OWNMIND_ARCHIVE_RELEASE" > "$partial/.release" || { ownmind_unpack_failed "write error"; return 1; }
+    io_out=$({ printf '%s\n' "$OWNMIND_ARCHIVE_RELEASE" > "$partial/.release"; } 2>&1) || { ownmind_stop_write unpack "Could not write .release" "$io_out"; return 1; }
   else
     tar_out=$(tar -xzf "$archive" -C "$partial" 2>&1) || { ownmind_unpack_failed "$tar_out"; return 1; }
   fi
   if [ ! -f "$partial/.release" ] || [ ! -f "$partial/install.sh" ]; then
     log_err unpack "The archive is missing .release or install.sh"
-    echo "FIX:retry_install:bash <same one-liner>"
+    echo "FIX:retry_install:$(ownmind_retry_cmd)"
     return 1
   fi
   rm -f "$archive"
-  mv "$partial" "$final" || { log_err unpack "Could not move the unpacked files into $final"; echo "FIX:retry_install:bash <same one-liner>"; return 1; }
+  io_out=$(mv "$partial" "$final" 2>&1) || { ownmind_stop_write unpack "Could not move the unpacked files into $final" "$io_out"; return 1; }
   release=$(head -n 1 "$final/.release" | tr -d '[:space:]')
   log_ok unpack "release $release unpacked"
 }
@@ -240,7 +276,7 @@ ownmind_unpack_failed() {
     ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
   else
     log_err unpack "Could not unpack the archive (it may be damaged)"
-    echo "FIX:retry_install:bash <same one-liner>"
+    echo "FIX:retry_install:$(ownmind_retry_cmd)"
   fi
 }
 # END fetch-release
@@ -252,7 +288,7 @@ install_from_archive() {
   local partial="${OWNMIND_DIR}.partial"
   if [ -z "$key" ] || [ -z "$api" ]; then
     log_err missing_args "The API key and URL are needed to install OwnMind (bash -s -- YOUR_API_KEY YOUR_API_URL)"
-    echo "FIX:rerun_with_args:<same one-liner, with the API key and URL the person gave you>"
+    echo "FIX:rerun_with_args:curl -fsSL <API_URL>/install.sh | bash -s -- <KEY> <API_URL>"
     exit 1
   fi
   log_info archive_mode "git is not installed; installing from the release archive"
@@ -266,14 +302,13 @@ install_from_archive() {
   cd "$OWNMIND_DIR"
   # Private Node runtime when this machine has no usable node. The file exists in every release
   # that has this feature; the guard lets an older release without it still install.
-  # grammar-allow: ownmind_ensure_node has already printed its own ERROR with ASK
+  # grammar-allow: ownmind_ensure_node has already printed its own ERROR with FIX or ASK
   if [ -f "$OWNMIND_DIR/scripts/install-helpers/ensure-node-runtime.sh" ]; then
     . "$OWNMIND_DIR/scripts/install-helpers/ensure-node-runtime.sh"
     ownmind_ensure_node "${api%/}" "$key" || exit 1
   fi
   log_info install "Running install.sh (forwarding API_KEY + API_URL)"
-  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
-  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
+  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }
   log_ok done "Fresh install complete (release archive)"
 }
 
@@ -283,11 +318,14 @@ log_info detect "Checking OwnMind installation ($OWNMIND_DIR)"
 if [ ! -d "$OWNMIND_DIR" ]; then
   if [ "$HAS_GIT" = "0" ]; then
     install_from_archive "$@"
+    ownmind_print_next
     exit 0
   fi
   log_info fresh "Fresh install: cloning repo"
-  git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done
-  if [ ! -d "$OWNMIND_DIR/.git" ]; then
+  # `set -e` with `pipefail` ends the script at a failed clone before any line below could say why,
+  # so the clone sits in the condition of an `if`.
+  if ! git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done \
+    || [ ! -d "$OWNMIND_DIR/.git" ]; then
     log_err git_clone "git clone failed (check network or GitHub access)"
     ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
     exit 1
@@ -297,9 +335,9 @@ if [ ! -d "$OWNMIND_DIR" ]; then
   log_info install "Running install.sh (forwarding API_KEY + API_URL)"
   # Forward positional args ("$@") to install.sh; if missing, install.sh
   # prints its own friendly error message and exits non-zero.
-  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
-  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
+  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }
   log_ok done "Fresh install complete"
+  ownmind_print_next
   exit 0
 fi
 
@@ -312,9 +350,9 @@ if [ ! -d "$OWNMIND_DIR/.git" ] && { [ -f "$OWNMIND_DIR/.release" ] || [ -f "$OW
   fi
   log_info already_installed "archive install found; re-running install.sh"
   cd "$OWNMIND_DIR"
-  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
-  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
+  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }
   log_ok done "Archive install checked"
+  ownmind_print_next
   exit 0
 fi
 
@@ -330,14 +368,20 @@ if [ ! -d "$OWNMIND_DIR/.git" ]; then
   if [ "$HAS_GIT" = "0" ]; then
     install_from_archive "$@"
     log_ok done "Repair complete (old data preserved at $BAK; backups older than 7 days are swept on next upgrade)"
+    ownmind_print_next
     exit 0
   fi
   log_info fresh "Re-cloning"
-  git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done
+  if ! git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done \
+    || [ ! -d "$OWNMIND_DIR/.git" ]; then
+    log_err git_clone "Re-clone failed; old data preserved at $BAK"
+    ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+    exit 1
+  fi
   cd "$OWNMIND_DIR"
-  # grammar-allow: install.sh prints its own ERROR with FIX or ASK, and its error trap does the same for anything unexpected
-  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; exit 1; }
+  bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }
   log_ok done "Repair complete (old data preserved at $BAK; backups older than 7 days are swept on next upgrade)"
+  ownmind_print_next
   exit 0
 fi
 

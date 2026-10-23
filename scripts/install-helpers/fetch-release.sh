@@ -79,6 +79,28 @@ ownmind_says_disk_full() {
   return 1
 }
 
+# The command that runs the installer again, exactly as the person's AI can run it: the server's
+# own install.sh, with the server address when it is known (OWNMIND_FIX_API) and the key left as
+# <KEY> for the AI to fill in from the install message. $1 is an optional environment prefix for
+# the bash side of the pipe, such as "OWNMIND_SOURCE=github ".
+ownmind_retry_cmd() {
+  local api="${OWNMIND_FIX_API:-<API_URL>}"
+  printf 'curl -fsSL %s/install.sh | %sbash -s -- <KEY> %s' "$api" "${1:-}" "$api"
+}
+
+# ownmind_stop_write CODE MESSAGE OUTPUT
+# A step that writes to disk failed. OUTPUT is what the failing command said: a full disk is
+# something only the person can fix (ASK), anything else is worth one more run (FIX).
+ownmind_stop_write() {
+  if ownmind_says_disk_full "$3"; then
+    log_err "$1" "$2 (the disk is full)"
+    ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  else
+    log_err "$1" "$2"
+    echo "FIX:retry_install:$(ownmind_retry_cmd)"
+  fi
+}
+
 # ownmind_download_archive KEY API_URL DEST_FILE
 # Sources in order: the OwnMind server, then GitHub. OWNMIND_SOURCE=server|github forces one.
 # Sets OWNMIND_ARCHIVE_STRIP (1 when the archive has one top-level folder to strip) and
@@ -88,7 +110,8 @@ ownmind_download_archive() {
   local key="$1" api="${2%/}" dest="$3"
   local source="${OWNMIND_SOURCE:-}"
   local gh_codeload="${OWNMIND_GITHUB_CODELOAD:-https://codeload.github.com}"
-  local tag ref rc
+  local tag ref rc mk_out
+  OWNMIND_FIX_API="$api"
   OWNMIND_ARCHIVE_STRIP=0
   OWNMIND_ARCHIVE_RELEASE=""
 
@@ -96,10 +119,10 @@ ownmind_download_archive() {
     ""|server|github) ;;
     *)
       log_err download "OWNMIND_SOURCE must be server or github (got: $source)"
-      echo "FIX:retry_install:unset OWNMIND_SOURCE; bash <same one-liner>"
+      echo "FIX:retry_install:$(ownmind_retry_cmd "OWNMIND_SOURCE= ")"
       return 1 ;;
   esac
-  mkdir -p "$(dirname "$dest")" || return 1
+  mk_out=$(mkdir -p "$(dirname "$dest")" 2>&1) || { ownmind_stop_write download "Could not create the folder for the download" "$mk_out"; return 1; }
 
   if [ "$source" != "github" ]; then
     log_info download "Downloading the release archive from $api"
@@ -119,7 +142,7 @@ ownmind_download_archive() {
     fi
     if [ "$source" = "server" ]; then
       log_err download "Could not download the release archive from $api"
-      echo "FIX:use_fallback_source:OWNMIND_SOURCE=github bash <same one-liner>"
+      echo "FIX:use_fallback_source:$(ownmind_retry_cmd "OWNMIND_SOURCE=github ")"
       ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
       return 1
     fi
@@ -158,23 +181,23 @@ ownmind_download_archive() {
 # Unpacks into PARTIAL_DIR, checks that .release and install.sh are there, and only then
 # renames PARTIAL_DIR to FINAL_DIR, so FINAL_DIR never exists half-unpacked.
 ownmind_unpack_release() {
-  local archive="$1" partial="$2" final="$3" release tar_out
-  mkdir -p "$partial" || return 1
+  local archive="$1" partial="$2" final="$3" release tar_out io_out
+  io_out=$(mkdir -p "$partial" 2>&1) || { ownmind_stop_write unpack "Could not create $partial" "$io_out"; return 1; }
   # tar's own words are kept: they say whether the disk filled up or the archive is damaged.
   if [ "${OWNMIND_ARCHIVE_STRIP:-0}" = "1" ]; then
     # GitHub archives wrap everything in one folder, and carry no .release of their own.
     tar_out=$(tar -xzf "$archive" -C "$partial" --strip-components 1 2>&1) || { ownmind_unpack_failed "$tar_out"; return 1; }
-    printf '%s\n' "$OWNMIND_ARCHIVE_RELEASE" > "$partial/.release" || { ownmind_unpack_failed "write error"; return 1; }
+    io_out=$({ printf '%s\n' "$OWNMIND_ARCHIVE_RELEASE" > "$partial/.release"; } 2>&1) || { ownmind_stop_write unpack "Could not write .release" "$io_out"; return 1; }
   else
     tar_out=$(tar -xzf "$archive" -C "$partial" 2>&1) || { ownmind_unpack_failed "$tar_out"; return 1; }
   fi
   if [ ! -f "$partial/.release" ] || [ ! -f "$partial/install.sh" ]; then
     log_err unpack "The archive is missing .release or install.sh"
-    echo "FIX:retry_install:bash <same one-liner>"
+    echo "FIX:retry_install:$(ownmind_retry_cmd)"
     return 1
   fi
   rm -f "$archive"
-  mv "$partial" "$final" || { log_err unpack "Could not move the unpacked files into $final"; echo "FIX:retry_install:bash <same one-liner>"; return 1; }
+  io_out=$(mv "$partial" "$final" 2>&1) || { ownmind_stop_write unpack "Could not move the unpacked files into $final" "$io_out"; return 1; }
   release=$(head -n 1 "$final/.release" | tr -d '[:space:]')
   log_ok unpack "release $release unpacked"
 }
@@ -187,7 +210,7 @@ ownmind_unpack_failed() {
     ownmind_ask_line disk_full "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
   else
     log_err unpack "Could not unpack the archive (it may be damaged)"
-    echo "FIX:retry_install:bash <same one-liner>"
+    echo "FIX:retry_install:$(ownmind_retry_cmd)"
   fi
 }
 # END fetch-release

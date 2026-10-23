@@ -38,6 +38,11 @@ function buildArchive(workDir, name, { top = '', release } = {}) {
     '#!/bin/sh',
     'printf \'%s\\n\' "$@" > "$HOME/install-stub-args"',
     'pwd > "$HOME/install-stub-cwd"',
+    // Like the real install.sh: the NEXT line is printed, and a copy goes to the file bootstrap named.
+    'if [ "${STUB_EXIT:-0}" = "0" ]; then',
+    '  echo "NEXT:verify:manual:stub says open a new conversation"',
+    '  if [ -n "$OWNMIND_NEXT_FILE" ]; then echo "NEXT:verify:manual:stub says open a new conversation" > "$OWNMIND_NEXT_FILE"; fi',
+    'fi',
     'exit "${STUB_EXIT:-0}"',
     '',
   ].join('\n'));
@@ -104,10 +109,11 @@ function runBootstrap(mac, extraEnv = {}, args = [KEY, fixture.url]) {
       env: { ...mac.env, OWNMIND_DIR: path.join(mac.home, '.ownmind'), ...extraEnv },
     });
     let out = '';
-    child.stdout.on('data', (c) => { out += c; });
+    let stdout = '';
+    child.stdout.on('data', (c) => { out += c; stdout += c; });
     child.stderr.on('data', (c) => { out += c; });
     child.once('error', reject);
-    child.once('close', (status) => resolve({ status, out }));
+    child.once('close', (status) => resolve({ status, out, stdout }));
   });
 }
 
@@ -136,6 +142,12 @@ test('no git: the release is downloaded, unpacked into ~/.ownmind, and install.s
     );
     assert.equal(fs.realpathSync(fs.readFileSync(path.join(mac.home, 'install-stub-cwd'), 'utf8').trim()), fs.realpathSync(dir));
     assert.equal(fixture.requests[0].auth, `Bearer ${KEY}`);
+
+    // bootstrap prints install.sh's NEXT line again, so it is the very last line of the run
+    const lines = r.stdout.split('\n').filter(Boolean);
+    assert.equal(lines[lines.length - 1], 'NEXT:verify:manual:stub says open a new conversation', r.stdout);
+    assert.equal(lines.filter((l) => l.startsWith('NEXT:')).length, 2, 'once from install.sh, once again at the end');
+    assert.ok(lines.findIndex((l) => l.startsWith('OK:done')) < lines.lastIndexOf('NEXT:verify:manual:stub says open a new conversation'), 'after OK:done');
   } finally {
     mac.cleanup();
   }
@@ -228,7 +240,7 @@ test('server unreachable and OWNMIND_SOURCE=server: the person is told to check 
     const r = await runBootstrap(mac, { OWNMIND_SOURCE: 'server', OWNMIND_GITHUB_API: fixture.url, OWNMIND_GITHUB_CODELOAD: fixture.url });
     assert.notEqual(r.status, 0, r.out);
     assert.match(r.out, /ERROR:download:/);
-    assert.match(r.out, /FIX:use_fallback_source:OWNMIND_SOURCE=github bash <same one-liner>/);
+    assert.match(r.out, new RegExp(`FIX:use_fallback_source:curl -fsSL ${fixture.url}/install\\.sh \\| OWNMIND_SOURCE=github bash -s -- <KEY> ${fixture.url}`));
     assert.match(r.out, /ASK:no_network:The installer could not reach the OwnMind server or GitHub\. Check that this computer is online, then paste the same install message to the AI again\./);
     assert.ok(!fs.existsSync(path.join(mac.home, '.ownmind')), 'nothing may be installed after a failed download');
     assert.ok(!fs.existsSync(path.join(mac.home, '.ownmind.partial')), 'the empty partial directory must be removed');
@@ -329,6 +341,11 @@ test('no git: the REAL install.sh runs to the end on the unpacked release, and t
     assert.doesNotMatch(r.out, /Updating OwnMind MCP server|git pull failed|Updating OwnMind failed/, tail);
     assert.match(r.out, /OwnMind installation complete/, tail);
     assert.doesNotMatch(r.out, /\[FAIL\] install\.sh aborted/, tail);
+    // The real install.sh ran under bootstrap: its NEXT line is repeated as the last line of the run.
+    const realLines = r.stdout.split('\n').filter(Boolean);
+    assert.match(realLines[realLines.length - 1], /^NEXT:verify:manual:/, realLines.slice(-4).join('\n'));
+    assert.equal(realLines.filter((l) => l.startsWith('NEXT:')).length, 2, 'once from install.sh, once again at the end');
+    assert.doesNotMatch(r.out, /\nERROR:|\nASK:/, 'a clean install prints no ERROR or ASK line');
     const dir = path.join(mac.home, '.ownmind');
     assert.ok(!fs.existsSync(path.join(dir, '.git')), 'an archive install has no .git');
     assert.ok(fs.existsSync(path.join(dir, 'mcp', 'node_modules')), 'npm install ran in mcp/');

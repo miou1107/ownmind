@@ -83,13 +83,21 @@ function detectLocale(env = process.env, options = {}) {
   return 'en';
 }
 
+/**
+ * One dictionary value is one line of installer output: a line break inside it would end the
+ * ASK or NEXT line early and leave the rest of the sentence as a stray line.
+ */
+function flat(value) {
+  return String(value).replace(/[\r\n]+/g, ' ').trim();
+}
+
 /** One dictionary value in `locale`, in English when that language lacks the key; null when no language has it. */
 function lookup(key, locale) {
   const lang = SUPPORTED.has(locale) ? locale : 'en';
   const own = loadDictionary(lang)[key];
-  if (typeof own === 'string' && own) return own;
+  if (typeof own === 'string' && own) return flat(own);
   const fallback = loadDictionary('en')[key];
-  return typeof fallback === 'string' && fallback ? fallback : null;
+  return typeof fallback === 'string' && fallback ? flat(fallback) : null;
 }
 
 function sentence(key, locale) {
@@ -130,7 +138,7 @@ function main(argv) {
   }
 }
 
-module.exports = { askLine, fixLine, nextLine, sentence, detectLocale, normalizeLocale };
+module.exports = { askLine, fixLine, nextLine, sentence, detectLocale, normalizeLocale, flat };
 
 if (require.main === module) {
   try {

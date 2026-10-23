@@ -78,10 +78,10 @@ const HARD_CODED = {
   'scripts/bootstrap.ps1': ['install.ask.no_network', 'install.ask.disk_full'],
   'scripts/install-helpers/fetch-release.sh': ['install.ask.no_network', 'install.ask.disk_full'],
   'scripts/install-helpers/fetch-release.ps1': ['install.ask.no_network', 'install.ask.disk_full'],
-  'scripts/install-helpers/ensure-node-runtime.sh': ['install.ask.node_download', 'install.ask.disk_full'],
-  'scripts/install-helpers/ensure-node-runtime.ps1': ['install.ask.node_download', 'install.ask.disk_full'],
-  'install.sh': ['install.ask.no_network', 'install.ask.disk_full', 'install.next.verify_manual_terminal', 'install.next.verify_manual_generic'],
-  'install.ps1': ['install.ask.no_network', 'install.next.verify_manual_terminal', 'install.next.verify_manual_generic'],
+  'scripts/install-helpers/ensure-node-runtime.sh': ['install.ask.node_download', 'install.ask.disk_full', 'install.ask.unsupported_os'],
+  'scripts/install-helpers/ensure-node-runtime.ps1': ['install.ask.node_download', 'install.ask.disk_full', 'install.ask.unsupported_os'],
+  'install.sh': ['install.ask.no_network', 'install.ask.disk_full', 'install.ask.unsupported_os', 'install.next.verify_manual_terminal', 'install.next.verify_manual_generic'],
+  'install.ps1': ['install.ask.no_network', 'install.ask.disk_full', 'install.next.verify_manual_terminal', 'install.next.verify_manual_generic'],
 };
 
 /**

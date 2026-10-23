@@ -81,6 +81,9 @@ function runNpmFailure({ npmStderr = 'npm ERR! code E401\nnpm ERR! 401 Unauthori
     'set -eE',
     // The real script defines this earlier; only its side effect of not existing matters here.
     'report_error() { :; }',
+    // The two helpers install.sh defines at its top: the stop lines the AI reads come from them.
+    `ownmind_ask_line() { printf '%s\\n' "$2"; }`,
+    `ownmind_retry_cmd() { printf 'RETRY-CMD'; }`,
     `OWNMIND_DIR="$HOME/.ownmind"`,
     extractNpmBlock(),
   ].join('\n');
@@ -150,5 +153,20 @@ describe('install.sh — what a failed npm install tells you', () => {
     it('still fails the install', () => {
       assert.equal(runNpmFailure({ logWritable: false }).status, 1);
     });
+
+    it('says the disk is full, which is the one stop the AI cannot repair, instead of offering a retry', () => {
+      const { output } = runNpmFailure({ logWritable: false });
+      assert.match(output, /ASK:disk_full:/);
+      assert.doesNotMatch(output, /FIX:retry_install/);
+    });
+  });
+
+  it('offers a retry for an ordinary npm failure, and an ASK when npm itself ran out of space', () => {
+    const ordinary = runNpmFailure().output;
+    assert.match(ordinary, /FIX:retry_install:RETRY-CMD/);
+    assert.doesNotMatch(ordinary, /ASK:disk_full/);
+    const full = runNpmFailure({ npmStderr: 'npm ERR! code ENOSPC\nnpm ERR! nospc ENOSPC: no space left on device, write' }).output;
+    assert.match(full, /ASK:disk_full:/);
+    assert.doesNotMatch(full, /FIX:retry_install/);
   });
 });

@@ -38,7 +38,7 @@ test('archive layout and failure lines are named as the contract says', () => {
     assert.ok(bootstrap.includes(needle), `bootstrap.sh should mention ${needle}`);
   }
   assert.match(bootstrap, /ASK:no_network:The installer could not reach the OwnMind server or GitHub\. Check that this computer is online, then paste the same install message to the AI again\./);
-  assert.match(bootstrap, /FIX:use_fallback_source:OWNMIND_SOURCE=github bash <same one-liner>/);
+  assert.match(bootstrap, /FIX:use_fallback_source:\$\(ownmind_retry_cmd "OWNMIND_SOURCE=github "\)/);
   assert.match(bootstrap, /FIX:clear_partial:rm -rf ~\/\.ownmind\.partial/);
   assert.match(bootstrap, /log_ok unpack "release \$release unpacked"/);
 });
@@ -106,7 +106,8 @@ test('--retry-all-errors is only passed to a curl that knows it (macOS 11 has 7.
   const unconditional = withoutProbe.split('\n').filter((l) => !l.trim().startsWith('#') && l.includes('--retry-all-errors'));
   assert.deepEqual(unconditional, [], 'every other use of the flag would be unconditional');
   assert.doesNotMatch(block, /curl --help all[^\n]*\|\s*grep/, 'piping into grep -q can fail under pipefail');
-  const calls = block.split('\n').filter((l) => /\bcurl\b[^\n]*-fsSL/.test(l) || /^\s+\$?\s*curl -fsSL/.test(l));
+  // printf lines only print the retry command for the AI; they do not run curl.
+  const calls = block.split('\n').filter((l) => !/^\s*printf\b/.test(l) && (/\bcurl\b[^\n]*-fsSL/.test(l) || /^\s+\$?\s*curl -fsSL/.test(l)));
   assert.ok(calls.length >= 3);
   for (const l of calls) assert.match(l, /\$OWNMIND_CURL_FLAGS/, `curl call without the shared flags: ${l}`);
 });
