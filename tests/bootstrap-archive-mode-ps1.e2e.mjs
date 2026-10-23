@@ -180,7 +180,9 @@ after(async () => {
 
 /** A fresh machine: an empty home and a PATH with no git and no node. */
 function makeCleanWindows() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bootstrap-ps1-home-'));
+  // The long spelling: the runner's temp folder is C:\Users\RUNNER~1\..., PowerShell resolves it to
+  // C:\Users\runneradmin\..., and a path the installer writes would never equal the short form.
+  const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'bootstrap-ps1-home-')));
   const env = { ...process.env };
   for (const k of Object.keys(env)) {
     // PSModulePath: the CI runner's carries PowerShell 7 module folders, which powershell.exe 5.1 would autoload.

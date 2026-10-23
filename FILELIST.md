@@ -187,7 +187,7 @@ tests/clean-mac-sim.test.js                             — osascript is require
 scripts/install-helpers/fetch-release.ps1, scripts/bootstrap.ps1, scripts/install-helpers/ensure-node-runtime.ps1 — the server address lives in $apiBase: PowerShell names ignore case, so `$api = ''` emptied the -Api parameter and every Windows install skipped the OwnMind server for GitHub's previous release
 tests/ps-param-case-shadow.test.js                      — new: fails when a PowerShell function assigns to a variable that matches one of its parameters except in case
 src/services/install-archive.js, tests/install-archive-zip.test.js, tests/install-routes.test.js — the archive file name carries a fingerprint of the source folder, so two trees packing the same version on one machine no longer overwrite each other's file
-tests/bootstrap-archive-mode-ps1.e2e.mjs                — the private-Node case checks the folder OWNMIND_NODE sits in (Windows has a short and a long name for the temp folder)
+tests/bootstrap-archive-mode-ps1.e2e.mjs                — the private-Node case checks the folder OWNMIND_NODE sits in, and the simulated home uses the temp folder's long name (Windows also has a short RUNNER~1 name, which never equals what the installer writes)
 tests/install-routes.test.js, tests/install-archive-zip.test.js — archive listings are split on either line ending (Windows tar ends each name with a carriage return)
 src/services/install-archive.js                         — the release is staged by walking the tree and naming each entry from its folder entries, not through fs.cp's filter on full paths, which excluded nothing on the Windows runner; symbolic links are left out
 ```
