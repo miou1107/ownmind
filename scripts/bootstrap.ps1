@@ -336,7 +336,8 @@ if (-not (Test-Path "$OwnmindDir")) {
 }
 
 # Branch 2: no .git. With .release and install.ps1 this is a healthy archive install; otherwise it is broken.
-if (-not (Test-Path "$OwnmindDir\.git") -and (Test-Path -LiteralPath "$OwnmindDir\.release") -and (Test-Path -LiteralPath "$OwnmindDir\install.ps1")) {
+# A swap journal without .release is an archive update stopped part-way, not a broken directory.
+if (-not (Test-Path "$OwnmindDir\.git") -and ((Test-Path -LiteralPath "$OwnmindDir\.release") -or (Test-Path -LiteralPath "$OwnmindDir\.swap-journal.json")) -and (Test-Path -LiteralPath "$OwnmindDir\install.ps1")) {
   $upgrader = "$OwnmindDir\scripts\interactive-upgrade.ps1"
   # a later task adds an archive branch to the upgrader and marks it with this literal
   if ((Test-Path -LiteralPath $upgrader) -and (Select-String -LiteralPath $upgrader -Pattern 'ARCHIVE_MODE' -SimpleMatch -Quiet)) {

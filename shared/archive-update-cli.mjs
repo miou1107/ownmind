@@ -7,7 +7,7 @@
 //
 // Usage:  node archive-update-cli.mjs [--dir <ownmind dir>] [--check]
 // Output: one line on stdout
-//   UPDATED vX.Y.Z               the install moved to that release and the installer re-ran
+//   UPDATED vX.Y.Z               the install moved to that release and install.sh|.ps1 re-ran
 //   CURRENT vX.Y.Z               it already has the server's release
 //   FAILED <reason>              nothing changed, except after `reconfigure` (the new release is
 //                                in place and the next run re-runs the installer) and
@@ -70,6 +70,9 @@ async function update() {
     const { apiUrl, apiKey } = credentials();
     const r = await runArchiveUpdate({
       ownmindDir, apiUrl, apiKey, execFile: promisify(execFileCb),
+      // The interactive upgraders run this: a person is at the keyboard and no scheduled scanner
+      // is the caller, so the full installer re-runs (the automatic updates use update.sh).
+      reconfigure: 'install',
       // Refreshes the lock's time after each long step, so a slow network does not make it stale.
       keepAlive: () => { const t = new Date(); fs.utimesSync(lockFile, t, t); },
       logEvent: (event, details) => {

@@ -52,7 +52,7 @@ $L1 = 'unknown'
 $L1Detail = ''
 $gitDir = Join-Path $OwnmindDir '.git'
 $releaseFile = Join-Path $OwnmindDir '.release'
-if (-not (Test-Path $gitDir) -and (Test-Path $releaseFile)) {
+if (-not (Test-Path $gitDir) -and ((Test-Path $releaseFile) -or (Test-Path (Join-Path $OwnmindDir '.swap-journal.json')))) {
     # An archive install (bootstrap without git): compared with the release the OwnMind server
     # ships (see check-sync.sh). The helper prints `in_sync release=vX`,
     # `behind release=vX server=vY` or `unknown release=vX reason=<code>`.
@@ -65,7 +65,7 @@ if (-not (Test-Path $gitDir) -and (Test-Path $releaseFile)) {
         $L1 = 'error'
         $L1Detail = $Matches[1]
     } else {
-        $archiveRelease = "$(Get-Content -Path $releaseFile -TotalCount 1 -Encoding UTF8)".Trim()
+        $archiveRelease = "$(Get-Content -Path $releaseFile -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue)".Trim()
         $L1 = 'error'
         $L1Detail = "release=$archiveRelease reason=helper_failed"
     }

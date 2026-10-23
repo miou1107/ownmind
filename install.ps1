@@ -252,8 +252,9 @@ $ReleaseHelper = Join-Path $OwnmindDir "scripts\install-helpers\update-to-releas
 # git) is updated by shared/archive-update.js from the OwnMind server, never here. It is also
 # what bootstrap.ps1 has just unpacked when it runs this script, so it is used as it is.
 $ReleaseFile = Join-Path $OwnmindDir ".release"
-if ((Test-Path $OwnmindDir) -and (Test-Path $ReleaseFile) -and -not (Test-Path (Join-Path $OwnmindDir ".git"))) {
-  $archiveRelease = "$(Get-Content -Path $ReleaseFile -TotalCount 1 -Encoding UTF8)".Trim()
+# A swap journal without .release counts too: an update stopped part-way is still an archive install.
+if ((Test-Path $OwnmindDir) -and ((Test-Path $ReleaseFile) -or (Test-Path (Join-Path $OwnmindDir ".swap-journal.json"))) -and -not (Test-Path (Join-Path $OwnmindDir ".git"))) {
+  $archiveRelease = "$(Get-Content -Path $ReleaseFile -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue)".Trim()
   Write-Host "[INFO] Archive install $archiveRelease; updates come from the OwnMind server"
 } elseif (Test-Path $OwnmindDir) {
   Write-Host "[INFO] Updating OwnMind MCP server"

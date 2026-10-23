@@ -208,7 +208,8 @@ if (-not (Test-Path $OwnMindDir)) { Fail "no_ownmind" "$OwnMindDir not found; ru
 # and the other runtime state are never moved) and re-runs install.ps1; steps 1-4 below (backup, pull, npm, install re-run) are the git checkout's version
 # of that, and are skipped. bootstrap.ps1 delegates archive installs here only while this file
 # contains the literal ARCHIVE_MODE.
-$ArchiveMode = (-not (Test-Path (Join-Path $OwnMindDir ".git"))) -and (Test-Path (Join-Path $OwnMindDir ".release"))
+# A swap journal without .release counts too: an update stopped part-way is resumed here.
+$ArchiveMode = (-not (Test-Path (Join-Path $OwnMindDir ".git"))) -and ((Test-Path (Join-Path $OwnMindDir ".release")) -or (Test-Path (Join-Path $OwnMindDir ".swap-journal.json")))
 $ArchiveSwapped = $false
 if (-not $ArchiveMode -and -not (Test-Path (Join-Path $OwnMindDir ".git"))) { Fail "no_git" "$OwnMindDir is not a git repo" }
 
@@ -236,7 +237,7 @@ if ($ArchiveMode) {
   # --- 1-4 (archive install). The update stages the new release in $OwnMindDir\.next and swaps
   # code entries only (mcp, hooks, scripts, ...); runtime\ (where node.exe may be running) and
   # the other runtime state are never moved. The previous release's code is kept in .prev.
-  $archiveRelease = "$(Get-Content -LiteralPath (Join-Path $OwnMindDir '.release') -TotalCount 1 -Encoding UTF8)".Trim()
+  $archiveRelease = "$(Get-Content -LiteralPath (Join-Path $OwnMindDir '.release') -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue)".Trim()
   Step "archive_mode" "Archive install ($archiveRelease); updating from the OwnMind server instead of git"
   # Step 7 dismisses the upgrade broadcasts with these.
   $claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"

@@ -25,6 +25,15 @@ const EXCLUDED_PATHS = new Set([
 ]);
 // Excluded at any depth.
 const EXCLUDED_NAMES = new Set(['node_modules', '.git']);
+// Excluded at the top level: the names an installed client keeps its runtime state under
+// (shared/archive-update.js, STATE_ENTRIES). A server checkout that happens to hold one must not
+// ship it, and the client's archive update refuses a release that carries one.
+const STATE_NAMES = new Set([
+  'runtime', 'cache', 'state', 'logs', 'reports', 'credentials', 'git-hooks', 'bin', 'judge.json', 'queue.jsonl',
+  '.node-path', '.swap-pending', '.swap-journal.json', '.prev', '.next', '.next.download', '.reconfigure-pending',
+  '.git-bash-path', '.session-hook-installed',
+]);
+const isStateName = (name) => STATE_NAMES.has(name) || /^\.(no|last)-/.test(name) || name.startsWith('.update-lock');
 
 const FORMATS = { 'tar.gz': 'tar.gz', zip: 'zip' };
 
@@ -32,6 +41,7 @@ const built = new Map(); // `${repoRoot}\0${version}\0${format}` -> Promise<{ pa
 
 function isExcluded(rel) {
   if (EXCLUDED_PATHS.has(rel)) return true;
+  if (!rel.includes('/') && isStateName(rel)) return true;
   // Under src/ only utils/ is kept (src/ itself stays so that utils/ has a parent).
   if (rel.startsWith('src/') && rel !== 'src/utils' && !rel.startsWith('src/utils/')) return true;
   return rel.split('/').some((part) => EXCLUDED_NAMES.has(part));

@@ -37,7 +37,7 @@ CLAUDE_DIR_WIN="$(to_win_path "${CLAUDE_DIR}")"
 # ============================================================
 L1="unknown"
 L1_DETAIL=""
-if [ ! -e "${OWNMIND_DIR}/.git" ] && [ -f "${OWNMIND_DIR}/.release" ]; then
+if [ ! -e "${OWNMIND_DIR}/.git" ] && { [ -f "${OWNMIND_DIR}/.release" ] || [ -f "${OWNMIND_DIR}/.swap-journal.json" ]; }; then
   # An archive install (bootstrap without git): compared with the release the OwnMind server
   # ships, which is what shared/archive-update.js updates it to. The helper prints
   # `in_sync release=vX`, `behind release=vX server=vY` or `unknown release=vX reason=<code>`.
@@ -45,7 +45,7 @@ if [ ! -e "${OWNMIND_DIR}/.git" ] && [ -f "${OWNMIND_DIR}/.release" ]; then
   case "${ARCHIVE_L1}" in
     "in_sync "*|"behind "*) L1="${ARCHIVE_L1%% *}"; L1_DETAIL="${ARCHIVE_L1#* }" ;;
     "unknown "*) L1="error"; L1_DETAIL="${ARCHIVE_L1#* }" ;;
-    *) L1="error"; L1_DETAIL="release=$(head -n 1 "${OWNMIND_DIR}/.release" | tr -d '[:space:]') reason=helper_failed" ;;
+    *) L1="error"; L1_DETAIL="release=$(head -n 1 "${OWNMIND_DIR}/.release" 2>/dev/null | tr -d '[:space:]') reason=helper_failed" ;;
   esac
 elif [ -d "${OWNMIND_DIR}/.git" ]; then
   if command -v git >/dev/null 2>&1; then

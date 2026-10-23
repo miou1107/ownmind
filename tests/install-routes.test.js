@@ -15,6 +15,7 @@ import { startServer } from './helpers/app-server.js';
 import { tempDir } from './helpers/temp-dir.js';
 import { createInstallRouter } from '../src/routes/install.js';
 import { buildInstallArchive } from '../src/services/install-archive.js';
+import { readZipEntries } from '../src/services/zip-writer.js';
 
 const require = createRequire(import.meta.url);
 const PKG_VERSION = require('../package.json').version;
@@ -182,6 +183,36 @@ describe('install routes', () => {
 });
 
 describe('buildInstallArchive', () => {
+  it('never ships a top-level name a client keeps its runtime state under, in either format', async () => {
+    const root = makeFixtureRoot();
+    const put = (rel, body = 'x') => {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, rel), body);
+    };
+    for (const rel of ['state/session.json', 'logs/server.log', 'credentials', 'runtime/node/bin/node', 'cache/c.json',
+      'reports/r.json', 'judge.json', '.node-path', '.no-usage-scanner', '.last-update-check', '.update-lock',
+      '.swap-journal.json', '.next/x', '.prev/x', '.next.download', '.reconfigure-pending']) put(rel);
+    put('hooks/state/kept.js'); // only the top level is state; the same name deeper is code
+    const top = (n) => n.replace(/^\.\//, '').split('/')[0];
+    const forbidden = ['state', 'logs', 'credentials', 'runtime', 'cache', 'reports', 'judge.json', '.node-path',
+      '.no-usage-scanner', '.last-update-check', '.update-lock', '.swap-journal.json', '.next', '.prev',
+      '.next.download', '.reconfigure-pending'];
+    for (const format of ['tar.gz', 'zip']) {
+      const a = await buildInstallArchive({ repoRoot: root, version: 'v9.9.7-state', format });
+      try {
+        const names = format === 'zip'
+          ? readZipEntries(a.path).map((e) => e.name)
+          : execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8' }).split('\n').filter(Boolean);
+        const shipped = forbidden.filter((f) => names.some((n) => top(n) === f));
+        assert.deepEqual(shipped, [], `${format} ships runtime state: ${shipped}`);
+        assert.ok(names.some((n) => n.replace(/^\.\//, '') === 'hooks/state/kept.js'), `${format}: a nested state/ is code and ships`);
+        assert.ok(names.some((n) => n.replace(/^\.\//, '') === '.release'));
+      } finally {
+        fs.rmSync(a.path, { force: true });
+      }
+    }
+  });
+
   it('writes the version into .release and reuses the file within one process', async () => {
     const root = makeFixtureRoot();
     const a = await buildInstallArchive({ repoRoot: root, version: 'v9.9.9' });

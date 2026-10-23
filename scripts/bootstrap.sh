@@ -240,7 +240,8 @@ if [ ! -d "$OWNMIND_DIR" ]; then
 fi
 
 # Branch 2: no .git. With .release and install.sh this is a healthy archive install; otherwise it is broken.
-if [ ! -d "$OWNMIND_DIR/.git" ] && [ -f "$OWNMIND_DIR/.release" ] && [ -f "$OWNMIND_DIR/install.sh" ]; then
+# A swap journal without .release is an archive update stopped part-way, not a broken directory.
+if [ ! -d "$OWNMIND_DIR/.git" ] && { [ -f "$OWNMIND_DIR/.release" ] || [ -f "$OWNMIND_DIR/.swap-journal.json" ]; } && [ -f "$OWNMIND_DIR/install.sh" ]; then
   if grep -q 'ARCHIVE_MODE' "$OWNMIND_DIR/scripts/interactive-upgrade.sh" 2>/dev/null; then
     log_info upgrade "Archive install found; delegating to interactive-upgrade.sh"
     exec bash "$OWNMIND_DIR/scripts/interactive-upgrade.sh"

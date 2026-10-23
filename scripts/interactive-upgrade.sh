@@ -130,7 +130,8 @@ STEP "check" "Checking OwnMind directory"
 # contains the literal ARCHIVE_MODE.
 ARCHIVE_MODE=0
 ARCHIVE_SWAPPED=0
-if [ ! -e "${OWNMIND_DIR}/.git" ] && [ -f "${OWNMIND_DIR}/.release" ]; then ARCHIVE_MODE=1; fi
+# A swap journal without .release counts too: an update stopped part-way is resumed here.
+if [ ! -e "${OWNMIND_DIR}/.git" ] && { [ -f "${OWNMIND_DIR}/.release" ] || [ -f "${OWNMIND_DIR}/.swap-journal.json" ]; }; then ARCHIVE_MODE=1; fi
 [ "${ARCHIVE_MODE}" = "1" ] || [ -d "${OWNMIND_DIR}/.git" ] || FAIL "no_git" "${OWNMIND_DIR} is not a git repo; cannot upgrade"
 
 # #98 — before the backup, not after it. The test above asks whether the directory is a

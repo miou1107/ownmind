@@ -19,9 +19,17 @@
  *   3. the code entries are the top-level entries of `.next/`. State entries are never in the
  *      archive; a code entry that collides with one stops the update before any rename;
  *   4. swap entry by entry with a journal (`<dir>/.swap-journal.json`): `<dir>/<e>` -> `.prev/<e>`,
- *      then `.next/<e>` -> `<dir>/<e>`, marking each entry done. `.release` goes last, so the live
- *      `.release` only names the new release once every other entry is in place;
- *   5. delete the journal and `.next`, then re-run the installer to rewrite the host configuration.
+ *      then `.next/<e>` -> `<dir>/<e>`, marking each entry done. `.release` goes last and in one
+ *      atomic step (the old file is copied to `.prev`, the new one renamed over it), so the live
+ *      tree always has a `.release`, and it names the new release only once everything else is in;
+ *   5. delete the journal and `.next`, then reconfigure the host: `reconfigure: 'update'` (the
+ *      default, for the automatic updates from the MCP and the scheduled scanner) runs
+ *      scripts/update.sh / update.ps1, which only repair hooks and the schedule when they are
+ *      missing; `'install'` (the interactive upgraders) re-runs install.sh / install.ps1 in full.
+ *      install.sh unloads and reloads the scanner's launchd job, which kills the scanner's own
+ *      process group when the scanner is the one updating, so automatic updates never run it.
+ *
+ * An install counts as an archive install when it has `.release` or a swap journal, and no `.git`.
  *
  * Failure rules. Anything before the first rename leaves the live tree exactly as it was (the
  * staged `.next` is removed). A failure after some renames is RESUMED, never rolled back: the
@@ -103,9 +111,13 @@ export function compareReleases(a, b) {
   return 0;
 }
 
-/** Is this directory an archive install (a .release file and no .git)? */
+/**
+ * Is this directory an archive install? A .release file and no .git; or a swap journal and no
+ * .git, so a swap interrupted at any point is still recognised and resumed.
+ */
 export function isArchiveInstall(ownmindDir, fileSystem = fs) {
-  return fileSystem.existsSync(path.join(ownmindDir, '.release'))
+  return (fileSystem.existsSync(path.join(ownmindDir, '.release'))
+    || fileSystem.existsSync(path.join(ownmindDir, '.swap-journal.json')))
     && !fileSystem.existsSync(path.join(ownmindDir, '.git'));
 }
 
@@ -254,7 +266,9 @@ const swapBlocked = (e) => ['EBUSY', 'EPERM', 'EACCES'].includes(e?.code);
  * @param {Function} [deps.keepAlive] called after each long step (download, npm, root deps) and
  *                                   before the swap; the callers refresh the update lock's time
  *                                   there, so a slow network does not make it look stale
- * @param {boolean} [deps.reconfigure] re-run the installer after the swap (default true)
+ * @param {'update'|'install'|false} [deps.reconfigure] after a swap: 'update' (default) runs
+ *                                   scripts/update.sh|.ps1; 'install' re-runs install.sh|.ps1;
+ *                                   false skips it
  * @returns {Promise<{outcome: string, from: string, to: string|null, reason?: string, version?: string|null}>}
  */
 export async function runArchiveUpdate({
@@ -270,10 +284,13 @@ export async function runArchiveUpdate({
   nodeBin = process.execPath,
   env = process.env,
   keepAlive = () => {},
-  reconfigure = true,
+  reconfigure = 'update',
 }) {
   const isWindows = platform === 'win32';
-  const from = readRelease(ownmindDir, fileSystem);
+  const journalFileEarly = path.join(ownmindDir, '.swap-journal.json');
+  const from = readRelease(ownmindDir, fileSystem) || (() => {
+    try { return String(JSON.parse(fileSystem.readFileSync(journalFileEarly, 'utf8')).from || ''); } catch { return ''; }
+  })() || 'unknown';
   const nextDir = path.join(ownmindDir, NEXT_DIR);
   const prevDir = path.join(ownmindDir, PREV_DIR);
   const journalFile = path.join(ownmindDir, SWAP_JOURNAL);
@@ -295,7 +312,7 @@ export async function runArchiveUpdate({
     }
   };
 
-  if (!from || !isArchiveInstall(ownmindDir, fileSystem)) {
+  if (!isArchiveInstall(ownmindDir, fileSystem)) {
     return result(SKIPPED, { reason: 'not_archive_install' });
   }
 
@@ -332,6 +349,16 @@ export async function runArchiveUpdate({
           try { fileSystem.renameSync(parked, live); } catch (e) { return fail('swap_restore', e, { to: journal.to }); }
           logEvent('update_swap_restored', { mode: 'archive', entry, to: journal.to });
         }
+      } else if (entry === '.release') {
+        // One atomic replace: the old file is copied aside and the new one renamed over it, so
+        // there is never a moment without a live .release (every archive check reads it).
+        try {
+          if (fileSystem.existsSync(live)) fileSystem.copyFileSync(live, parked);
+          fileSystem.renameSync(staged, live);
+        } catch (e) {
+          logEvent('update_swap_pending', { mode: 'archive', entry, from, to: journal.to, error: errText(e) });
+          return swapBlocked(e) ? result(FAILED, { reason: 'swap_pending', to: journal.to }) : fail('swap', e, { to: journal.to });
+        }
       } else {
         if (exists(fileSystem, live)) {
           try {
@@ -361,10 +388,15 @@ export async function runArchiveUpdate({
     return null;
   };
 
-  /** Re-run the installer from the live tree. Returns null on success. */
+  /** Reconfigure the host from the live tree (see `reconfigure`). Returns null on success. */
   const runInstaller = async (to) => {
     if (!reconfigure) return null;
     try { fileSystem.writeFileSync(reconfigurePendingFile, `${to}\n`); } catch { /* best effort */ }
+    // The installer can run for minutes; the lock must not look stale meanwhile, or a second
+    // process would start the same step concurrently.
+    ping();
+    const timer = setInterval(ping, 60_000);
+    if (typeof timer.unref === 'function') timer.unref();
     const installEnv = { ...childEnv, OWNMIND_INSTALL_KEY: apiKey };
     const privateNode = privateNodeFor(ownmindDir, fileSystem);
     if (privateNode) {
@@ -372,7 +404,17 @@ export async function runArchiveUpdate({
       installEnv.OWNMIND_NODE = privateNode;
     }
     try {
-      if (isWindows) {
+      if (reconfigure !== 'install') {
+        // The daily sync: hooks, skills and the schedule, each repaired only when missing. It
+        // reads the key from the settings file itself.
+        const script = path.join(ownmindDir, 'scripts', isWindows ? 'update.ps1' : 'update.sh');
+        if (isWindows) {
+          await execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
+            { cwd: ownmindDir, timeout: INSTALL_TIMEOUT_MS, maxBuffer: OUTPUT_LIMIT, windowsHide: true, env: installEnv });
+        } else {
+          await execFile('bash', [script], { cwd: ownmindDir, timeout: INSTALL_TIMEOUT_MS, maxBuffer: OUTPUT_LIMIT, env: installEnv });
+        }
+      } else if (isWindows) {
         // install.ps1 reads the key and URL from the environment when it gets no arguments,
         // which keeps the key off the command line.
         await execFile('powershell.exe',
@@ -386,6 +428,8 @@ export async function runArchiveUpdate({
       }
     } catch (e) {
       return fail('reconfigure', e, { to });
+    } finally {
+      clearInterval(timer);
     }
     try { fileSystem.unlinkSync(reconfigurePendingFile); } catch { /* already gone */ }
     return null;
@@ -440,6 +484,8 @@ export async function runArchiveUpdate({
       logEvent('update_applied', { mode: 'archive', from, to: from, step: 'reconfigure_retry' });
       return result(APPLIED, { to: from, version: readVersion() });
     }
+    // No journal (checked above), so a .next or download left here is a crashed staging.
+    if (exists(fileSystem, nextDir) || exists(fileSystem, downloadFile)) cleanStaging();
     logEvent('update_clean', { mode: 'archive', from, server: to });
     return result(CLEAN, { to: from });
   }
@@ -523,6 +569,9 @@ export async function runArchiveUpdate({
       await npm(['install', ...specs, '--no-save', '--ignore-scripts', '--silent', '--no-audit', '--no-fund'], nextDir);
     } catch (e) {
       logEvent('update_root_deps_failed', { mode: 'archive', to, error: errText(e) });
+      // A half-installed root node_modules must not replace the live one: without it in .next it
+      // is no code entry, and the live node_modules stays as it is.
+      try { removeTree(fileSystem, path.join(nextDir, 'node_modules')); } catch { /* left: still a copy of the live one plus npm's partial work */ }
     }
     ping();
   }

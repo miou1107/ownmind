@@ -32,7 +32,7 @@ describe('both upgraders carry the archive branch', () => {
 
   it('interactive-upgrade.sh: archive detection replaces the no_git stop, and the branch skips steps 1-4', () => {
     const sh = read('scripts/interactive-upgrade.sh');
-    assert.match(sh, /if \[ ! -e "\$\{OWNMIND_DIR\}\/\.git" \] && \[ -f "\$\{OWNMIND_DIR\}\/\.release" \]; then ARCHIVE_MODE=1; fi/);
+    assert.match(sh, /if \[ ! -e "\$\{OWNMIND_DIR\}\/\.git" \] && \{ \[ -f "\$\{OWNMIND_DIR\}\/\.release" \] \|\| \[ -f "\$\{OWNMIND_DIR\}\/\.swap-journal\.json" \]; \}; then ARCHIVE_MODE=1; fi/);
     assert.match(sh, /\[ "\$\{ARCHIVE_MODE\}" = "1" \] \|\| \[ -d "\$\{OWNMIND_DIR\}\/\.git" \] \|\| FAIL "no_git"/);
     const preflight = sh.indexOf('ownmind_preflight_assert "upgrade"');
     const branch = sh.indexOf('if [ "${ARCHIVE_MODE}" = "1" ]; then\n  # --- 1-4 (archive install)');
@@ -47,7 +47,7 @@ describe('both upgraders carry the archive branch', () => {
 
   it('interactive-upgrade.ps1: the same branch; a stopped swap is resumed by the next run, never redone in PowerShell', () => {
     const ps = read('scripts/interactive-upgrade.ps1');
-    assert.match(ps, /\$ArchiveMode = \(-not \(Test-Path \(Join-Path \$OwnMindDir "\.git"\)\)\) -and \(Test-Path \(Join-Path \$OwnMindDir "\.release"\)\)/);
+    assert.match(ps, /\$ArchiveMode = \(-not \(Test-Path \(Join-Path \$OwnMindDir "\.git"\)\)\) -and \(\(Test-Path \(Join-Path \$OwnMindDir "\.release"\)\) -or \(Test-Path \(Join-Path \$OwnMindDir "\.swap-journal\.json"\)\)\)/);
     assert.match(ps, /if \(-not \$ArchiveMode -and -not \(Test-Path \(Join-Path \$OwnMindDir "\.git"\)\)\) \{ Fail "no_git"/);
     const preflight = ps.indexOf("Assert-OwnMindRequirements -Stage 'upgrade'");
     const branch = ps.indexOf('if ($ArchiveMode) {');

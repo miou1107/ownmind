@@ -127,5 +127,5 @@ test('the embedded git check is byte-identical to preflight.sh', () => {
 
 test('a failed download removes the empty partial directory; a healthy archive install needs install.sh', () => {
   assert.match(bootstrap, /ownmind_download_archive "\$key" "\$api" "\$partial\/archive\.tar\.gz" \|\| \{ rm -rf "\$partial"; exit 1; \}/);
-  assert.match(bootstrap, /-f "\$OWNMIND_DIR\/\.release" \] && \[ -f "\$OWNMIND_DIR\/install\.sh" \]/);
+  assert.match(bootstrap, /-f "\$OWNMIND_DIR\/\.release" \] \|\| \[ -f "\$OWNMIND_DIR\/\.swap-journal\.json" \]; \} && \[ -f "\$OWNMIND_DIR\/install\.sh" \]/);
 });

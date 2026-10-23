@@ -115,15 +115,20 @@ function fakeFetch({ release = 'v1.1.0', archive = null, failGet = false } = {})
 }
 
 /** execFile: real tar; npm and the installer recorded, optionally failing. */
-function fakeExec({ failNpm = false, failInstaller = false } = {}) {
+function fakeExec({ failNpm = false, failRootDeps = false, failInstaller = false, onInstall = null } = {}) {
   const calls = [];
   const execFile = async (cmd, args = [], opts = {}) => {
     calls.push({ cmd, args, opts });
     if (cmd === 'tar') return realExecFile(cmd, args, opts);
     if (path.basename(cmd).startsWith('npm')) {
       if (failNpm) throw Object.assign(new Error('npm broke'), { code: 'NPM_FAIL' });
+      if (failRootDeps && args.includes('--no-save')) {
+        fs.writeFileSync(path.join(opts.cwd, 'node_modules', 'half-installed'), 'x');
+        throw Object.assign(new Error('registry down'), { code: 'NPM_FAIL' });
+      }
       return { stdout: '', stderr: '' };
     }
+    if (cmd === 'bash' && onInstall) await onInstall();
     if (cmd === 'bash' && failInstaller) throw Object.assign(new Error('install failed'), { code: 1 });
     return { stdout: '', stderr: '' };
   };
@@ -204,9 +209,11 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
     seedInstall();
     const before = stateSnapshot();
     const rec = failingRename(() => false);
+    // After every rename the live tree must still have a .release (every archive check reads it).
+    const watched = { ...rec.fileSystem, renameSync: (a, b) => { rec.fileSystem.renameSync(a, b); assert.ok(fs.existsSync(live('.release')), `no live .release after renaming ${a}`); } };
     const x = fakeExec();
     let pings = 0;
-    const o = opts({ fetch: fakeFetch().fetch, execFile: x.execFile, fileSystem: rec.fileSystem, keepAlive: () => { pings += 1; } });
+    const o = opts({ fetch: fakeFetch().fetch, execFile: x.execFile, fileSystem: watched, keepAlive: () => { pings += 1; } });
     const r = await o.run();
     assert.equal(r.outcome, APPLIED, JSON.stringify(o.events));
     assert.equal(r.from, 'v1.0.0');
@@ -239,16 +246,85 @@ describe('runArchiveUpdate', { skip: skipPosix }, () => {
     assert.ok(npmCalls[1].args.includes('--ignore-scripts'));
     assert.equal(npmCalls[1].opts.cwd, path.join(dir, '.next'));
 
-    // The installer re-ran from the new code, the key in the environment, the private Node named.
-    const install = x.calls.find((c) => c.cmd === 'bash');
-    assert.deepEqual(install.args, [live('install.sh'), '', API_URL]);
-    assert.equal(install.opts.env.OWNMIND_INSTALL_KEY, API_KEY);
-    assert.equal(install.opts.env.OWNMIND_PRIVATE_NODE, '1');
-    assert.equal(install.opts.env.OWNMIND_NODE, live('runtime/current/bin/node'));
-    assert.ok(!install.args.includes(API_KEY), 'the key never goes on a command line');
+    // An automatic update reconfigures through the daily sync, never install.sh (which reloads
+    // the scanner's launchd job and so kills a scanner that is the caller).
+    const sync = x.calls.filter((c) => c.cmd === 'bash');
+    assert.equal(sync.length, 1);
+    assert.deepEqual(sync[0].args, [live('scripts/update.sh')]);
+    assert.equal(sync[0].opts.env.OWNMIND_PRIVATE_NODE, '1');
+    assert.equal(sync[0].opts.env.OWNMIND_NODE, live('runtime/current/bin/node'));
     assert.ok(!fs.existsSync(live('.reconfigure-pending')));
-    assert.ok(pings >= 3, `the lock was refreshed only ${pings} times`);
+    assert.ok(pings >= 4, `the lock was refreshed only ${pings} times`);
     assert.ok(o.events.some((e) => e.event === 'update_applied' && e.details.mode === 'archive'));
+  });
+
+  it("reconfigure: 'install' (the interactive upgraders) re-runs install.sh with the key in the environment", async () => {
+    seedInstall();
+    const x = fakeExec();
+    const r = await opts({ fetch: fakeFetch().fetch, execFile: x.execFile, reconfigure: 'install' }).run();
+    assert.equal(r.outcome, APPLIED);
+    const install = x.calls.filter((c) => c.cmd === 'bash');
+    assert.equal(install.length, 1);
+    assert.deepEqual(install[0].args, [live('install.sh'), '', API_URL]);
+    assert.equal(install[0].opts.env.OWNMIND_INSTALL_KEY, API_KEY);
+    assert.equal(install[0].opts.env.OWNMIND_PRIVATE_NODE, '1');
+    assert.ok(!install[0].args.includes(API_KEY), 'the key never goes on a command line');
+  });
+
+  it('the lock is refreshed right before the reconfigure step, and on a timer while it runs', async (t) => {
+    seedInstall();
+    const seq = [];
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const x = fakeExec({
+      onInstall: async () => {
+        seq.push('reconfigure');
+        t.mock.timers.tick(60_000 * 2 + 1); // a slow installer: two minutes
+      },
+    });
+    await opts({ fetch: fakeFetch().fetch, execFile: x.execFile, keepAlive: () => { seq.push('ping'); } }).run();
+    const at = seq.indexOf('reconfigure');
+    assert.ok(at > 0, 'the reconfigure step ran');
+    assert.equal(seq[at - 1], 'ping', 'refreshed just before it starts');
+    assert.deepEqual(seq.slice(at + 1), ['ping', 'ping'], 'refreshed every minute while it runs, and not after');
+  });
+
+  it('a stuck swap with no live .release (journal: mcp done, .release staged) is still an archive install and resumes', async () => {
+    seedInstall();
+    writeTree(live('.next'), { '.release': 'v1.1.0\n' });
+    fs.rmSync(live('mcp'), { recursive: true });
+    writeTree(dir, { 'mcp/index.js': '// v1.1.0\n' });
+    writeTree(live('.prev'), { 'mcp/index.js': '// v1.0.0\n' });
+    fs.rmSync(live('.release'));
+    fs.writeFileSync(live('.swap-journal.json'), JSON.stringify({ version: 1, from: 'v1.0.0', to: 'v1.1.0', entries: ['mcp', '.release'], done: ['mcp'] }));
+    const f = fakeFetch();
+    const r = await opts({ fetch: f.fetch, execFile: fakeExec().execFile }).run();
+    assert.equal(r.outcome, APPLIED, JSON.stringify(r));
+    assert.equal(r.from, 'v1.0.0');
+    assert.equal(r.to, 'v1.1.0');
+    assert.equal(read(dir, '.release').trim(), 'v1.1.0');
+    assert.equal(f.calls.length, 0);
+    assert.deepEqual(leftovers(), []);
+  });
+
+  it('root dependencies failing: the staged node_modules is dropped, so the live one stays', async () => {
+    seedInstall();
+    writeTree(dir, { 'node_modules/js-yaml/package.json': '{"version":"4.1.0"}' });
+    const ino = fs.statSync(live('node_modules')).ino;
+    const o = opts({ fetch: fakeFetch().fetch, execFile: fakeExec({ failRootDeps: true }).execFile });
+    const r = await o.run();
+    assert.equal(r.outcome, APPLIED, 'the root dependencies are not fatal');
+    assert.equal(fs.statSync(live('node_modules')).ino, ino);
+    assert.ok(!fs.existsSync(live('node_modules/half-installed')));
+    assert.ok(o.events.some((e) => e.event === 'update_root_deps_failed'));
+  });
+
+  it('CLEAN with no journal removes a staging a crash left behind', async () => {
+    seedInstall();
+    writeTree(live('.next'), { 'mcp/index.js': 'half' });
+    fs.writeFileSync(live('.next.download'), 'half');
+    const r = await opts({ fetch: fakeFetch({ release: 'v1.0.0' }).fetch, execFile: fakeExec().execFile }).run();
+    assert.equal(r.outcome, CLEAN);
+    assert.deepEqual(leftovers(), []);
   });
 
   it('npm failing: FAILED, the live tree untouched, staging gone', async () => {

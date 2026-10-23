@@ -20,7 +20,8 @@ const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
 
 test('install.sh: the archive check comes before, and short-circuits, the update branch', () => {
   const src = read('install.sh');
-  const archive = src.indexOf('if [ -d "$OWNMIND_DIR" ] && [ -f "$OWNMIND_DIR/.release" ] && [ ! -e "$OWNMIND_DIR/.git" ]; then');
+  // .release, or a swap journal (an update stopped part-way), and no .git.
+  const archive = src.indexOf('if [ -d "$OWNMIND_DIR" ] && { [ -f "$OWNMIND_DIR/.release" ] || [ -f "$OWNMIND_DIR/.swap-journal.json" ]; } && [ ! -e "$OWNMIND_DIR/.git" ]; then');
   const update = src.indexOf('echo "[INFO] Updating OwnMind MCP server"');
   assert.ok(archive > 0, 'install.sh has no archive-install check');
   assert.ok(update > archive, 'the archive check must come before the update branch');
@@ -32,7 +33,7 @@ test('install.sh: the archive check comes before, and short-circuits, the update
 
 test('install.ps1: the archive check comes before, and short-circuits, the update branch', () => {
   const src = read('install.ps1');
-  const archive = src.indexOf('if ((Test-Path $OwnmindDir) -and (Test-Path $ReleaseFile) -and -not (Test-Path (Join-Path $OwnmindDir ".git"))) {');
+  const archive = src.indexOf('if ((Test-Path $OwnmindDir) -and ((Test-Path $ReleaseFile) -or (Test-Path (Join-Path $OwnmindDir ".swap-journal.json"))) -and -not (Test-Path (Join-Path $OwnmindDir ".git"))) {');
   const update = src.indexOf('Write-Host "[INFO] Updating OwnMind MCP server"');
   assert.ok(archive > 0, 'install.ps1 has no archive-install check');
   assert.ok(update > archive, 'the archive check must come before the update branch');
@@ -40,5 +41,5 @@ test('install.ps1: the archive check comes before, and short-circuits, the updat
   assert.match(between, /\$ReleaseFile = Join-Path \$OwnmindDir "\.release"|Write-Host "\[INFO\] Archive install \$archiveRelease; updates come from the OwnMind server"/);
   assert.match(between, /\} elseif \(Test-Path \$OwnmindDir\) \{\r?\n\s*$/,
     'the update branch must be the elseif of the archive check');
-  assert.match(src, /\$ReleaseFile = Join-Path \$OwnmindDir "\.release"\r?\nif \(\(Test-Path \$OwnmindDir\)/);
+  assert.match(src, /\$ReleaseFile = Join-Path \$OwnmindDir "\.release"\r?\n# [^\r\n]*\r?\nif \(\(Test-Path \$OwnmindDir\)/);
 });
