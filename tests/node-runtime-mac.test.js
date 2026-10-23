@@ -118,15 +118,17 @@ const KEY = 'node-runtime-test-key-0123456789';
 const unameM = spawnSync('uname', ['-m'], { encoding: 'utf8' }).stdout.trim();
 const ARCH = unameM === 'arm64' ? 'arm64' : 'x64';
 const FIXTURE_VERSION = 'v22.0.0';
+// The version the nodejs.org fixture serves; v22.9.0 and a malformed entry sit below it in index.json.
+const DIST_VERSION = 'v22.10.0';
 
-const fixture = { server: null, url: '', dir: '', archive: null, sha: '', mode: 'ok', requests: [], driver: '' };
+const fixture = { server: null, url: '', dir: '', archive: null, sha: '', distArchive: null, distSha: '', distOn: false, mode: 'ok', requests: [], driver: '' };
 
 /** A tar.gz shaped like nodejs.org's: one top-level folder with bin/node and bin/npm. */
-function buildNodeArchive(workDir) {
-  const top = `node-${FIXTURE_VERSION}-darwin-${ARCH}`;
+function buildNodeArchive(workDir, version = FIXTURE_VERSION) {
+  const top = `node-${version}-darwin-${ARCH}`;
   const bin = path.join(workDir, 'src', top, 'bin');
   fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/bash\necho ${FIXTURE_VERSION}\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/bash\necho ${version}\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'npm'), '#!/bin/bash\necho 10.0.0\n', { mode: 0o755 });
   const out = path.join(workDir, `${top}.tar.gz`);
   const r = spawnSync('tar', ['-czf', out, '-C', path.join(workDir, 'src'), top], { encoding: 'utf8' });
@@ -139,6 +141,8 @@ before(async () => {
   fixture.dir = tempDir('node-runtime-fixture-');
   fixture.archive = buildNodeArchive(fixture.dir);
   fixture.sha = crypto.createHash('sha256').update(fixture.archive).digest('hex');
+  fixture.distArchive = buildNodeArchive(fixture.dir, DIST_VERSION);
+  fixture.distSha = crypto.createHash('sha256').update(fixture.distArchive).digest('hex');
   // Written as a file so the test never passes a script as a command argument.
   fixture.driver = path.join(fixture.dir, 'driver.sh');
   fs.writeFileSync(fixture.driver, [
@@ -170,6 +174,27 @@ before(async () => {
         'x-sha256': fixture.mode === 'badsha' ? '0'.repeat(64) : fixture.sha,
       });
       return res.end(fixture.archive);
+    }
+    if (fixture.distOn && req.url === '/dist/index.json') {
+      // One object per line like nodejs.org's; a malformed v22 entry and other majors must be ignored.
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end([
+        '[',
+        '{"version":"v23.1.0","date":"2024-10-24"},',
+        '{"version":"v22.9.0","date":"2024-09-17"},',
+        `{"version":"${DIST_VERSION}","date":"2024-10-16"},`,
+        '{"version":"v22.x.1","date":"2024-01-01"},',
+        '{"version":"v20.18.0","date":"2024-10-03"}',
+        ']',
+      ].join('\n'));
+    }
+    if (fixture.distOn && req.url === `/dist/${DIST_VERSION}/SHASUMS256.txt`) {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      return res.end(`${'a'.repeat(64)}  node-${DIST_VERSION}-linux-x64.tar.gz\n${fixture.distSha}  node-${DIST_VERSION}-darwin-${ARCH}.tar.gz\n`);
+    }
+    if (fixture.distOn && req.url === `/dist/${DIST_VERSION}/node-${DIST_VERSION}-darwin-${ARCH}.tar.gz`) {
+      res.writeHead(200, { 'content-type': 'application/gzip' });
+      return res.end(fixture.distArchive);
     }
     res.writeHead(404);
     return res.end('not found');
@@ -343,6 +368,68 @@ describe('private Node runtime: ensure_node on a simulated clean Mac', () => {
     } finally {
       mac.cleanup();
       fixture.mode = 'ok';
+    }
+  });
+
+  it('a real directory named current is replaced by the link: the install succeeds and current is a symlink', { skip: skipE2e }, async () => {
+    const mac = makeCleanMac();
+    try {
+      fixture.mode = 'ok';
+      fixture.requests = [];
+      const runtime = path.join(mac.home, '.ownmind', 'runtime');
+      fs.mkdirSync(path.join(runtime, 'current', 'bin'), { recursive: true });
+      fs.writeFileSync(path.join(runtime, 'current', 'bin', 'node'), '#!/bin/bash\necho v18.0.0\n', { mode: 0o755 });
+      const r = await runEnsure(mac);
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, new RegExp(`OK:node:private Node ${FIXTURE_VERSION} installed`));
+      assert.ok(fs.lstatSync(path.join(runtime, 'current')).isSymbolicLink(), 'current must be a symlink afterwards');
+      assert.equal(fs.readlinkSync(path.join(runtime, 'current')), `node-${FIXTURE_VERSION}`);
+      assert.equal(nodeRequests().length, 1);
+      // A second run reuses it and downloads nothing.
+      const again = await runEnsure(mac);
+      assert.equal(again.status, 0, again.out);
+      assert.equal(nodeRequests().length, 1, 'the second run must not download again');
+    } finally {
+      mac.cleanup();
+    }
+  });
+
+  it('nodejs.org source: server 503 and not forced, the newest v22 by number (v22.10.0 over v22.9.0) is installed', { skip: skipE2e }, async () => {
+    const mac = makeCleanMac();
+    try {
+      fixture.mode = '503';
+      fixture.distOn = true;
+      fixture.requests = [];
+      const r = await runEnsure(mac);
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, /INFO:node_download:trying the OwnMind server, then nodejs\.org/);
+      assert.match(r.out, new RegExp(`OK:node:private Node ${DIST_VERSION.replace(/\./g, '\\.')} installed`));
+      const runtime = path.join(mac.home, '.ownmind', 'runtime');
+      assert.equal(fs.readlinkSync(path.join(runtime, 'current')), `node-${DIST_VERSION}`);
+      assert.ok(fixture.requests.some((q) => q.url === `/dist/${DIST_VERSION}/SHASUMS256.txt`));
+      assert.ok(!fixture.requests.some((q) => q.url.includes('v22.9.0')), 'the older v22.9.0 must not be fetched');
+    } finally {
+      mac.cleanup();
+      fixture.mode = 'ok';
+      fixture.distOn = false;
+    }
+  });
+
+  it('nodejs.org source: a wrong X-Sha256 from the server and not forced falls through to nodejs.org and succeeds', { skip: skipE2e }, async () => {
+    const mac = makeCleanMac();
+    try {
+      fixture.mode = 'badsha';
+      fixture.distOn = true;
+      fixture.requests = [];
+      const r = await runEnsure(mac);
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, new RegExp(`OK:node:private Node ${DIST_VERSION.replace(/\./g, '\\.')} installed`));
+      assert.ok(nodeRequests().length >= 1, 'the server must have been tried first');
+      assert.ok(fixture.requests.some((q) => q.url === '/dist/index.json'));
+    } finally {
+      mac.cleanup();
+      fixture.mode = 'ok';
+      fixture.distOn = false;
     }
   });
 });

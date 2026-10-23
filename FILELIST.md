@@ -18,7 +18,7 @@ scripts/install-helpers/fetch-release.sh                — ownmind_download_arc
 tests/bootstrap-archive-mode.test.js                    — bootstrap.sh 沒有 git 時的靜態檢查：不再因缺 git 結束、FIX／ASK 行、內嵌函式與 fetch-release.sh 逐字相同
 tests/bootstrap-archive-mode.e2e.mjs                    — 乾淨 Mac 加本機假伺服器：下載解壓、清掉半途的 .partial、install.sh 失敗後續跑、連不上時的 ASK:no_network、退回 GitHub（CI 的 install 工作點名執行）
 scripts/install-helpers/ensure-node-runtime.sh          — ownmind_ensure_node：系統 node 20 以上就直接用；沒有或太舊，就從伺服器（失敗再從 nodejs.org）下載官方 Node 壓縮檔，shasum 驗證後解到 ~/.ownmind/runtime/node-<版本>/，current 連結指過去，寫入 .node-path
-tests/node-runtime-mac.test.js                          — 私有 Node 的靜態檢查（壓縮檔名稱與 shared/node-runtime.js 一致、preflight 在 Mac 不把缺 node 當失敗）和乾淨 Mac 的實測：沒有 node、node 18、node 22、伺服器 503、檢查碼不符
+tests/node-runtime-mac.test.js                          — 私有 Node 的靜態檢查（壓縮檔名稱與 shared/node-runtime.js 一致、preflight 在 Mac 不把缺 node 當失敗）和乾淨 Mac 的實測：沒有 node、node 18、node 22、伺服器 503、檢查碼不符、current 是真資料夾、退回 nodejs.org（取最新的 v22.10.0 而不是 v22.9.0）
 ```
 
 修改檔：

@@ -114,8 +114,8 @@ ownmind_preflight_assert() {
   local stage="${1:-install}" failures count
   failures=$(ownmind_preflight_failures | awk -F'\t' -v skip="$OWNMIND_PREFLIGHT_NO_ACTION" '$3 != skip')
   # git is how a checkout is updated. An install from the release archive has no .git and never
-  # calls git, so for it a missing git is not a failure.
-  if [ ! -d "${OWNMIND_DIR:-$HOME/.ownmind}/.git" ]; then
+  # calls git, so on a Mac a missing git is not a failure there. Linux keeps its old behaviour.
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ ! -d "${OWNMIND_DIR:-$HOME/.ownmind}/.git" ]; then
     failures=$(printf '%s\n' "$failures" | awk -F'\t' '$1 != "git"')
   fi
   [ -n "$(printf '%s' "$failures" | tr -d '[:space:]')" ] || return 0

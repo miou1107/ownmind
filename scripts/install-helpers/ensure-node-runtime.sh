@@ -197,6 +197,7 @@ ownmind_ensure_node() {
   rm -rf "$partial"
   mkdir -p "$partial" || { log_err node_download "Could not create $partial"; return 1; }
 
+  log_info node_download "trying the OwnMind server, then nodejs.org (this can take a few minutes when offline)"
   ok=0
   if [ "$source" != "nodejs" ] && ownmind_node_from_server "$api" "$key" "$arch" "$partial/node.tar.gz"; then
     ok=1
@@ -220,6 +221,11 @@ ownmind_ensure_node() {
   fi
 
   prev=$(readlink "$runtime/current" 2>/dev/null || true)
+  # A real directory named current (left by hand or an older layout) would make `ln -sfn`
+  # create the link inside it instead of replacing it, so it is cleared first.
+  if [ -e "$runtime/current" ] && [ ! -L "$runtime/current" ]; then
+    rm -rf "$runtime/current"
+  fi
   rm -rf "$runtime/node-$version"
   mv "$partial/unpack" "$runtime/node-$version" || { rm -rf "$partial"; log_err node_download "Could not move Node.js into $runtime"; return 1; }
   ln -sfn "node-$version" "$runtime/current" || { rm -rf "$partial" "$runtime/node-$version"; return 1; }
