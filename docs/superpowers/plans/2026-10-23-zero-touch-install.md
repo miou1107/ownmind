@@ -36,23 +36,33 @@
 
 ## Batch 0: evidence before code
 
-### Task 1: Confirm a new desktop conversation picks up a fresh install
+### Task 1: A simulated clean Mac, and whether a new conversation picks up a fresh install
+
+Vin cannot provide a second Mac or a scratch account (2026-10-23), so the clean machine is
+simulated on this Mac and the simulation is reused by the acceptance task.
 
 **Files:**
-- Create: `docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md` (the run log; appended by later acceptance runs)
+- Create: `tests/helpers/clean-mac-sim.mjs` (`makeCleanMac({ keep = ['bash','sh','curl','tar','gzip','sed','awk','grep','mkdir','mv','rm','cp','ln','chmod','cat','date','uname','sleep','head','tail','tr','cut','wc','dirname','basename','env','printf','touch','find','xargs','osascript','mktemp','sw_vers','id','whoami','tee','sort','uniq','readlink','stat','df'] }) -> { home, binDir, env }`: a throwaway HOME, a `bin/` of symlinks to those system tools only (no `git`, no `node`, no `npm`, no `brew`), and an `env` object with `HOME`, `PATH=<binDir>`, `CLAUDECODE` unset; `cleanup()`)
+- Create: `docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md` (the run log; appended by the acceptance task)
 
-- [ ] **Step 1: Create a scratch macOS user account on a Mac (needs Vin or an admin), log in, install the Claude desktop app, sign in.** Nothing else: no Xcode tools, no Homebrew, no Node.
-- [ ] **Step 2: In the Claude desktop app Code tab, paste today's console install prompt.** Record every line the AI says and every point it stops. This is the baseline failure the whole plan removes.
-- [ ] **Step 3: Install by hand (Xcode tools, then re-run) so OwnMind is configured, without quitting the app. Open a new conversation.** Record whether `[OwnMind v…]` context appears and whether `ownmind_search` is callable.
-- [ ] **Step 4: Write the result into the evidence file.** If memories loaded: Task 13 builds no restart helper. If not: Task 13 builds the fallback with the yes/no question.
-- [ ] **Step 5: Commit the evidence file.**
+**Interfaces:**
+- Produces: `makeCleanMac()` used by Task 4/5 e2e tests and by Task 16.
 
-```bash
-git add docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md
-git commit -m "docs: record whether a new desktop conversation picks up a fresh OwnMind install"
-```
-
----
+- [ ] **Step 1: Write the helper and a self-test** (`tests/clean-mac-sim.test.js`): inside the env, `command -v git` and `command -v node` fail, `command -v curl` and `tar` succeed, `$HOME` is empty.
+- [ ] **Step 2: Does a new `claude` process read a fresh install?** The Claude Code login on
+  macOS lives in the keychain under a name derived from the config directory, so a throwaway
+  HOME is never logged in and `claude -p` cannot be used (probed 2026-10-23: "Not logged in").
+  Use the two things that do not need a login: (a) with today's scripts, install OwnMind by
+  hand into the simulated HOME (seed `~/.ownmind` from this tree as
+  `tests/install-clean-machine.e2e.mjs` does; a stub server is enough), then run
+  `env -u CLAUDECODE HOME=<home> claude mcp list` and record whether `ownmind` is listed and
+  connected: that is the real binary reading the fresh `~/.claude.json` exactly as a new
+  desktop conversation would (the desktop app spawns this binary per conversation with
+  `--setting-sources=user,project,local`); (b) the hook half is already evidenced by
+  `~/.ownmind/logs/2026-10-23.jsonl` on Vin's Mac, where the SessionStart hook ran at the
+  start second of each of three desktop conversations. Copy both into the evidence file.
+- [ ] **Step 3: Write the result into the evidence file.** Loaded: Task 13 builds no restart helper. Not loaded: Task 13 builds the fallback with the yes/no question.
+- [ ] **Step 4: Commit** `test: simulated clean Mac helper and new-process evidence`.
 
 ## Batch 1: private Node and archive mode (removes the 2026-10-22 failures)
 
@@ -274,12 +284,12 @@ git commit -am "feat(install): hooks and MCP use the private Node runtime when t
 
 ## Batch 4: acceptance and release
 
-### Task 16: Acceptance on clean machines
+### Task 16: Acceptance on simulated clean machines
 
-- [ ] **Step 1:** Scratch macOS account (Task 1's): paste the new prompt into the Claude desktop app, click allow once, hands off. Record: time to `NEXT:`, the verification session's four lines, the notification, Vin's team page row. Append to the evidence file with screenshots under `docs/superpowers/plans/evidence/`.
-- [ ] **Step 2:** Windows 11 machine or VM with no winget access and no git/Node: same.
-- [ ] **Step 3:** Break the server's archive route once (stop the container) and confirm the GitHub fallback path produces a working install with no `FIX:` line.
-- [ ] **Step 4:** On a developer machine with git and Node (Vin's), run the upgrade and diff `~/.claude/settings.json` and `~/.claude.json` before/after: no change in any OwnMind entry.
+- [ ] **Step 1 (Mac):** with `makeCleanMac()` (Task 1) and the real server running locally (`docker compose up` if Docker is available, else `npm start` against the test database used by the suite), run the exact one-liner from the new prompt inside the simulated env, hands off. Record: every output line, time to `NEXT:`, the files under the fake `~/.ownmind` and `~/.claude`, then run the real `claude` binary once with that HOME and record the verification output (context line, `ownmind_search` named). Append to the evidence file.
+- [ ] **Step 2 (Windows):** there is no Windows machine. Add a job to `.github/workflows/test.yml` (`install-windows-clean`) that runs `scripts/bootstrap.ps1` on `windows-latest` with `$env:Path` reduced to `C:\Windows\System32;C:\Windows\System32\WindowsPowerShell\v1.0` (no git, no node) against the fixture server from Task 6, and asserts `.release`, `runtime\current\node.exe` and the generated `settings.json` entries. Its green run is the Windows evidence; link the run URL in the evidence file.
+- [ ] **Step 3:** Break the server's archive route once (stop the local server) and confirm the GitHub fallback path produces a working install with no `FIX:` line.
+- [ ] **Step 4:** On this developer machine (git and Node present), run the upgrade and diff `~/.claude/settings.json` and `~/.claude.json` before/after: no change in any OwnMind entry.
 - [ ] **Step 5:** Commit the evidence.
 
 ### Task 17: Release
