@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
+import yaml from 'js-yaml';
 import { startServer } from './helpers/app-server.js';
 import { tempDir } from './helpers/temp-dir.js';
 import { createInstallRouter } from '../src/routes/install.js';
@@ -154,7 +155,61 @@ describe('GET /api/install/node when nodejs.org cannot be used', () => {
   });
 });
 
+describe('GET /api/install/node error answers carry no archive headers', () => {
+  it('a cached file that vanished gives a clean JSON 503', async () => {
+    const s = await boot({ getArchive: async () => ({ path: path.join(tempDir('node-archive-'), 'gone.tar.gz'), version: VERSION, sha256: SHA }) });
+    try {
+      const r = await get(s, '?os=darwin&arch=arm64');
+      assert.equal(r.status, 503);
+      assert.match(r.headers.get('content-type'), /application\/json/);
+      assert.equal(r.headers.get('x-sha256'), null);
+      assert.equal(r.headers.get('x-node-version'), null);
+      assert.deepEqual(await r.json(), { error: 'node_upstream_unavailable' });
+    } finally { await s.close(); }
+  });
+});
+
+describe('docker-compose.yml', () => {
+  it('points the api service at the cache volume through INSTALL_CACHE_DIR', () => {
+    const compose = yaml.load(fs.readFileSync(new URL('../docker-compose.yml', import.meta.url), 'utf8'));
+    const api = compose.services.api;
+    const dir = api.environment?.INSTALL_CACHE_DIR;
+    assert.equal(dir, '/var/cache/ownmind-install');
+    assert.ok(api.volumes.includes(`ownmind_install_cache:${dir}`), 'volume must be mounted at INSTALL_CACHE_DIR');
+    assert.ok('ownmind_install_cache' in compose.volumes);
+  });
+});
+
 describe('createNodeArchiveService', () => {
+  it('only accepts plain v22.x.y releases from index.json', async () => {
+    const stub = fakeFetch();
+    const withJunk = async (url, opts) => (String(url).endsWith('/index.json')
+      ? new Response(JSON.stringify([{ version: 'v22.12.0-rc.1' }, { version: 'v22.x' }, { version: 'v220.1.0' }, ...INDEX]))
+      : stub(url, opts));
+    const r = await service(withJunk).getArchive({ os: 'darwin', arch: 'arm64' });
+    assert.equal(r.version, VERSION);
+  });
+
+  it('serves the newest cached archive when index.json cannot be fetched', async () => {
+    const dir = tempDir('node-archive-');
+    await service(fakeFetch(), dir).getArchive({ os: 'darwin', arch: 'arm64' });
+    // An older verified release sits next to it; the newest one must win.
+    fs.writeFileSync(path.join(dir, 'node-v22.9.0-darwin-arm64.tar.gz'), 'old');
+    fs.writeFileSync(path.join(dir, 'node-v22.9.0-darwin-arm64.tar.gz.sha256'), `${'2'.repeat(64)}\n`);
+    const down = async () => { throw new Error('ENETUNREACH'); };
+    const s = await boot(service(down, dir));
+    try {
+      const r = await get(s, '?os=darwin&arch=arm64');
+      assert.equal(r.status, 200);
+      assert.equal(r.headers.get('x-node-version'), VERSION);
+      assert.equal(r.headers.get('x-sha256'), SHA);
+      await r.arrayBuffer();
+      // Another platform has nothing cached, so it is still a 503.
+      const other = await get(s, '?os=win32&arch=x64');
+      assert.equal(other.status, 503);
+    } finally { await s.close(); }
+  });
+
   it('resolves the first v22.x in index.json and asks for it once per 24 hours', async () => {
     let t = 0;
     const stub = fakeFetch();

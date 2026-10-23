@@ -8,7 +8,7 @@ src/routes/install.js                                   — createInstallRouter�
 src/services/install-archive.js                         — buildInstallArchive：把伺服器自己的檔案打成 .tar.gz（不含 node_modules、.git、tests、db、client/src，src 只留 src/utils），根目錄有 .release，一次行程只建一次
 tests/install-routes.test.js                            — 路由與壓縮檔內容、first-load 兩種結果
 shared/node-runtime.js                                  — 安裝腳本與伺服器共用的 Node 名稱與檢查碼函式：NODE_LTS_MAJOR（22）、nodeArchiveName、nodeDistUrl、shasumsUrl、verifySha256，只用 Node 內建模組
-src/services/node-archive.js                            — createNodeArchiveService：找出最新的 22.x，從 nodejs.org 下載並對照 SHASUMS256.txt，通過後存進快取資料夾，之後直接從快取提供
+src/services/node-archive.js                            — createNodeArchiveService：找出最新的 22.x，從 nodejs.org 下載並對照 SHASUMS256.txt，通過後存進快取資料夾，之後直接從快取提供；nodejs.org 的版本清單連不上時，提供快取裡最新的一版
 tests/node-archive.test.js                              — GET /api/install/node 的 400、503、兩個標頭、第二次不連網，以及 24 小時內只查一次 index.json
 tests/node-runtime-shared.test.js                       — 四種壓縮檔名稱、下載網址，以及 verifySha256 檢查碼對與不對
 ```
@@ -17,7 +17,7 @@ tests/node-runtime-shared.test.js                       — 四種壓縮檔名�
 ```
 src/app.js                                              — 安裝路徑掛在 apiLimiter 之前，自己一分鐘 30 次；把 Node 壓縮檔服務（快取資料夾由 INSTALL_CACHE_DIR 指定）交給安裝路由
 src/routes/install.js                                   — 新增 GET /api/install/node?os=&arch=（要登入，回應標頭有 X-Node-Version 與 X-Sha256；nodejs.org 連不上時回 503 node_upstream_unavailable）
-docker-compose.yml, .env.example                        — api 容器掛上 ownmind_install_cache 到 /var/cache/ownmind-install，並新增 INSTALL_CACHE_DIR
+docker-compose.yml, .env.example                        — api 容器掛上 ownmind_install_cache 到 /var/cache/ownmind-install，並在 compose 直接設定 INSTALL_CACHE_DIR（正式機的 .env 沒有這個變數）；.env.example 只留說明
 Dockerfile, .dockerignore                               — 映像裡放進 scripts/、install.sh、install.ps1、mcp/、hooks/、skills/、configs/
 ```
 

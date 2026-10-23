@@ -78,13 +78,15 @@ export function createInstallRouter({ query, auth, logger = console, repoRoot = 
       const archive = await nodeArchive.getArchive({ os, arch });
       res.set('X-Node-Version', archive.version);
       res.set('X-Sha256', archive.sha256);
+      const size = fs.statSync(archive.path).size;
       res.set('Content-Type', os === 'win32' ? 'application/zip' : 'application/gzip');
-      res.set('Content-Length', String(fs.statSync(archive.path).size));
+      res.set('Content-Length', String(size));
       pipeline(fs.createReadStream(archive.path), res, (err) => {
         if (err) logger.warn('install node: download interrupted', { error: err.message });
       });
     } catch (err) {
       logger.warn('install node: nodejs.org archive unavailable', { error: err.message });
+      for (const h of ['Content-Type', 'Content-Length', 'X-Node-Version', 'X-Sha256']) res.removeHeader(h);
       res.status(503).json({ error: 'node_upstream_unavailable' });
     }
   });

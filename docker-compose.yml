@@ -7,6 +7,10 @@ services:
       - "127.0.0.1:3100:3000"
     env_file:
       - .env
+    environment:
+      # Without this the cache would fall back to the container's temp dir and the volume below
+      # would never be used; the production .env does not carry the variable.
+      INSTALL_CACHE_DIR: /var/cache/ownmind-install
     volumes:
       # Node LTS archives the server hands to new installs (see src/services/node-archive.js)
       - ownmind_install_cache:/var/cache/ownmind-install

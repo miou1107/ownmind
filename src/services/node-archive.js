@@ -19,6 +19,7 @@ import {
  */
 
 const INDEX_URL = 'https://nodejs.org/dist/index.json';
+const RELEASE = new RegExp(`^v${NODE_LTS_MAJOR}\\.\\d+\\.\\d+$`);
 const INDEX_TTL_MS = 24 * 60 * 60 * 1000;
 const INDEX_TIMEOUT_MS = 15_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -43,7 +44,7 @@ export function createNodeArchiveService({ fetch: fetchImpl, cacheDir, now = Dat
   async function latestVersion() {
     if (latest && now() - latest.at < INDEX_TTL_MS) return latest.version;
     const res = await ok(await fetchImpl(INDEX_URL, { signal: AbortSignal.timeout(INDEX_TIMEOUT_MS) }), 'index.json');
-    const entry = (await res.json()).find((e) => typeof e?.version === 'string' && e.version.startsWith(`v${NODE_LTS_MAJOR}.`));
+    const entry = (await res.json()).find((e) => typeof e?.version === 'string' && RELEASE.test(e.version));
     if (!entry) throw new Error(`index.json lists no v${NODE_LTS_MAJOR}.x release`);
     latest = { version: entry.version, at: now() };
     return entry.version;
@@ -76,15 +77,51 @@ export function createNodeArchiveService({ fetch: fetchImpl, cacheDir, now = Dat
     return expected;
   }
 
-  async function resolve(os, arch) {
-    const version = await latestVersion();
+  async function readCached(os, arch, version) {
     const name = nodeArchiveName({ os, arch, version });
     const target = path.join(cacheDir, name);
     try {
       const sha256 = (await fsp.readFile(`${target}.sha256`, 'utf8')).trim();
       await fsp.access(target);
       if (/^[0-9a-f]{64}$/.test(sha256)) return { path: target, version, sha256 };
-    } catch { /* not cached yet */ }
+    } catch { /* not cached */ }
+    return null;
+  }
+
+  // nodejs.org cannot be asked (index.json failed): the newest verified archive already on disk
+  // for this platform is still better than sending the colleague to nodejs.org.
+  async function newestCached(os, arch) {
+    let files;
+    try { files = await fsp.readdir(cacheDir); } catch { return null; }
+    const versions = files
+      .map((f) => /^node-(v\d+\.\d+\.\d+)-/.exec(f)?.[1])
+      .filter((v) => v && RELEASE.test(v))
+      .sort((a, b) => {
+        const pa = a.slice(1).split('.').map(Number);
+        const pb = b.slice(1).split('.').map(Number);
+        return pb[1] - pa[1] || pb[2] - pa[2];
+      });
+    for (const version of [...new Set(versions)]) {
+      const hit = await readCached(os, arch, version);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  async function resolve(os, arch) {
+    let version;
+    try {
+      version = await latestVersion();
+    } catch (err) {
+      const cached = await newestCached(os, arch);
+      if (!cached) throw err;
+      logger.warn('node archive: nodejs.org index unavailable, serving cached archive', { error: err.message, version: cached.version });
+      return cached;
+    }
+    const name = nodeArchiveName({ os, arch, version });
+    const target = path.join(cacheDir, name);
+    const hit = await readCached(os, arch, version);
+    if (hit) return hit;
     // Two colleagues installing at once share one download.
     if (!inflight.has(name)) {
       const p = download(version, name, target).finally(() => inflight.delete(name));
