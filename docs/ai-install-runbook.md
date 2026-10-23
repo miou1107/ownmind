@@ -147,3 +147,5 @@ The last line of the output is a `NEXT:` line.
 
 In the user's language, three sentences at most: it is installed, what happens next, and what the user should do (usually nothing). Do not list commands, file names or codes.
 <!-- verify:end -->
+
+The installer also starts a background watcher that shows one desktop notification when the first memory load happens. On a Mac that notification is attributed to Script Editor, and the colleague may have notifications switched off for it, so it may not appear. The verification session above is the real proof that OwnMind works; do not treat a missing notification as a failure.

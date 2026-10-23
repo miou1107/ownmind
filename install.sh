@@ -1427,16 +1427,17 @@ echo "  [ OK ] Claude Code        SessionStart hook"
 echo "  [ OK ] Git hooks          pre-commit + post-commit (Iron Rule Verification)"
 echo ""
 # zero-touch-install, Task 14: the colleague gets a desktop notification once memory has really
-# loaded. That happens in the next conversation, after this script has exited, so a detached
-# watcher (scripts/install-helpers/first-load-watch.cjs) waits for it for up to ten minutes. It
-# reads the key from the credentials files itself: nothing secret is on its command line. The
-# upgraders set OWNMIND_SKIP_FIRST_LOAD_WATCH=1, because an update must not pop a notification.
+# loaded. That happens in the next conversation, after this script has exited, so a watcher
+# (scripts/install-helpers/first-load-watch.cjs) waits for it for up to ten minutes. Called in the
+# foreground, the script starts the real watcher in its own session without the key in its
+# environment, and returns at once. It reads the key from the credentials files itself: nothing
+# secret is on its command line. The upgraders set OWNMIND_SKIP_FIRST_LOAD_WATCH=1, because an
+# update must not pop a notification.
 WATCH_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/first-load-watch.cjs"
 if [ "${OWNMIND_SKIP_FIRST_LOAD_WATCH:-}" != 1 ] && [ -f "$WATCH_SCRIPT" ]; then
   WATCH_NODE="${OWNMIND_NODE:-node}"
   if command -v "$WATCH_NODE" >/dev/null 2>&1; then
-    nohup "$WATCH_NODE" "$WATCH_SCRIPT" --since "$OWNMIND_INSTALL_STARTED_AT" </dev/null >/dev/null 2>&1 &
-    disown 2>/dev/null || true
+    "$WATCH_NODE" "$WATCH_SCRIPT" --since "$OWNMIND_INSTALL_STARTED_AT" </dev/null >/dev/null 2>&1 || true
   fi
 fi
 # What the AI does next depends on where it is running (zero-touch-install, Task 12):

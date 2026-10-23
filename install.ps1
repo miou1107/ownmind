@@ -947,10 +947,12 @@ if (-not $HasBash) {
 Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
 # zero-touch-install, Task 14: the colleague gets a desktop notification once memory has really
-# loaded. That happens in the next conversation, after this script has exited, so a hidden watcher
-# (scripts\install-helpers\first-load-watch.cjs) waits for it for up to ten minutes. It reads the
-# key from the credentials files itself: nothing secret is in its arguments. The upgraders set
-# OWNMIND_SKIP_FIRST_LOAD_WATCH=1, because an update must not pop a notification.
+# loaded. That happens in the next conversation, after this script has exited, so a watcher
+# (scripts\install-helpers\first-load-watch.cjs) waits for it for up to ten minutes. The script
+# starts the real watcher in its own session without the key in its environment and returns at
+# once; Start-Process -WindowStyle Hidden only keeps this short call from flashing a console
+# window. It reads the key from the credentials files itself: nothing secret is in its arguments.
+# The upgraders set OWNMIND_SKIP_FIRST_LOAD_WATCH=1, because an update must not pop a notification.
 if ($env:OWNMIND_SKIP_FIRST_LOAD_WATCH -ne '1') {
   try {
     $WatchScript = Join-Path $OwnmindDir 'scripts\install-helpers\first-load-watch.cjs'

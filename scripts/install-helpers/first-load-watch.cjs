@@ -15,7 +15,10 @@
  *   - a request that throws, or an answer that is not 200, counts as "not yet" and polling goes on
  *
  * Command line (always exits 0; the outcome goes to ~/.ownmind/logs/first-load-watch.log):
- *   node first-load-watch.cjs --since <ISO> [--locale xx] [--timeout-ms N] [--interval-ms N]
+ *   node first-load-watch.cjs --since <ISO> [--locale xx] [--timeout-ms N] [--interval-ms N] [--child]
+ * Without --child it starts itself again (with --child) in its own session and exits at once.
+ * Clock skew: the first answer's Date header is compared with the local clock; a gap over 30
+ * seconds shifts `since` by that gap, so a wrong clock on this computer cannot hide a load.
  * The API URL and key come from resolve-credentials.cjs, never from the arguments: the arguments
  * are the process's command line, which any account can read with `ps`.
  *
@@ -26,10 +29,29 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync, execFileSync } = require('node:child_process');
+const { spawn, spawnSync, execFileSync } = require('node:child_process');
 
 const DEFAULT_TIMEOUT_MS = 600_000;
 const DEFAULT_INTERVAL_MS = 15_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+// A local clock this far from the server's is corrected for; a smaller gap is just latency.
+const SKEW_TOLERANCE_MS = 30_000;
+
+/**
+ * The `since` to send, corrected for a local clock that disagrees with the server's: the install
+ * start was read from the colleague's clock, the server compares it with its own. Returns null
+ * when the response has no usable Date header or the two clocks agree within SKEW_TOLERANCE_MS.
+ */
+function skewCorrectedSince(res, since, now) {
+  let header = null;
+  try { header = res && res.headers && typeof res.headers.get === 'function' ? res.headers.get('date') : null; } catch { header = null; }
+  const serverNow = header ? Date.parse(header) : NaN;
+  const sinceMs = Date.parse(since);
+  if (Number.isNaN(serverNow) || Number.isNaN(sinceMs)) return null;
+  const offset = serverNow - now();
+  if (Math.abs(offset) <= SKEW_TOLERANCE_MS) return null;
+  return new Date(sinceMs + offset).toISOString();
+}
 
 /**
  * Polls until the server reports a load or the time runs out.
@@ -39,23 +61,37 @@ const DEFAULT_INTERVAL_MS = 15_000;
  * @param {string} o.since      ISO timestamp taken when the install run started
  * @param {Function} o.fetch    fetch-compatible
  * @param {(kind: 'loaded'|'not_loaded') => void} o.notify
- * @param {() => number} o.now  milliseconds
+ * @param {() => number} o.now  epoch milliseconds
  * @param {(ms: number) => Promise<void>} o.sleep
+ * @param {number} [o.requestTimeoutMs] a request that takes longer counts as a failed poll
  * @returns {Promise<'loaded'|'not_loaded'>}
  */
 async function watchFirstLoad({
   apiUrl, apiKey, since, fetch = globalThis.fetch, notify, now = Date.now,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   timeoutMs = DEFAULT_TIMEOUT_MS, intervalMs = DEFAULT_INTERVAL_MS,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 }) {
-  const url = `${String(apiUrl).replace(/\/+$/, '')}/api/install/first-load?since=${encodeURIComponent(since)}`;
+  const base = `${String(apiUrl).replace(/\/+$/, '')}/api/install/first-load?since=`;
   const headers = { Authorization: `Bearer ${apiKey}` };
   const say = (kind) => { try { notify(kind); } catch { /* a missing notification service must not end the watch */ } };
   const startedAt = now();
+  let effectiveSince = since;
+  let skewChecked = false;
+  const ask = () => fetch(`${base}${encodeURIComponent(effectiveSince)}`, { headers, signal: AbortSignal.timeout(requestTimeoutMs) });
 
   for (;;) {
     try {
-      const res = await fetch(url, { headers });
+      let res = await ask();
+      if (!skewChecked) {
+        // The first answer, whatever its status, carries the server's clock.
+        skewChecked = true;
+        const corrected = skewCorrectedSince(res, since, now);
+        if (corrected) {
+          effectiveSince = corrected;
+          res = await ask();
+        }
+      }
       if (res && res.status === 200) {
         const body = await res.json();
         if (body && body.loaded === true) {
@@ -63,7 +99,7 @@ async function watchFirstLoad({
           return 'loaded';
         }
       }
-    } catch { /* offline, a reset connection, an unreadable body: ask again next time */ }
+    } catch { /* offline, a timed-out or reset request, an unreadable body: ask again next time */ }
 
     const left = timeoutMs - (now() - startedAt);
     if (left <= 0) {
@@ -136,6 +172,9 @@ function platformNotifier(text, helpersDir = __dirname) {
       '-File', path.join(helpersDir, 'notify.ps1'), '-Text', text,
     ], { encoding: 'utf8', timeout: 30_000, windowsHide: true });
     if (r.stdout) process.stdout.write(r.stdout);
+  } else {
+    // No notification service here (Linux): the sentence goes to stdout for whoever is watching.
+    process.stdout.write(`${text}\n`);
   }
 }
 
@@ -144,7 +183,36 @@ function argValue(argv, name) {
   return i !== -1 && i + 1 < argv.length ? argv[i + 1] : '';
 }
 
+/** The environment of the detached watcher: it reads the key from the credentials files, not from here. */
+function detachedEnv(env = process.env) {
+  const copy = { ...env };
+  delete copy.OWNMIND_INSTALL_KEY;
+  delete copy.OWNMIND_API_KEY;
+  return copy;
+}
+
+/**
+ * The installers call this file in the foreground. It starts the real watcher (this file again,
+ * with --child) in its own session, with no terminal and no key in its environment, and exits,
+ * so closing the install's terminal or the AI's tool session does not end the watch.
+ */
+function startDetached(argv) {
+  const child = spawn(process.execPath, [__filename, ...argv, '--child'], {
+    detached: true, stdio: 'ignore', windowsHide: true, env: detachedEnv(),
+  });
+  child.on('error', () => {});
+  child.unref();
+}
+
 async function main(argv) {
+  if (!argv.includes('--child')) {
+    try {
+      startDetached(argv);
+    } catch {
+      appendLog(path.join(os.homedir(), '.ownmind', 'logs', 'first-load-watch.log'), { outcome: 'spawn_failed' });
+    }
+    return;
+  }
   const home = os.homedir();
   const ownmindDir = path.join(home, '.ownmind');
   const logFile = path.join(ownmindDir, 'logs', 'first-load-watch.log');
@@ -182,7 +250,10 @@ async function main(argv) {
   removePidFileIfOurs(pidFile);
 }
 
-module.exports = { watchFirstLoad, replaceRunningWatcher, commandOfProcess, DEFAULT_TIMEOUT_MS, DEFAULT_INTERVAL_MS };
+module.exports = {
+  watchFirstLoad, replaceRunningWatcher, commandOfProcess, detachedEnv, skewCorrectedSince,
+  DEFAULT_TIMEOUT_MS, DEFAULT_INTERVAL_MS, DEFAULT_REQUEST_TIMEOUT_MS, SKEW_TOLERANCE_MS,
+};
 
 if (require.main === module) {
   main(process.argv.slice(2)).catch(() => { /* never fail the install */ }).finally(() => process.exit(0));

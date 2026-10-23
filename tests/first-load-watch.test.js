@@ -26,8 +26,8 @@ const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8').replace(
 const SINCE = '2026-10-23T08:00:00Z';
 
 /** A clock that only moves when the watcher sleeps. */
-function fakeClock() {
-  let t = 0;
+function fakeClock(start = 0) {
+  let t = start;
   const sleeps = [];
   return {
     now: () => t,
@@ -36,12 +36,18 @@ function fakeClock() {
   };
 }
 
-const answer = (status, body) => ({ status, ok: status === 200, json: async () => body });
+/** `date` is the server's Date header value (a string), or absent. */
+const answer = (status, body, date) => ({
+  status,
+  ok: status === 200,
+  json: async () => body,
+  ...(date === undefined ? {} : { headers: { get: (name) => (String(name).toLowerCase() === 'date' ? date : null) } }),
+});
 const notLoaded = async () => answer(200, { loaded: false, at: null });
 
 /** Starts a watch with a fake clock; overrides replace any default. */
-function watch(overrides = {}) {
-  const clock = fakeClock();
+function watch(overrides = {}, clockStart = 0) {
+  const clock = fakeClock(clockStart);
   const notes = [];
   const requests = [];
   const promise = watchFirstLoad({
@@ -118,6 +124,27 @@ describe('watchFirstLoad', () => {
     assert.ok(!seen[0].url.includes('k-secret-123'));
   });
 
+  it('gives every request an abort signal, and a request that never answers counts as a failed poll', async () => {
+    const signals = [];
+    const { promise, notes, requests } = watch({
+      timeoutMs: 100, intervalMs: 40, requestTimeoutMs: 20,
+      // Never answers on its own: it settles only when the watcher aborts it.
+      fetch: (url, init) => new Promise((resolve, reject) => {
+        signals.push(init.signal);
+        init.signal.addEventListener('abort', () => reject(init.signal.reason));
+      }),
+    });
+    assert.equal(await promise, 'not_loaded');
+    assert.deepEqual(notes, ['not_loaded']);
+    assert.ok(signals.length >= 2, 'it kept asking after the first request hung');
+    assert.ok(signals.every((s) => s instanceof AbortSignal));
+  });
+
+  it('the default request timeout is 10 seconds', () => {
+    const { DEFAULT_REQUEST_TIMEOUT_MS } = require(path.join(repoRoot, 'scripts', 'install-helpers', 'first-load-watch.cjs'));
+    assert.equal(DEFAULT_REQUEST_TIMEOUT_MS, 10_000);
+  });
+
   it('a notifier that throws does not crash the watcher', async () => {
     const { promise } = watch({
       fetch: async () => answer(200, { loaded: true, at: SINCE }),
@@ -131,6 +158,121 @@ describe('watchFirstLoad', () => {
     assert.equal(await promise, 'not_loaded');
     assert.deepEqual(notes, ['not_loaded']);
     assert.equal(requests.length, 4, 'polls at 0, 400, 800 and 1000 ms');
+  });
+});
+
+describe('watchFirstLoad: a wrong clock on the colleague\'s computer', () => {
+  // The server's clock reads S0. The install began 60 s ago by the colleague's clock, and the
+  // memory load happened 30 s ago by the server's clock, so the load is after the install.
+  const S0 = Date.parse('2026-10-23T08:10:00Z');
+  const LOAD_AT = S0 - 30_000;
+
+  /** A server that answers loaded only when the since it is sent is earlier than the load. */
+  function serverAt(serverNow, { date = new Date(serverNow).toUTCString() } = {}) {
+    const asked = [];
+    return {
+      asked,
+      fetch: async (url) => {
+        const since = Date.parse(new URL(url).searchParams.get('since'));
+        asked.push(since);
+        return answer(200, since < LOAD_AT ? { loaded: true, at: new Date(LOAD_AT).toISOString() } : { loaded: false, at: null }, date);
+      },
+    };
+  }
+
+  it('a colleague clock 5 minutes ahead of the server still sees "loaded" (the first request is sent again with a corrected since)', async () => {
+    const ahead = 5 * 60_000;
+    const localNow = S0 + ahead;
+    const installStartedLocal = localNow - 60_000;
+    const server = serverAt(S0);
+    const { promise, notes } = watch({ since: new Date(installStartedLocal).toISOString(), fetch: server.fetch }, localNow);
+    assert.equal(await promise, 'loaded');
+    assert.deepEqual(notes, ['loaded']);
+    assert.equal(server.asked.length, 2, 'the first answer revealed the gap, so it asked once more');
+    assert.equal(server.asked[0], installStartedLocal, 'the first request carries the uncorrected since');
+    assert.equal(server.asked[1], installStartedLocal - ahead, 'the second carries since shifted by the gap');
+  });
+
+  it('a colleague clock behind the server by 5 minutes is corrected the other way', async () => {
+    const behind = 5 * 60_000;
+    const localNow = S0 - behind;
+    const installStartedLocal = localNow - 60_000;
+    const server = serverAt(S0);
+    const { promise } = watch({ since: new Date(installStartedLocal).toISOString(), fetch: server.fetch }, localNow);
+    assert.equal(await promise, 'loaded');
+    assert.equal(server.asked[server.asked.length - 1], installStartedLocal + behind);
+  });
+
+  it('keeps the corrected since for every later poll, and corrects only once', async () => {
+    const ahead = 5 * 60_000;
+    const localNow = S0 + ahead;
+    const installStartedLocal = localNow - 60_000;
+    const asked = [];
+    const { promise } = watch({
+      since: new Date(installStartedLocal).toISOString(),
+      timeoutMs: 45_000,
+      fetch: async (url) => {
+        asked.push(Date.parse(new URL(url).searchParams.get('since')));
+        return answer(200, { loaded: false, at: null }, new Date(S0).toUTCString());
+      },
+    }, localNow);
+    await promise;
+    assert.equal(asked[0], installStartedLocal);
+    assert.ok(asked.length > 3);
+    assert.ok(asked.slice(1).every((s) => s === installStartedLocal - ahead), 'every request after the first is corrected');
+  });
+
+  it('a gap within 30 seconds is not corrected', async () => {
+    const localNow = S0 + 20_000;
+    const installStartedLocal = localNow - 60_000;
+    const server = serverAt(S0);
+    const { promise } = watch({ since: new Date(installStartedLocal).toISOString(), fetch: server.fetch }, localNow);
+    await promise;
+    assert.ok(server.asked.every((s) => s === installStartedLocal));
+  });
+
+  it('a missing Date header means no correction', async () => {
+    const localNow = S0 + 5 * 60_000;
+    const installStartedLocal = localNow - 60_000;
+    const asked = [];
+    const { promise, notes } = watch({
+      since: new Date(installStartedLocal).toISOString(),
+      timeoutMs: 30_000,
+      fetch: async (url) => { asked.push(Date.parse(new URL(url).searchParams.get('since'))); return answer(200, { loaded: false, at: null }); },
+    }, localNow);
+    assert.equal(await promise, 'not_loaded');
+    assert.deepEqual(notes, ['not_loaded']);
+    assert.ok(asked.every((s) => s === installStartedLocal));
+    assert.equal(asked.length, 3, 'one request per poll, no extra one');
+  });
+
+  it('an unparseable Date header means no correction', async () => {
+    const localNow = S0 + 5 * 60_000;
+    const installStartedLocal = localNow - 60_000;
+    const server = serverAt(S0, { date: 'not a date' });
+    const { promise } = watch({ since: new Date(installStartedLocal).toISOString(), timeoutMs: 30_000, fetch: server.fetch }, localNow);
+    assert.equal(await promise, 'not_loaded');
+    assert.ok(server.asked.every((s) => s === installStartedLocal));
+  });
+
+  it('the gap is read from the first answer even when it is an error status', async () => {
+    const ahead = 5 * 60_000;
+    const localNow = S0 + ahead;
+    const installStartedLocal = localNow - 60_000;
+    let n = 0;
+    const asked = [];
+    const { promise } = watch({
+      since: new Date(installStartedLocal).toISOString(),
+      fetch: async (url) => {
+        n += 1;
+        const since = Date.parse(new URL(url).searchParams.get('since'));
+        asked.push(since);
+        if (n <= 2) return answer(500, { error: 'first_load_unavailable' }, new Date(S0).toUTCString());
+        return answer(200, { loaded: since < LOAD_AT, at: null }, new Date(S0).toUTCString());
+      },
+    }, localNow);
+    assert.equal(await promise, 'loaded');
+    assert.equal(asked[asked.length - 1], installStartedLocal - ahead);
   });
 });
 
@@ -199,9 +341,11 @@ describe('first-load-watch.cjs command line', { skip: process.platform === 'win3
     return home;
   }
 
-  function runCli(home, args, extraEnv = {}) {
+  /** Runs the watcher itself (--child); without it the file starts a detached copy and exits. */
+  function runCli(home, args, extraEnv = {}, { child: asChild = true } = {}) {
     return new Promise((resolve) => {
-      const child = spawn(process.execPath, [path.join(repoRoot, 'scripts', 'install-helpers', 'first-load-watch.cjs'), ...args], {
+      const argv = asChild ? [...args, '--child'] : args;
+      const child = spawn(process.execPath, [path.join(repoRoot, 'scripts', 'install-helpers', 'first-load-watch.cjs'), ...argv], {
         env: { ...process.env, HOME: home, USERPROFILE: home, OWNMIND_NOTIFY_DRY_RUN: '1', OWNMIND_LOCALE_FORCE: 'en', OWNMIND_API_KEY: '', OWNMIND_API_URL: '', ...extraEnv },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -242,6 +386,26 @@ describe('first-load-watch.cjs command line', { skip: process.platform === 'win3
       assert.match(r.out, /has not loaded your memory yet/);
       assert.ok(!/memory has loaded/.test(r.out));
     } finally { server.close(); }
+  });
+
+  it('without --child it returns at once and its detached copy finishes the watch on its own', async () => {
+    await withServer(async (apiUrl, seen) => {
+      const home = fakeHome(apiUrl, 'k-detached');
+      const r = await runCli(home, ['--since', SINCE, '--interval-ms', '50', '--timeout-ms', '8000'], { OWNMIND_INSTALL_KEY: 'k-install-env' }, { child: false });
+      assert.equal(r.code, 0);
+      assert.equal(r.out, '', 'the foreground call prints nothing');
+      const logFile = path.join(home, '.ownmind', 'logs', 'first-load-watch.log');
+      for (let i = 0; i < 100 && !fs.existsSync(logFile); i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.ok(fs.existsSync(logFile), 'the detached copy ran and logged');
+      assert.match(logOf(home), /outcome=loaded/);
+      assert.equal(seen[0].auth, 'Bearer k-detached', 'the key came from the credentials file');
+    });
+  });
+
+  it('the detached watcher gets an environment without the install key or API key', () => {
+    const { detachedEnv } = require(path.join(repoRoot, 'scripts', 'install-helpers', 'first-load-watch.cjs'));
+    const env = detachedEnv({ PATH: '/usr/bin', OWNMIND_INSTALL_KEY: 'a', OWNMIND_API_KEY: 'b', OWNMIND_API_URL: 'https://x', HOME: '/h' });
+    assert.deepEqual(env, { PATH: '/usr/bin', OWNMIND_API_URL: 'https://x', HOME: '/h' });
   });
 
   it('exits 0 and logs when there are no credentials', async () => {
@@ -302,22 +466,22 @@ describe('notify.ps1', () => {
 describe('installers start the watcher', () => {
   const NEXT = '# What the AI does next';
 
-  it('install.sh: detached, after the self-check, before the NEXT decision, guarded, key not on the command line', () => {
+  it('install.sh: calls the watcher in the foreground (it detaches itself), after the self-check, before the NEXT decision, guarded, key not on the command line', () => {
     const t = read('install.sh');
     const selfCheck = t.indexOf('--trigger=post_install');
-    const nohupAt = t.indexOf('nohup', selfCheck);
+    const callAt = t.indexOf('"$WATCH_SCRIPT" --since');
     const nextAt = t.indexOf(NEXT);
-    assert.ok(selfCheck !== -1 && nohupAt !== -1 && nextAt !== -1);
-    assert.ok(selfCheck < nohupAt && nohupAt < nextAt, 'self-check, then the watcher, then NEXT');
-    const lineStart = t.lastIndexOf('\n', nohupAt) + 1;
+    assert.ok(selfCheck !== -1 && callAt !== -1 && nextAt !== -1);
+    assert.ok(selfCheck < callAt && callAt < nextAt, 'self-check, then the watcher, then NEXT');
+    const lineStart = t.lastIndexOf('\n', callAt) + 1;
     const spawnLine = t.slice(lineStart, t.indexOf('\n', lineStart)).trim();
-    assert.match(spawnLine, /^nohup "\$WATCH_NODE" "\$WATCH_SCRIPT" --since "\$OWNMIND_INSTALL_STARTED_AT" <\/dev\/null >\/dev\/null 2>&1 &$/);
+    assert.match(spawnLine, /^"\$WATCH_NODE" "\$WATCH_SCRIPT" --since "\$OWNMIND_INSTALL_STARTED_AT" <\/dev\/null >\/dev\/null 2>&1 \|\| true$/);
     assert.ok(!/KEY/i.test(spawnLine), 'the key is not in the spawn command');
+    assert.ok(!/nohup|disown/.test(t.slice(selfCheck, nextAt)), 'the shell does not background it; the watcher detaches itself');
     assert.match(t, /WATCH_SCRIPT="\$OWNMIND_DIR\/scripts\/install-helpers\/first-load-watch\.cjs"/);
-    assert.match(t.slice(selfCheck, nohupAt), /OWNMIND_SKIP_FIRST_LOAD_WATCH:-\}" != 1/);
+    assert.match(t.slice(selfCheck, callAt), /OWNMIND_SKIP_FIRST_LOAD_WATCH:-\}" != 1/);
     assert.match(t, /OWNMIND_INSTALL_STARTED_AT="\$\(date -u \+%Y-%m-%dT%H:%M:%SZ\)"/);
     assert.ok(t.indexOf('OWNMIND_INSTALL_STARTED_AT=') < t.indexOf('# --- 1. Clone MCP Server ---'), 'the timestamp is taken at the start of the run');
-    assert.match(t.slice(nohupAt, nextAt), /disown/);
   });
 
   it('install.ps1: hidden Start-Process after the self-check and before the NEXT decision, guarded, key not in the arguments', () => {
