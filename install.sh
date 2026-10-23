@@ -194,7 +194,12 @@ safe_cp() {
 # carry them on to main's tip. A checkout too old to have the helper falls back to the pull
 # once, and the helper takes over from its next update.
 RELEASE_HELPER="scripts/install-helpers/update-to-release.mjs"
-if [ -d "$OWNMIND_DIR" ]; then
+# An archive install (a .release file and no .git: unpacked by bootstrap.sh on a machine without
+# git) is updated by shared/archive-update.js from the OwnMind server, never here. It is also
+# what bootstrap.sh has just unpacked when it runs this script, so it is used as it is.
+if [ -d "$OWNMIND_DIR" ] && [ -f "$OWNMIND_DIR/.release" ] && [ ! -e "$OWNMIND_DIR/.git" ]; then
+  echo "[INFO] Archive install $(head -n 1 "$OWNMIND_DIR/.release" | tr -d '[:space:]'); updates come from the OwnMind server"
+elif [ -d "$OWNMIND_DIR" ]; then
   echo "[INFO] Updating OwnMind MCP server"
   if [ -f "$OWNMIND_DIR/$RELEASE_HELPER" ]; then
     if ! (cd "$OWNMIND_DIR" && node "$RELEASE_HELPER" >/dev/null); then

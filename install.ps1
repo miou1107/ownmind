@@ -248,7 +248,14 @@ foreach ($dir in @($ClaudeDir, $SkillDir, $HookDir)) {
 # the same as every automatic update (update-to-release.mjs; see install.sh). A checkout too
 # old to have the helper falls back to the pull once.
 $ReleaseHelper = Join-Path $OwnmindDir "scripts\install-helpers\update-to-release.mjs"
-if (Test-Path $OwnmindDir) {
+# An archive install (a .release file and no .git: unpacked by bootstrap.ps1 on a machine without
+# git) is updated by shared/archive-update.js from the OwnMind server, never here. It is also
+# what bootstrap.ps1 has just unpacked when it runs this script, so it is used as it is.
+$ReleaseFile = Join-Path $OwnmindDir ".release"
+if ((Test-Path $OwnmindDir) -and (Test-Path $ReleaseFile) -and -not (Test-Path (Join-Path $OwnmindDir ".git"))) {
+  $archiveRelease = "$(Get-Content -Path $ReleaseFile -TotalCount 1)".Trim()
+  Write-Host "[INFO] Archive install $archiveRelease; updates come from the OwnMind server"
+} elseif (Test-Path $OwnmindDir) {
   Write-Host "[INFO] Updating OwnMind MCP server"
   if (Test-Path $ReleaseHelper) {
     Push-Location $OwnmindDir

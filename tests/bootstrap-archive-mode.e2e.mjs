@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { makeCleanMac } from './helpers/clean-mac-sim.mjs';
 
@@ -26,7 +26,7 @@ const bootstrap = path.join(repoRoot, 'scripts', 'bootstrap.sh');
 const KEY = 'archive-mode-test-key-0123456789';
 const skip = process.platform === 'win32' ? 'bootstrap.sh is a bash script; Windows has bootstrap.ps1' : false;
 
-const fixture = { server: null, url: '', dir: '', archive: null, githubArchive: null, mode: 'ok', requests: [] };
+const fixture = { server: null, url: '', dir: '', archive: null, githubArchive: null, realArchive: null, serveReal: false, mode: 'ok', requests: [] };
 
 /** A tar.gz holding a release: .release, an install.sh stub that records it ran, and one script. */
 function buildArchive(workDir, name, { top = '', release } = {}) {
@@ -65,8 +65,13 @@ before(async () => {
       if (fixture.mode !== 'ok') return send(500, 'server error');
       if (req.headers.authorization !== `Bearer ${KEY}`) return send(401, 'unauthorized');
       res.writeHead(200, { 'content-type': 'application/gzip', 'x-ownmind-release': 'v9.9.9' });
-      return res.end(fixture.archive);
+      return res.end(fixture.serveReal ? fixture.realArchive : fixture.archive);
     }
+    // The real install.sh reports to the server along the way (beacons, the first memory load).
+    if (req.url.startsWith('/api/memory/init')) {
+      return send(200, JSON.stringify({ profile: null, iron_rules: [], memories: [] }), 'application/json');
+    }
+    if (req.url.startsWith('/api/')) return send(200, JSON.stringify({ ok: true }), 'application/json');
     if (req.url.startsWith('/repos/miou1107/ownmind/tags')) {
       // Deliberately out of order, with 1.10.0 below 1.9.0 in a plain text sort.
       return send(200, JSON.stringify([{ name: 'v1.9.0' }, { name: 'v1.10.0' }, { name: 'v1.2.0' }, { name: 'nightly' }], null, 2), 'application/json');
@@ -248,6 +253,70 @@ test('server failing without a forced source falls back to GitHub, newest tag, f
     assert.ok(githubRequests.length >= 2, 'the tags list and the tag archive were both requested');
     assert.ok(githubRequests.every((q) => q.auth === ''), 'the key must never be sent to GitHub');
   } finally {
+    mac.cleanup();
+  }
+});
+
+/**
+ * The release archive built from the tree under test, the way tests/install-clean-machine.e2e.mjs
+ * seeds ~/.ownmind: the tracked files copied out of the working tree (so a local run tests the
+ * edit just made, not the last commit), plus .release, plus `.no-usage-scanner` so the real
+ * installer leaves the machine's scheduler alone (see that file for why).
+ */
+function buildRealArchive(workDir) {
+  const src = path.join(workDir, 'src-real');
+  const files = execFileSync('git', ['-C', repoRoot, 'ls-files', '-z'], {
+    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+  }).split('\0').filter(Boolean);
+  assert.ok(files.length > 100, `only ${files.length} tracked files found; the archive would be empty`);
+  for (const rel of files) {
+    if (rel.startsWith('tests/')) continue; // the server's archive leaves tests out too
+    const from = path.join(repoRoot, rel);
+    if (!fs.existsSync(from)) continue;
+    const to = path.join(src, rel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+    fs.chmodSync(to, fs.statSync(from).mode);
+  }
+  fs.writeFileSync(path.join(src, '.release'), 'v9.9.9\n');
+  fs.writeFileSync(path.join(src, '.no-usage-scanner'), '');
+  const out = path.join(workDir, 'real.tar.gz');
+  const r = spawnSync('tar', ['-czf', out, '-C', src, ...fs.readdirSync(src)], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return fs.readFileSync(out);
+}
+
+/** node and npm on the simulated PATH: a Mac with Node but without git. */
+function linkNode(mac) {
+  fs.symlinkSync(process.execPath, path.join(mac.binDir, 'node'));
+  const npm = spawnSync('sh', ['-c', 'command -v npm'], { encoding: 'utf8' }).stdout.trim();
+  assert.ok(npm, 'npm must be on the PATH of the developer running this test');
+  fs.symlinkSync(fs.realpathSync(npm), path.join(mac.binDir, 'npm'));
+}
+
+test('no git: the REAL install.sh runs to the end on the unpacked release', { skip, timeout: 15 * 60 * 1000 }, async () => {
+  const mac = makeCleanMac();
+  try {
+    linkNode(mac);
+    fixture.realArchive = fixture.realArchive || buildRealArchive(fixture.dir);
+    fixture.serveReal = true;
+    fixture.mode = 'ok';
+    fixture.requests = [];
+    // npm's download cache only; nothing else of the developer's is reachable.
+    const r = await runBootstrap(mac, { npm_config_cache: path.join(os.homedir(), '.npm') });
+    const tail = r.out.slice(-6000);
+    assert.equal(r.status, 0, tail);
+    assert.match(r.out, /OK:unpack:release v9\.9\.9 unpacked/);
+    assert.match(r.out, /\[INFO\] Archive install v9\.9\.9; updates come from the OwnMind server/, tail);
+    assert.doesNotMatch(r.out, /Updating OwnMind MCP server|git pull failed|Updating OwnMind failed/, tail);
+    assert.match(r.out, /OwnMind installation complete/, tail);
+    assert.doesNotMatch(r.out, /\[FAIL\] install\.sh aborted/, tail);
+    const dir = path.join(mac.home, '.ownmind');
+    assert.ok(!fs.existsSync(path.join(dir, '.git')), 'an archive install has no .git');
+    assert.ok(fs.existsSync(path.join(dir, 'mcp', 'node_modules')), 'npm install ran in mcp/');
+    assert.ok(fs.existsSync(path.join(mac.home, '.claude', 'settings.json')), 'Claude Code was configured');
+  } finally {
+    fixture.serveReal = false;
     mac.cleanup();
   }
 });

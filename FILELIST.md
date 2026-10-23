@@ -28,6 +28,7 @@ tests/install-ps1-private-node.test.js                  — static checks: insta
 tests/bootstrap-archive-mode-ps1.e2e.mjs                — Windows only (skips elsewhere): bootstrap.ps1 and Ensure-OwnMindNode under Windows PowerShell with no git or node on PATH against a local fixture server; the Windows leg of the CI install job runs it by name
 scripts/install-helpers/node-command.cjs                — the two shapes of a generated node command (bare `node "<script>"`, or `"<abs>/node" "<script>"` for the private runtime): nodeInvocation, parseNodeCommand, isOwnNodeCommand, isCurrentNodeCommand, effectiveNodeBin (only a node under .ownmind/runtime/ or the requested nodeBin is ours; such an entry stays while that node exists, and a rewrite without nodeBin keeps it; a Windows nodeBin is written with forward slashes, one with a double quote is refused)
 tests/private-node-config-shapes.test.js                — byte-for-byte snapshot of every generated command and settings.json without nodeBin; quoted absolute node with nodeBin (spaced and non-ASCII paths) that round-trips through JSON; both shapes count as ours; needsRewrite never flips a working entry; install-artifacts runs the node the MCP entry names; every entry script and commit hook prepends runtime/current before its first node call; installers pass --node-bin only with OWNMIND_PRIVATE_NODE=1
+tests/installer-archive-install-skips-git-update.test.js — static: install.sh and install.ps1 check for an archive install (.release, no .git) before, and instead of, the "Updating OwnMind" branch
 ```
 
 修改檔：
@@ -64,6 +65,9 @@ scripts/install-helpers/self-check.cjs                  — memory_load evidence
 install.sh, install.ps1                                 — pass --node-bin to the four hook helpers only when OWNMIND_PRIVATE_NODE=1; on a Mac with only the private runtime the MCP entry's command is its absolute path
 hooks/ownmind-session-start.sh, scripts/install-helpers/run-scanner.sh, scripts/check-sync.sh, scripts/interactive-upgrade.sh, scripts/update.sh, scripts/check-sync.ps1, scripts/interactive-upgrade.ps1, scripts/update.ps1, scripts/windows/register-scanner-task.ps1 — prepend ~/.ownmind/runtime/current (bin on Mac) to PATH before the first node call
 hooks/ownmind-git-pre-commit, ownmind-git-post-commit, ownmind-git-pre-merge-commit, ownmind-git-commit-msg — the same PATH prepend (bin on Mac, node.exe on Windows), so commits are not blocked on a machine whose only Node is the private one
+install.sh, install.ps1                                 — an archive install (.release, no .git) skips the "Updating OwnMind" branch and prints "[INFO] Archive install vX.Y.Z; updates come from the OwnMind server"; the rest of the install is unchanged
+tests/bootstrap-archive-mode.e2e.mjs                    — new scenario: the REAL install.sh runs to "OwnMind installation complete" on an archive built from the tree under test, on a clean Mac with node but no git
+.github/workflows/test.yml                              — bootstrap-archive-mode.e2e.mjs timeout raised to 15 minutes (it now runs npm install)
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
