@@ -39,7 +39,7 @@ const path = require('path');
 // v1.26.131 - os.homedir() as the last resort: HOME is unset on Windows, and the two
 // expressions this replaced produced a relative path and a TypeError respectively.
 const os = require('os');
-const { nodeInvocation, isCurrentNodeCommand } = require('./node-command.cjs');
+const { nodeInvocation, isCurrentNodeCommand, effectiveNodeBin } = require('./node-command.cjs');
 
 // The command carries no marker field, so identity is the substring — same convention as
 // add-post-tool-use-hook.cjs, and the reason a stale command is recognisable at all.
@@ -144,8 +144,7 @@ function ensureEntry(list, matcher, identifier, command, { nodeBin } = {}) {
 /**
  * @returns {{ status: 'ok' | 'error', message?: string, results?: Array<{matcher: string, action: 'added'|'repaired'|'unchanged', from?: string}> }}
  */
-function ensureHooks(settingsPath, ownmindDir, { nodeBin } = {}) {
-  const preCmd = buildPreCmd(ownmindDir, nodeBin);
+function ensureHooks(settingsPath, ownmindDir, { nodeBin: requestedNodeBin } = {}) {
 
   let raw = '';
   let existed = false;
@@ -175,6 +174,16 @@ function ensureHooks(settingsPath, ownmindDir, { nodeBin } = {}) {
   if (!settings.hooks || typeof settings.hooks !== 'object') settings.hooks = {};
   if (!Array.isArray(settings.hooks.PreToolUse)) settings.hooks.PreToolUse = [];
   if (!Array.isArray(settings.hooks.UserPromptSubmit)) settings.hooks.UserPromptSubmit = [];
+
+  // Without a requested nodeBin (every updater run), keep a private runtime that one of our
+  // entries already runs and that still exists: a repair for another reason must not write bare
+  // `node` onto a machine with no other Node (node-command.cjs).
+  const ourCommands = [...settings.hooks.PreToolUse, ...settings.hooks.UserPromptSubmit]
+    .flatMap((g) => (g && Array.isArray(g.hooks) ? g.hooks : []))
+    .map((h) => (h && typeof h.command === 'string' ? h.command : ''))
+    .filter((c) => c.includes(HOOK_IDENTIFIER_SUBSTR) || c.includes(INJECT_IDENTIFIER_SUBSTR));
+  const nodeBin = effectiveNodeBin(ourCommands, { nodeBin: requestedNodeBin });
+  const preCmd = buildPreCmd(ownmindDir, nodeBin);
 
   const results = [];
   let changed = false;
@@ -239,7 +248,12 @@ if (require.main === module) {
   // script that may still be the old one on disk for the length of that run; erroring on the
   // flag would fail the very upgrade that removes it.
 
-  const result = ensureHooks(settingsPath, ownmindDir, { nodeBin });
+  let result;
+  try {
+    result = ensureHooks(settingsPath, ownmindDir, { nodeBin });
+  } catch (e) {
+    result = { status: 'error', message: e.message };
+  }
   if (result.status === 'error') {
     console.error(`[ensure-pretooluse-hooks] ERROR: ${result.message}`);
     process.exit(1);

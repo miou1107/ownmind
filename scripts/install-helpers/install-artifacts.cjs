@@ -135,7 +135,8 @@ function configuredNodes({ home }) {
       for (const group of groups) {
         for (const h of (group && Array.isArray(group.hooks) ? group.hooks : [])) {
           const parsed = h && typeof h.command === 'string' ? parseNodeCommand(h.command) : null;
-          if (parsed && parsed.absolute && /ownmind/i.test(parsed.target)) add(parsed.runtime);
+          // Only OwnMind's own runtime: a developer's own absolute-node hooks are not ours to judge.
+          if (parsed && parsed.absolute && parsed.ownmind) add(parsed.runtime);
         }
       }
     }

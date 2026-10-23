@@ -136,7 +136,12 @@ if (require.main === module) {
   const nodeIdx = args.indexOf('--node-bin');
   const nodeBin = nodeIdx >= 0 && args[nodeIdx + 1] ? args[nodeIdx + 1] : undefined;
 
-  const result = addHook(settingsPath, ownmindDir, { nodeBin });
+  let result;
+  try {
+    result = addHook(settingsPath, ownmindDir, { nodeBin });
+  } catch (e) {
+    result = { status: 'error', message: e.message };
+  }
   if (result.status === 'error') {
     console.error(`[add-post-tool-use-hook] ERROR: ${result.message}`);
     process.exit(1);

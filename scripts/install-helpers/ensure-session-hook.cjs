@@ -34,7 +34,7 @@ const os = require('os');
 const path = require('path');
 
 const {
-  sessionStartEntries, isOwnmindSessionEntry, needsRewrite,
+  sessionStartEntries, isOwnmindSessionEntry, needsRewrite, effectiveOptions,
 } = require('./session-hook-command.cjs');
 const { isCurrentNodeCommand } = require('./node-command.cjs');
 
@@ -66,16 +66,19 @@ function ensureSessionHook(settings, { platform = process.platform, ownmindDir, 
     return { status: 'installed', changed: true, settings: s };
   }
 
+  // Without a requested nodeBin, a private runtime one of our entries already runs is kept.
+  const eff = effectiveOptions(mine, opts);
+
   if (!needsRewrite(mine, opts)) {
     // Either already correct, or deliberately edited by the user — needsRewrite refuses to
     // touch a command we did not generate, and that refusal is the point.
-    const desired = sessionStartEntries(opts)[0].hooks[0].command;
-    const ours = mine.every((e) => e.hooks?.every((h) => isCurrentNodeCommand(h.command, desired, { nodeBin })));
+    const desired = sessionStartEntries(eff)[0].hooks[0].command;
+    const ours = mine.every((e) => e.hooks?.every((h) => isCurrentNodeCommand(h.command, desired, { nodeBin: eff.nodeBin })));
     return { status: ours ? 'unchanged' : 'user_customised', changed: false, settings: s };
   }
 
   s.hooks.SessionStart = s.hooks.SessionStart.filter((e) => !isOwnmindSessionEntry(e));
-  s.hooks.SessionStart.push(...sessionStartEntries(opts));
+  s.hooks.SessionStart.push(...sessionStartEntries(eff));
   return { status: 'repaired', changed: true, settings: s };
 }
 

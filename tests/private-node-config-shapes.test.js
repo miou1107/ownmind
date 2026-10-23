@@ -28,7 +28,18 @@ const { ensureSessionHook } = require(helper('ensure-session-hook.cjs'));
 
 const MAC_NODE = '/Users/Jörg Müller/.ownmind/runtime/current/bin/node';
 const WIN_NODE = 'C:\\Users\\Jane Doe\\.ownmind\\runtime\\current\\node.exe';
+const WIN_NODE_FWD = 'C:/Users/Jane Doe/.ownmind/runtime/current/node.exe';
 const IS_WIN = process.platform === 'win32';
+
+/** A file standing in for the private runtime, at <tmp>/<sub>/.ownmind/runtime/current/bin/node. */
+function fakeRuntime(sub = '') {
+  const home = path.join(tempDir('ownmind-node-rt-'), sub);
+  const nodeBin = path.join(home, '.ownmind', 'runtime', 'current', 'bin', 'node');
+  fs.mkdirSync(path.dirname(nodeBin), { recursive: true });
+  fs.writeFileSync(nodeBin, '');
+  // Forward slashes on Windows: the spelling the helpers write (and still a valid path there).
+  return { home, nodeBin: IS_WIN ? nodeBin.replace(/\\/g, '/') : nodeBin };
+}
 
 const runCli = (script, args) => execFileSync(process.execPath, [helper(script), ...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
@@ -131,7 +142,7 @@ describe('with nodeBin every command names that Node, quoted', () => {
   it('SessionStart: Windows runs the private node.exe; Mac keeps the bash command', () => {
     assert.equal(
       session.sessionStartCommand({ platform: 'win32', ownmindDir: 'C:\\Users\\Jane Doe\\.ownmind', nodeBin: WIN_NODE }),
-      `"${WIN_NODE}" "C:/Users/Jane Doe/.ownmind/hooks/ownmind-session-start.js"`,
+      `"${WIN_NODE_FWD}" "C:/Users/Jane Doe/.ownmind/hooks/ownmind-session-start.js"`,
     );
     // The script itself prepends runtime/current/bin to PATH, so the entry needs no change.
     assert.equal(session.sessionStartCommand({ platform: 'darwin', nodeBin: MAC_NODE }),
@@ -145,6 +156,14 @@ describe('with nodeBin every command names that Node, quoted', () => {
     assert.equal(pre.buildInjectCmd(om, MAC_NODE), `"${MAC_NODE}" "${om}/hooks/ownmind-prompt-inject.js"`);
     assert.match(stop.buildHookEntry(om, MAC_NODE).hooks[0].command, /^"[^"]+\/node" "[^"]+ownmind-reply-lint\.js"$/);
     assert.match(post.buildHookEntry(om, MAC_NODE).hooks[0].command, /^"[^"]+\/node" "[^"]+ownmind-tty-echo\.cjs"$/);
+  });
+
+  it('a Windows nodeBin is written with forward slashes; one containing a double quote is refused', () => {
+    assert.equal(pre.buildPreCmd('C:/Users/Jane Doe/.ownmind', WIN_NODE),
+      `"${WIN_NODE_FWD}" "C:/Users/Jane Doe/.ownmind/hooks/ownmind-iron-rule-check.js"`);
+    assert.throws(() => pre.buildPreCmd('/Users/a/.ownmind', '/Users/a"b/.ownmind/runtime/current/bin/node'), /double quote/);
+    const dir = tempDir('ownmind-node-shape-');
+    assert.throws(() => runCli('ensure-pretooluse-hooks.cjs', [path.join(dir, 's.json'), '--node-bin', '/x"y/node']));
   });
 
   for (const [label, nodeBin, ownmindDir, platform] of [
@@ -165,7 +184,8 @@ describe('with nodeBin every command names that Node, quoted', () => {
       const commands = Object.values(parsed.hooks).flat().flatMap((g) => g.hooks.map((h) => h.command));
       const nodeCommands = commands.filter((c) => !c.startsWith('bash '));
       assert.ok(nodeCommands.length >= 5, `expected the node-run hooks, got ${nodeCommands.length}`);
-      for (const c of nodeCommands) assert.ok(c.startsWith(`"${nodeBin}" "`), c);
+      const written = nodeBin.replace(/\\/g, '/');
+      for (const c of nodeCommands) assert.ok(c.startsWith(`"${written}" "`), c);
       if (platform === 'darwin') {
         assert.ok(commands.includes('bash ~/.claude/hooks/ownmind-session-start.sh'));
       }
@@ -196,9 +216,18 @@ describe('isGeneratedCommand accepts both shapes', () => {
       '"relative/node" "C:/x/ownmind-session-start.js"',
       `"${MAC_NODE}" "C:/x/some-other-hook.js"`,
       'my-wrapper node C:/x/ownmind-session-start.js',
+      // An absolute Node that is not OwnMind's runtime is somebody's deliberate choice.
+      '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\x\\.ownmind\\hooks\\ownmind-session-start.js"',
+      '"/opt/homebrew/bin/node" "/Users/x/.ownmind/hooks/ownmind-session-start.js"',
     ]) {
       assert.equal(session.isGeneratedCommand(c), false, c);
     }
+  });
+
+  it('claims a foreign absolute node only when it is exactly the requested nodeBin', () => {
+    const c = '"C:/Tools/node/node.exe" "C:/Users/x/.ownmind/hooks/ownmind-session-start.js"';
+    assert.equal(session.isGeneratedCommand(c), false);
+    assert.equal(session.isGeneratedCommand(c, { nodeBin: 'C:\\Tools\\node\\node.exe' }), true);
   });
 });
 
@@ -223,16 +252,16 @@ describe('needsRewrite keeps whichever shape still works', () => {
     assert.equal(session.needsRewrite(session.sessionStartEntries(base), { ...base, nodeBin: WIN_NODE }), true);
   });
 
-  it('leaves an absolute entry whose node still exists when nodeBin is unset', () => {
-    // process.execPath is a real file named node / node.exe on every test machine.
-    const entries = session.sessionStartEntries({ ...base, nodeBin: process.execPath });
+  it('leaves a private-runtime entry whose node still exists when nodeBin is unset', () => {
+    const { nodeBin } = fakeRuntime();
+    const entries = session.sessionStartEntries({ ...base, nodeBin });
     assert.equal(session.needsRewrite(entries, base), false);
     const r = ensureSessionHook(JSON.parse(JSON.stringify({ hooks: { SessionStart: entries } })), base);
     assert.equal(r.status, 'unchanged');
   });
 
-  it('rewrites an absolute entry whose node no longer exists', () => {
-    const gone = path.join(tempDir('ownmind-node-gone-'), 'runtime', 'current', 'bin', 'node');
+  it('rewrites a private-runtime entry whose node no longer exists', () => {
+    const gone = path.join(tempDir('ownmind-node-gone-'), '.ownmind', 'runtime', 'current', 'bin', 'node');
     const entries = session.sessionStartEntries({ ...base, nodeBin: gone });
     assert.equal(session.needsRewrite(entries, base), true);
     const r = ensureSessionHook({ hooks: { SessionStart: entries } }, base);
@@ -240,31 +269,69 @@ describe('needsRewrite keeps whichever shape still works', () => {
     assert.equal(r.settings.hooks.SessionStart[0].hooks[0].command, session.sessionStartCommand(base));
   });
 
+  it('leaves a hand-written foreign absolute node alone (user_customised)', () => {
+    // A working entry seen in the wild: the system Node by absolute path, the target spelled
+    // with backslashes, so it is not identical to anything we would write.
+    const foreign = ['startup', 'resume', 'clear', 'compact'].map((matcher) => ({
+      matcher,
+      hooks: [{ type: 'command', command: '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\Jane Doe\\.ownmind\\hooks\\ownmind-session-start.js"', timeout: 10 }],
+    }));
+    assert.equal(session.needsRewrite(foreign, base), false);
+    const r = ensureSessionHook(JSON.parse(JSON.stringify({ hooks: { SessionStart: foreign } })), base);
+    assert.equal(r.status, 'user_customised');
+    assert.equal(r.changed, false);
+  });
+
+  it('a repair without nodeBin keeps the private runtime an existing entry runs', () => {
+    // An updater passes no nodeBin. Only `startup` is present, so the entries must be rebuilt —
+    // and the rebuilt four must keep the runtime, because this machine has no other Node.
+    const { nodeBin } = fakeRuntime();
+    const one = [{
+      matcher: 'startup',
+      hooks: [{ type: 'command', command: `"${nodeBin}" "C:/Users/Jane Doe/.ownmind/hooks/ownmind-session-start.js"`, timeout: 10 }],
+    }];
+    assert.equal(session.needsRewrite(one, base), true);
+    const r = ensureSessionHook({ hooks: { SessionStart: one } }, base);
+    assert.equal(r.status, 'repaired');
+    const want = `"${nodeBin}" "C:/Users/Jane Doe/.ownmind/hooks/ownmind-session-start.js"`;
+    assert.deepEqual(r.settings.hooks.SessionStart.map((e) => e.matcher), ['startup', 'resume', 'clear', 'compact']);
+    for (const e of r.settings.hooks.SessionStart) assert.equal(e.hooks[0].command, want);
+  });
+
   it('ensure-pretooluse-hooks follows the same rule', () => {
     const dir = tempDir('ownmind-node-shape-');
     const settingsPath = path.join(dir, 'settings.json');
     const om = '/Users/x/.ownmind';
+    const { nodeBin: runtime } = fakeRuntime();
 
-    // Written with a node that exists, then re-run without nodeBin: left alone.
-    assert.equal(pre.ensureHooks(settingsPath, om, { nodeBin: process.execPath }).status, 'ok');
+    // Written with a runtime that exists, then re-run without nodeBin: left alone.
+    assert.equal(pre.ensureHooks(settingsPath, om, { nodeBin: runtime }).status, 'ok');
     let r = pre.ensureHooks(settingsPath, om);
     assert.ok(r.results.every((x) => x.action === 'unchanged'), JSON.stringify(r.results));
 
     // Re-run with the same nodeBin: unchanged.
-    r = pre.ensureHooks(settingsPath, om, { nodeBin: process.execPath });
+    r = pre.ensureHooks(settingsPath, om, { nodeBin: runtime });
     assert.ok(r.results.every((x) => x.action === 'unchanged'), JSON.stringify(r.results));
 
-    // Written with a node that is gone, then re-run without nodeBin: back to bare node.
-    const gone = path.join(dir, 'gone', 'node');
+    // One matcher removed, re-run without nodeBin: the re-added entry keeps the runtime.
+    let s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    s.hooks.PreToolUse = s.hooks.PreToolUse.filter((g) => g.matcher === 'Bash');
+    fs.writeFileSync(settingsPath, JSON.stringify(s));
+    r = pre.ensureHooks(settingsPath, om);
+    s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    for (const c of s.hooks.PreToolUse.map((g) => g.hooks[0].command)) assert.equal(c, pre.buildPreCmd(om, runtime));
+
+    // Written with a runtime that is gone, then re-run without nodeBin: back to bare node.
+    const gone = path.join(dir, '.ownmind', 'runtime', 'current', 'bin', 'node');
     fs.rmSync(settingsPath);
     pre.ensureHooks(settingsPath, om, { nodeBin: gone });
     r = pre.ensureHooks(settingsPath, om);
     assert.ok(r.results.every((x) => x.action === 'repaired'), JSON.stringify(r.results));
-    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     assert.equal(s.hooks.PreToolUse[0].hooks[0].command, pre.buildPreCmd(om));
 
     // A bare entry on a machine that now passes nodeBin: rewritten to the absolute form.
-    r = pre.ensureHooks(settingsPath, om, { nodeBin: process.execPath });
+    r = pre.ensureHooks(settingsPath, om, { nodeBin: runtime });
     assert.ok(r.results.every((x) => x.action === 'repaired'), JSON.stringify(r.results));
   });
 });
@@ -276,8 +343,8 @@ describe('needsRewrite keeps whichever shape still works', () => {
 describe('install-artifacts runs the node the MCP entry names', { skip: IS_WIN && 'fake node is a shell script' }, () => {
   const { checkInstallArtifacts } = require(helper('install-artifacts.cjs'));
 
-  function setup(script) {
-    const home = tempDir('ownmind-node-mcp-');
+  function setup(script, sub = '') {
+    const home = path.join(tempDir('ownmind-node-mcp-'), sub);
     const nodeBin = path.join(home, '.ownmind', 'runtime', 'current', 'bin', 'node');
     fs.mkdirSync(path.dirname(nodeBin), { recursive: true });
     fs.writeFileSync(nodeBin, script);
@@ -301,6 +368,29 @@ describe('install-artifacts runs the node the MCP entry names', { skip: IS_WIN &
     const r = checkInstallArtifacts({ home });
     assert.ok(!r.missing.some((m) => m.id === 'configured_node'), JSON.stringify(r.missing));
     assert.equal(fs.readFileSync(marker, 'utf8').trim(), '--version');
+  });
+
+  it('round-trips through a home directory whose path contains a space', () => {
+    const home0 = tempDir('ownmind-node-mcp-marker-');
+    const marker = path.join(home0, 'ran');
+    const { home, nodeBin } = setup(`#!/bin/sh\necho "$@" > "${marker}"\necho v22.11.0\n`, 'Jane Doe');
+    const claude = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+    assert.equal(claude.mcpServers.ownmind.command, nodeBin);
+    const r = checkInstallArtifacts({ home });
+    assert.ok(!r.missing.some((m) => m.id === 'configured_node'), JSON.stringify(r.missing));
+    assert.equal(fs.readFileSync(marker, 'utf8').trim(), '--version');
+  });
+
+  it('ignores absolute-node hooks that are not OwnMind\'s runtime', () => {
+    // A developer running a checkout's hooks with their own Node is not a private-runtime machine.
+    const home = tempDir('ownmind-node-dev-');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: '"/missing/bin/node" "/Users/dev/SourceCode/OwnMind/hooks/ownmind-reply-lint.js"' }] }] },
+    }));
+    const { configuredNodes } = require(helper('install-artifacts.cjs'));
+    assert.deepEqual(configuredNodes({ home }), []);
+    assert.ok(!checkInstallArtifacts({ home }).missing.some((m) => m.id === 'configured_node'));
   });
 
   it('reports it missing when that node cannot start', () => {
@@ -447,7 +537,7 @@ describe('self-check reports the Node the configuration names', () => {
     const entries = session.sessionStartEntries({ platform: 'win32', ownmindDir: 'C:/Users/a/.ownmind', nodeBin: WIN_NODE });
     fs.writeFileSync(settingsPath, JSON.stringify({ hooks: { SessionStart: entries } }));
     const ev = collectMemoryLoadEvidence({ settingsPath, resolveBinary: (b) => `/usr/bin/${b}` });
-    assert.equal(ev.node_path, WIN_NODE);
+    assert.equal(ev.node_path, WIN_NODE_FWD);
   });
 
   it('falls back to the MCP entry, then to PATH', () => {

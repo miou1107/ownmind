@@ -29,7 +29,9 @@
 // Node needs no such detection. OwnMind already requires Node 20+, the installer resolves
 // and caches it, and an absolute path leaves nothing for a shell to reinterpret.
 
-const { nodeInvocation, parseNodeCommand, isCurrentNodeCommand } = require('./node-command.cjs');
+const {
+  nodeInvocation, parseNodeCommand, isOwnNodeCommand, isCurrentNodeCommand, effectiveNodeBin,
+} = require('./node-command.cjs');
 
 const MATCHERS = ['startup', 'resume', 'clear', 'compact'];
 const HOOK_TIMEOUT_SECONDS = 10;
@@ -117,18 +119,29 @@ function needsRewrite(existingEntries, opts) {
   // (the dead copy under ~/.claude/hooks), so path differences are drift to repair, not
   // customisation to respect. Customisation = a different script or extra arguments.
   const allCommandsAreOurs = existingEntries.every(
-    (e) => e.hooks?.every((h) => isGeneratedCommand(h.command)),
+    (e) => e.hooks?.every((h) => isGeneratedCommand(h.command, { nodeBin: opts?.nodeBin })),
   );
   if (!allCommandsAreOurs) return false;
 
-  const desired = sessionStartCommand(opts);
+  const eff = effectiveOptions(existingEntries, opts);
+  const desired = sessionStartCommand(eff);
   const hasAllMatchers = MATCHERS.every((m) => existingEntries.some((e) => e.matcher === m));
-  // An entry that runs our hook with an absolute Node is current while that Node exists and
-  // no nodeBin was asked for: an upgrade must not flip a working entry into the other shape.
+  // An entry that runs our hook with the private runtime is current while that runtime exists
+  // and no nodeBin was asked for: an upgrade must not flip a working entry into the other shape.
   const allCommandsCurrent = existingEntries.every(
-    (e) => e.hooks?.every((h) => isCurrentNodeCommand(h.command, desired, { nodeBin: opts?.nodeBin })),
+    (e) => e.hooks?.every((h) => isCurrentNodeCommand(h.command, desired, { nodeBin: eff.nodeBin })),
   );
   return !hasAllMatchers || !allCommandsCurrent;
+}
+
+/**
+ * The options to generate replacements with. Without a requested nodeBin (every updater run),
+ * a private runtime that an existing entry of ours already runs, and that still exists, is kept:
+ * a rewrite for a missing matcher must not write bare `node` onto a machine with no other Node.
+ */
+function effectiveOptions(existingEntries, opts = {}) {
+  const commands = (existingEntries || []).flatMap((e) => (e.hooks || []).map((h) => h.command));
+  return { ...opts, nodeBin: effectiveNodeBin(commands, { nodeBin: opts.nodeBin }) };
 }
 
 /**
@@ -145,7 +158,7 @@ function needsRewrite(existingEntries, opts) {
  * on a new conversation and not on resume, clear or compact. Quoting is spelling, not
  * intent.
  */
-function isGeneratedCommand(command) {
+function isGeneratedCommand(command, { nodeBin } = {}) {
   const c = String(command || '').trim();
   if (!c) return false;
   // <runtime> <path-to-our-hook>, and nothing else. The path may be bare, "quoted" or
@@ -156,10 +169,14 @@ function isGeneratedCommand(command) {
   // hook. The basename check below still rejects deliberate edits — trailing arguments
   // make the last path segment stop being exactly our filename.
   //
-  // The runtime may also be a quoted absolute path to node / node.exe: that is the shape the
-  // installer writes on a machine whose only Node is the private one (node-command.cjs).
-  const viaNode = parseNodeCommand(c);
-  if (viaNode) return viaNode.target.split(/[/\\]/).pop() === 'ownmind-session-start.js';
+  // The runtime may also be a quoted absolute path to node / node.exe, but only OwnMind's own
+  // (under .ownmind/runtime/, or the nodeBin this run writes): that is the shape the installer
+  // writes on a machine whose only Node is the private one. A hand-written
+  // "C:\Program Files\nodejs\node.exe" in front of our hook is the user's (node-command.cjs).
+  if (parseNodeCommand(c)) {
+    const own = isOwnNodeCommand(c, { nodeBin });
+    return Boolean(own) && own.target.split(/[/\\]/).pop() === 'ownmind-session-start.js';
+  }
   const m = c.match(/^bash\s+(?:"([^"]+)"|'([^']+)'|(.+))$/);
   if (!m) return false;
   const target = m[1] || m[2] || m[3];
@@ -175,4 +192,5 @@ module.exports = {
   isOwnmindSessionEntry,
   isGeneratedCommand,
   needsRewrite,
+  effectiveOptions,
 };
