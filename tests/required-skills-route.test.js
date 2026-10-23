@@ -188,6 +188,36 @@ test('iron rules carry the skills they need, and init sends them', async (t) => 
     // ── 7. init sends the corrected list ────────────────────────────────────────────
     const after = await skillsInInit();
     assert.deepEqual(after.find((r) => r.title === '寫中文前後要過兩道工具（新）').skills, ['zh-tw-doc-copy']);
+
+    // ── 8. #197: a guess an older version stored is redone; a person's list is not ──────
+    // Both rules quote a package in prose. The older guessing took it for a skill.
+    const PACKAGE_RULE =
+      '什麼時候適用：加套件之前。\n'
+      + '規則：鏈到 `js-yaml` 的模組要同步更新安裝腳本，否則那個 skill 永遠不會更新。\n'
+      + '理由：使用者端少裝一個套件，整段程式就停了。';
+    db.psql(`
+      INSERT INTO memories (user_id, type, code, title, content, tags, status, metadata, updated_at) VALUES
+        (1, 'iron_rule', 'IR-901', '加套件要同步安裝腳本', ${quote(PACKAGE_RULE)}, ARRAY['trigger:edit'], 'active',
+         '{"required_skills":["js-yaml"],"required_skills_source":"auto","stats":{"enforced":1}}'::jsonb, '2026-01-01T00:00:00Z'),
+        (1, 'iron_rule', 'IR-902', '加套件要同步安裝腳本（人改過）', ${quote(PACKAGE_RULE)}, ARRAY['trigger:edit'], 'active',
+         '{"required_skills":["js-yaml"],"required_skills_source":"manual"}'::jsonb, '2026-01-01T00:00:00Z');
+    `);
+    const redone = await skillsInInit();
+    assert.equal(redone.some((r) => r.code === 'IR-901'), false, 'an old guess was sent instead of the current one');
+    assert.deepEqual(redone.find((r) => r.code === 'IR-902')?.skills, ['js-yaml'], 'a person\'s list was second-guessed');
+    const rewritten = () => JSON.parse(metadataOf('IR-901')).required_skills.length === 0;
+    for (let i = 0; i < 50 && !rewritten(); i += 1) {
+      await new Promise((r) => { setTimeout(r, 100); });
+    }
+    const refreshed = JSON.parse(metadataOf('IR-901'));
+    assert.deepEqual(refreshed.required_skills, [], 'the stored guess was never rewritten');
+    assert.equal(refreshed.required_skills_source, 'auto');
+    assert.deepEqual(refreshed.stats, { enforced: 1 }, 'the refresh replaced metadata instead of merging');
+    assert.deepEqual(JSON.parse(metadataOf('IR-902')).required_skills, ['js-yaml']);
+    assert.match(
+      db.psql("SELECT updated_at::text FROM memories WHERE code = 'IR-901' AND user_id = 1"),
+      /^2026-01-01/, 'the refresh made an unedited rule look edited',
+    );
   } finally {
     if (server) await server.close();
     if (pool?.end) await pool.end().catch(() => {});

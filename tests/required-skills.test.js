@@ -13,6 +13,7 @@ import {
   extractSkillNames, normalizeRequiredSkills, requiredSkillsOf, resolveRequiredSkills,
   requiredSkillsNote, REQUIRED_SKILLS_MAX,
 } from '../shared/required-skills.js';
+import { renderOriginContextSection } from '../src/utils/iron-rule-origin-context.js';
 
 /** Close to the rule in the report: the skill names sit in backticks in Chinese prose. */
 const REPORTED_RULE = [
@@ -186,5 +187,126 @@ describe('telling the author what was guessed', () => {
     assert.equal(requiredSkillsNote({ required_skills: ['a-b'], required_skills_source: 'manual' }), null);
     assert.equal(requiredSkillsNote({ required_skills: [], required_skills_source: 'auto' }), null);
     assert.equal(requiredSkillsNote(null), null);
+  });
+});
+
+/**
+ * Issue #197 — names a rule mentions without telling the AI to use them.
+ *
+ * Four real rules each produced a "this machine cannot follow it" warning for something that is
+ * not a skill: an npm package in an incident write-up, the git branch in the generated origin
+ * section, a CLI tool, and a project-only skill given as an example. The lines below are close to
+ * the ones that produced each name. Every one of these rules mentions skills somewhere, which was
+ * enough for any hyphenated name in backticks to count.
+ */
+describe('names a rule mentions without telling the AI to use them (#197)', () => {
+  it('a package named in an incident write-up is not a skill', () => {
+    const text = '修法：`hooks/lib/conditional-sync-cli.js` 起 static import，鏈到 `js-yaml`，'
+      + '結果 `~/.claude/skills/ownmind-iron-rules/` 這個 big skill 永遠不更新。';
+    assert.deepEqual(extractSkillNames(text), []);
+  });
+
+  it('the generated origin section is skipped: its branch and folder are not skills', () => {
+    const origin = renderOriginContextSection({
+      captured_at: '2026-07-30T04:08:51.349Z', confidence: 'high', project: 'some-app',
+      cwd: '/Users/someone/some-app', git_branch: 'ghost-account-recovery',
+      event: 'A review by a subagent missed it.', user_quote: 'check with a second skill',
+    });
+    const body = '排查時 SOP 或 skill 文件描述的機制不能盡信，要回程式碼確認。';
+    assert.deepEqual(extractSkillNames(`${body}\n\n${origin}\n`), []);
+  });
+
+  it('a skill named above the origin section still counts', () => {
+    const origin = renderOriginContextSection({ git_branch: 'feature-branch', cwd: '/tmp/x-y' });
+    assert.deepEqual(extractSkillNames(`Use the \`code-review\` skill.\n\n${origin}`), ['code-review']);
+  });
+
+  it('a tool the draft is sent to is not a skill, even on a line that says skill', () => {
+    const text = '2. 兩隻 skill 跑完之後，再把草稿送 `agy` 做一次用詞審查。';
+    assert.deepEqual(extractSkillNames(text), []);
+  });
+
+  it('names listed in a checklist, without being called or named skills, do not count', () => {
+    const text = '有沒有用 skill？工具呼叫紀錄裡，`tone-draft`、`tone-polish`、`agy` 用詞審查四項是不是都跑過？';
+    assert.deepEqual(extractSkillNames(text), []);
+  });
+
+  it('a skill given as an example is not required; the ones the rule calls are', () => {
+    const text = '動筆之前先調用 `tone-draft`（資訊架構），文字寫完再調用 `tone-polish`。'
+      + '專案有自己的文案 skill（例如 funpass 的 `funpass-report-copy`）時，先跑那一份。';
+    assert.deepEqual(extractSkillNames(text), ['tone-draft', 'tone-polish']);
+  });
+
+  it('an example stays an example even right next to a verb', () => {
+    assert.deepEqual(extractSkillNames('專案自己有 skill 時先跑那一份，例如調用 `local-only`。'), []);
+    assert.deepEqual(extractSkillNames('Projects may add their own skill, e.g. use the `local-only` skill.'), []);
+  });
+
+  it('every name in a list that is called counts', () => {
+    assert.deepEqual(extractSkillNames('先調用技能 `a-one`、`b-two` 與 `c-three`。'), ['a-one', 'b-two', 'c-three']);
+    assert.deepEqual(extractSkillNames('`a-one` 與 `b-two` 兩個技能都要跑。'), ['a-one', 'b-two']);
+  });
+
+  it('a verb alone does not make a bare word a skill; calling it a skill does', () => {
+    assert.deepEqual(extractSkillNames('This rule is about skills. Run `git` first.'), []);
+    assert.deepEqual(extractSkillNames('This rule is about skills. Run the `pdf` skill first.'), ['pdf']);
+  });
+
+  it('a guess stored by an older version is redone from the text; a person\'s list is not', () => {
+    const text = '修法鏈到 `js-yaml`，結果那個 skill 不更新。';
+    assert.deepEqual(requiredSkillsOf({ content: text, metadata: { required_skills: ['js-yaml'], required_skills_source: 'auto' } }), []);
+    assert.deepEqual(requiredSkillsOf({ content: text, metadata: { required_skills: ['js-yaml'], required_skills_source: 'manual' } }), ['js-yaml']);
+  });
+});
+
+describe('review of the #197 guessing', () => {
+  it('long runs of spaces read in linear time', () => {
+    // The first version took 0.9 s on 20,000 spaces: two adjacent \s* retried on every split.
+    const started = Date.now();
+    extractSkillNames(`skill${' '.repeat(50000)}x \`a-b\``);
+    extractSkillNames(`skill ${'`a` '.repeat(20000)}`);
+    assert.ok(Date.now() - started < 200, `took ${Date.now() - started} ms`);
+  });
+
+  it('a negated verb mentions a skill so as not to use it', () => {
+    assert.deepEqual(extractSkillNames('不用 `a-b` 這個 skill。'), []);
+    assert.deepEqual(extractSkillNames('Skills: never invoke `a-b`, don\'t use the `c-d` skill.'), []);
+    assert.deepEqual(extractSkillNames('瀏覽器的 skill：用 `ego-browser`，不用 `claude-in-chrome`。'), ['ego-browser']);
+  });
+
+  it('叫 alone names something; 再叫 calls it', () => {
+    assert.deepEqual(extractSkillNames('這條跟 skill 有關：套件叫 `js-yaml`，分支叫 `ghost-account-recovery`。'), []);
+    assert.deepEqual(extractSkillNames('先用技能起稿，寫完之後再叫 `humanizer-tw` 檢查。'), ['humanizer-tw']);
+  });
+
+  it('bold or quote marks around a name do not hide it', () => {
+    assert.deepEqual(extractSkillNames('先調用 **`x-y`** skill。'), ['x-y']);
+    assert.deepEqual(extractSkillNames('寫中文前一定要調用「`zh-copy`」這個技能。'), ['zh-copy']);
+  });
+
+  it('an example in an earlier clause does not reach a name called for real', () => {
+    assert.deepEqual(extractSkillNames('例如寫報告時，要先調用 `zh-tw-doc-copy`。這是 skill 規則。'), ['zh-tw-doc-copy']);
+  });
+
+  it('a plugin-prefixed name counts wherever it sits in a rule about skills', () => {
+    const text = '以下三個 skill 必須調用：\n1. 完成實作後 → `superpowers:verification-before-completion`';
+    assert.deepEqual(extractSkillNames(text), ['superpowers:verification-before-completion']);
+    assert.deepEqual(extractSkillNames('This skill rule mentions `trigger:deploy` and `node:fs`.'), []);
+  });
+
+  it('more ways rules call a skill', () => {
+    assert.deepEqual(extractSkillNames('Use a skill called `foo`.'), ['foo']);
+    assert.deepEqual(extractSkillNames('`a-b`、`c-d` 這兩個技能都要跑。'), ['a-b', 'c-d']);
+  });
+
+  it('metadata read before /init redid the guess and sent back is still a guess', () => {
+    // An AI read ['js-yaml'] (the old guess), /init rewrote it to [], then the AI sent the
+    // metadata it had read back with another change. That must not freeze the old guess.
+    const r = resolveRequiredSkills({
+      incoming: { required_skills: ['js-yaml'], required_skills_source: 'auto', note: 'x' },
+      previous: { required_skills: [], required_skills_source: 'auto' },
+      content: 'skill 鏈到 `js-yaml`', contentChanged: false,
+    });
+    assert.deepEqual(r.fields, { required_skills: [], required_skills_source: 'auto' });
   });
 });
