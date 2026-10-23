@@ -474,6 +474,16 @@ if [ -f "$REMOVE_WORKTREE_HOOK" ] && [ -f "$CLAUDE_SETTINGS" ]; then
 fi
 rm -f "$HOME/.claude/hooks/ownmind-worktree-setup.sh"
 
+# A machine whose Node is the private runtime: .node-path names the node in runtime/current. The
+# four hook helpers below then write that absolute node into the hook commands, as install.sh
+# does with OWNMIND_PRIVATE_NODE; without it a hook entry they add would be a bare `node` that a
+# machine with no node on PATH cannot start.
+UPDATE_NODE_BIN=""
+if [ -f "$OWNMIND_DIR/.node-path" ]; then
+  update_node_path=$(head -n 1 "$OWNMIND_DIR/.node-path" 2>/dev/null | tr -d '\r')
+  case "$update_node_path" in "$OWNMIND_DIR/runtime/"*) UPDATE_NODE_BIN="$update_node_path" ;; esac
+fi
+
 # --- 3.3b PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 ENSURE_PRE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-pretooluse-hooks.cjs"
 if [ -f "$ENSURE_PRE_HOOK" ]; then
@@ -483,7 +493,7 @@ if [ -f "$ENSURE_PRE_HOOK" ]; then
   # fails with a relay error on every tool call. A sync turned the iron-rule gate off, said
   # "repaired", and nothing afterwards disagreed. See buildPreCmd in
   # ensure-pretooluse-hooks.cjs for why the branch is there and not here.
-  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" ${UPDATE_NODE_BIN:+--node-bin "$UPDATE_NODE_BIN"} 2>&1); then
     echo "   PreToolUse iron-rule hook: $pre_hook_result"
   else
     echo "   [FAIL] PreToolUse iron-rule hook: $pre_hook_result"
@@ -493,7 +503,7 @@ fi
 # --- 3.4 SessionStart hook (v1.26.86, delegated to the shared implementation) ---
 ENSURE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-session-hook.cjs"
 if [ -f "$ENSURE_HOOK" ]; then
-  if hook_result=$(node "$ENSURE_HOOK" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+  if hook_result=$(node "$ENSURE_HOOK" --ownmind-dir "$OWNMIND_DIR" ${UPDATE_NODE_BIN:+--node-bin "$UPDATE_NODE_BIN"} 2>&1); then
     echo "   SessionStart hook: $hook_result"
   else
     echo "   [FAIL] SessionStart hook: $hook_result"
@@ -530,14 +540,14 @@ fi
 # IR-036/037. Idempotent: the helper skips when already present.
 ADD_STOP_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-stop-hook.cjs"
 if [ -f "$ADD_STOP_HOOK_HELPER" ] && [ -f "$CLAUDE_SETTINGS" ]; then
-  STOP_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1)
+  STOP_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" ${UPDATE_NODE_BIN:+--node-bin "$UPDATE_NODE_BIN"} 2>&1)
   echo "   Stop reply-lint hook: $STOP_RESULT"
 fi
 
 # Same idea — backfill the PostToolUse banner hook (v1.17.71) so it's never missed either.
 ADD_POST_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-post-tool-use-hook.cjs"
 if [ -f "$ADD_POST_HOOK_HELPER" ] && [ -f "$CLAUDE_SETTINGS" ]; then
-  POST_RESULT=$(node "$ADD_POST_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1)
+  POST_RESULT=$(node "$ADD_POST_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" ${UPDATE_NODE_BIN:+--node-bin "$UPDATE_NODE_BIN"} 2>&1)
   echo "   PostToolUse banner hook: $POST_RESULT"
 fi
 

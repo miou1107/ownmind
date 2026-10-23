@@ -356,7 +356,11 @@ if (-not (Test-Path "$OwnmindDir\.git") -and (Test-Path -LiteralPath "$OwnmindDi
 if (-not (Test-Path "$OwnmindDir\.git")) {
   $Bak = "$OwnmindDir.broken.$Ts"
   Log-Info broken "$OwnmindDir exists but is not a git repo; backing up to $Bak"
+  # A rename within the same folder: runtime\current (a directory junction) moves as a link and
+  # is not followed. The rename keeps the old modification time, so it is reset for the 7-day
+  # sweep in interactive-upgrade.ps1.
   Move-Item "$OwnmindDir" "$Bak"
+  try { (Get-Item -LiteralPath $Bak -Force -ErrorAction Stop).LastWriteTime = Get-Date } catch { }
   Log-Ok backup "Backed up"
   if (-not $HasGit) {
     Install-FromArchive $InstallArgs

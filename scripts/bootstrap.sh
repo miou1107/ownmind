@@ -257,6 +257,8 @@ if [ ! -d "$OWNMIND_DIR/.git" ]; then
   BAK="${OWNMIND_DIR}.broken.${TS}"
   log_info broken "$OWNMIND_DIR exists but is not a git repo; backing up to $BAK"
   mv "$OWNMIND_DIR" "$BAK" || { log_err backup "Backup failed"; exit 1; }
+  # A rename keeps the old modification time; the 7-day sweep in interactive-upgrade.sh counts from now.
+  touch "$BAK" 2>/dev/null || true
   log_ok backup "Backed up"
   if [ "$HAS_GIT" = "0" ]; then
     install_from_archive "$@"

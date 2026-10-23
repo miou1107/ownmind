@@ -33,6 +33,9 @@ shared/archive-update.js                                — runArchiveUpdate: an
 shared/archive-update-cli.mjs                           — the shell side: prints UPDATED vX / CURRENT vX / FAILED <reason> (takes the update lock), or with --check in_sync / behind / unknown for check-sync's L1 line
 tests/archive-update-shared.test.js                     — injected fetch/execFile/fs with the real tar: CLEAN without download, APPLIED with .prev, state and a still-linked runtime/current, npm/download/unpack failures leave the live tree alone, EBUSY then swap-only retry, installer retry, an absolute runtime link never deleted
 tests/check-sync-archive-mode.test.js                   — the real check-sync.sh on an archive install against a local server: in_sync / behind / error with release=, never not_git; update-to-release.mjs --print prints .release; static check of the .ps1 branch
+scripts/install-helpers/sweep-old-trees.sh              — ownmind_sweep_old_trees: removes .ownmind.bak.*, .ownmind.broken.* and .ownmind.prev older than N days, unlinking runtime/current first and never following a link named like one of them
+tests/upgrade-archive-mode.test.js                      — both upgraders contain ARCHIVE_MODE and skip steps 1-4 for the archive update (static, plus the .ps1 swap); update.sh/.ps1 pass --node-bin only for a private runtime; the real interactive-upgrade.sh on an archive install: already current, and a failing server leaving it untouched
+tests/upgrade-sweep-covers-broken-and-prev.test.js      — the sweep in a temp HOME: old .broken/.prev/.bak removed, recent kept, a link inside unlinked not followed, a link named .ownmind.prev left alone; the .ps1 sweep and backup/rollback go through the junction-safe helpers; bootstrap resets the set-aside tree's time
 ```
 
 修改檔：
@@ -80,6 +83,9 @@ skills/ownmind-upgrade.md                               — mode A: the L1 lines
 tests/auto-update-shared.test.js                        — archive install delegation: same deps, stamp on clean, banner on applied/failed, none on swap_pending, credentials read when absent
 tests/install-routes.test.js                            — HEAD on the archive: 401 without a key, release header and no body with one
 tests/bootstrap-archive-mode.e2e.mjs                    — the real-install scenario continues: the server ships v9.9.10, archive-update-cli.mjs swaps it in (logs and opt-out kept, root js-yaml installed, installer re-run), a second run says CURRENT; the archive includes new untracked files of the working tree
+scripts/interactive-upgrade.sh, scripts/interactive-upgrade.ps1 — ARCHIVE_MODE: on an archive install the upgrader runs shared/archive-update-cli.mjs instead of backup/pull/npm/install, then steps 5-7 as before; the .ps1 performs the swap itself when node could not (Complete-OwnMindArchiveSwap); the 7-day sweep also covers .ownmind.broken.* and .ownmind.prev; the .ps1 backup, rollback and sweep take the runtime\current junction out before any recursive copy or delete
+scripts/update.sh, scripts/update.ps1                   — pass --node-bin to the four hook helpers when .node-path points into runtime/
+scripts/bootstrap.sh, scripts/bootstrap.ps1             — the directory set aside as .ownmind.broken.<ts> gets the current time, so the 7-day sweep counts from then
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
