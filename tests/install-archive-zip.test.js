@@ -102,7 +102,7 @@ describe('writeZipFromDir', () => {
     await writeZipFromDir({ dir: src, out });
     const test = spawnSync('unzip', ['-tq', out], { encoding: 'utf8' });
     assert.equal(test.status, 0, `${test.stdout}${test.stderr}`);
-    const list = spawnSync('unzip', ['-Z1', out], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    const list = spawnSync('unzip', ['-Z1', out], { encoding: 'utf8' }).stdout.split(/\r?\n/).filter(Boolean);
     assert.deepEqual(list.sort(), ['x/', 'x/y.txt', 'z.txt']);
     const dest = tempDir('zip-dest-');
     assert.equal(spawnSync('unzip', ['-q', out, '-d', dest]).status, 0);

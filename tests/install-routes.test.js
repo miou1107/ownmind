@@ -147,7 +147,7 @@ describe('install routes', () => {
     fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
     try {
       const names = execFileSync('tar', ['-tzf', file], { encoding: 'utf8' })
-        .split('\n').filter(Boolean).map((n) => n.replace(/^\.\//, ''));
+        .split(/\r?\n/).filter(Boolean).map((n) => n.replace(/^\.\//, ''));
       assert.ok(names.includes('.release'));
       assert.ok(names.includes('install.sh'));
       assert.ok(names.includes('install.ps1'));
@@ -223,7 +223,7 @@ describe('buildInstallArchive', () => {
       try {
         const names = format === 'zip'
           ? readZipEntries(a.path).map((e) => e.name)
-          : execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8' }).split('\n').filter(Boolean);
+          : execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean);
         const shipped = forbidden.filter((f) => names.some((n) => top(n) === f));
         assert.deepEqual(shipped, [], `${format} ships runtime state: ${shipped}`);
         assert.ok(names.some((n) => n.replace(/^\.\//, '') === 'hooks/state/kept.js'), `${format}: a nested state/ is code and ships`);
@@ -255,7 +255,7 @@ describe('buildInstallArchive', () => {
     const a = await buildInstallArchive({ repoRoot: REAL_ROOT, version: 'v0.0.0-real' });
     try {
       const names = execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-        .split('\n').filter(Boolean);
+        .split(/\r?\n/).filter(Boolean);
       assert.ok(names.includes('.release'));
       assert.ok(names.includes('install.sh'));
       assert.ok(names.includes('src/utils/md-parser.js'));
@@ -286,7 +286,7 @@ describe('buildInstallArchive', () => {
     const a = await buildInstallArchive({ repoRoot: REAL_ROOT, version: 'v0.0.0-imports' });
     try {
       const names = new Set(execFileSync('tar', ['-tzf', a.path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-        .split('\n').filter(Boolean));
+        .split(/\r?\n/).filter(Boolean));
       for (const [target, importer] of wanted) {
         assert.ok(names.has(target), `${importer} imports ${target}, which the archive does not contain`);
       }
