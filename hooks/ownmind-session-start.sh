@@ -14,6 +14,27 @@ ownmind_curl_auth() {
 OWNMIND_DIR="$HOME/.ownmind"
 # A machine with no Node of its own runs the private one in runtime/current; no other PATH has it.
 if [ -d "$OWNMIND_DIR/runtime/current/bin" ]; then PATH="$OWNMIND_DIR/runtime/current/bin:$PATH"; export PATH; fi
+# Stock macOS has no `timeout` (it is GNU coreutils: Homebrew puts it on a developer's Mac, a
+# colleague's Mac has none). Each `timeout N node ...` below was then "command not found" with
+# its stderr discarded, so the hook reported a successful load to the server and printed no
+# memory into the conversation (zero-touch acceptance run, 2026-10-23;
+# tests/session-hook-without-timeout.test.js). This stand-in runs the command and stops it after
+# N seconds, as the real one does. The command runs in the background so the clock can be kept;
+# none of the callers feeds it standard input.
+if ! command -v timeout >/dev/null 2>&1; then
+  timeout() {
+    local secs="$1" pid watchdog rc
+    shift
+    "$@" &
+    pid=$!
+    ( sleep "$secs"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    watchdog=$!
+    wait "$pid"
+    rc=$?
+    kill "$watchdog" 2>/dev/null
+    return "$rc"
+  }
+fi
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 MARKER_FILE="$OWNMIND_DIR/.last-update-check"
 LOCK_FILE="$OWNMIND_DIR/.update-lock"

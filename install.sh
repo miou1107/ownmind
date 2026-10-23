@@ -889,8 +889,21 @@ for passthrough_name in $OWNMIND_PASSTHROUGH_HOOKS; do
   install_git_hook "ownmind-git-passthrough" "$passthrough_name"
 done
 
-# 設定 global git hooks path（需要 git 可用）
-if command -v git &>/dev/null; then
+# BEGIN global-hooks-path
+# Set the global git hooks path (needs a working git).
+# Not `command -v git`: on a Mac without the developer tools that finds the /usr/bin/git stub,
+# and running it opens the install-the-developer-tools dialog and exits 1, which under set -e
+# aborted the install right here (zero-touch acceptance run, 2026-10-23). ownmind_git_usable is
+# the check bootstrap.sh uses; a checkout too old to carry preflight.sh keeps the old test.
+OWNMIND_GIT_WORKS=0
+if [ -f "$OWNMIND_DIR/scripts/install-helpers/preflight.sh" ]; then
+  # shellcheck source=./scripts/install-helpers/preflight.sh
+  . "$OWNMIND_DIR/scripts/install-helpers/preflight.sh"
+  ownmind_git_usable && OWNMIND_GIT_WORKS=1
+elif command -v git &>/dev/null; then
+  OWNMIND_GIT_WORKS=1
+fi
+if [ "$OWNMIND_GIT_WORKS" = 1 ]; then
   # Remember a global hooks path set before OwnMind, so the hooks above can hand on to it.
   # It used to be overwritten and forgotten. Recorded once: a later reinstall must not
   # replace it with OwnMind's own directory.
@@ -915,6 +928,7 @@ if command -v git &>/dev/null; then
 else
   echo "[WARN] git not found, skipping global hooks path"
 fi
+# END global-hooks-path
 
 # --- 4e. Always-on Usage Scanner（P6）---
 # 目標：launchd (macOS) / systemd (Linux) 每 30 分鐘自動跑 scanner，

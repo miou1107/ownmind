@@ -124,6 +124,10 @@ src/routes/admin.js                                     — GET /users is mounte
 client/src/pages/Admin/TeamPage.jsx                     — new column 最近一次載入記憶 between 密碼狀態 and 近 7 天用量: a light, a time or a pill, and a muted second line (Chinese wording pending the product owner's approval)
 client/src/i18n/zh.json, en.json, en.override.json, ja.json, ja.override.json — team.col.last_load and team.load.* (English and Japanese pinned in the override files)
 tests/team-users-select-shape.test.js, tests/admin-api-key-reveal.test.js, tests/account-deactivate.test.js — read the list query from admin-users-list.js
+install.sh                                              — the global git hooks path step decides with ownmind_git_usable (preflight.sh) instead of `command -v git`: on a Mac with only the /usr/bin/git stub it ran the stub twice (two developer-tools dialogs) and the second call aborted the install under set -e
+tests/install-git-stub-hooks-path.test.js               — new: runs that step on its own with the macOS git stub (skips git, no abort, stub never run) and with a working git (hooks path still set)
+hooks/ownmind-session-start.sh                          — a stand-in `timeout` when the machine has none (stock macOS): every `timeout N node ...` in the hook was "command not found", so the hook told the server memory had loaded and printed nothing into the conversation
+tests/session-hook-without-timeout.test.js              — new: the real shell hook on a simulated clean Mac (no timeout, node only as the private runtime) against a stub server hands the conversation its memory context
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）
