@@ -253,7 +253,7 @@ $ReleaseHelper = Join-Path $OwnmindDir "scripts\install-helpers\update-to-releas
 # what bootstrap.ps1 has just unpacked when it runs this script, so it is used as it is.
 $ReleaseFile = Join-Path $OwnmindDir ".release"
 if ((Test-Path $OwnmindDir) -and (Test-Path $ReleaseFile) -and -not (Test-Path (Join-Path $OwnmindDir ".git"))) {
-  $archiveRelease = "$(Get-Content -Path $ReleaseFile -TotalCount 1)".Trim()
+  $archiveRelease = "$(Get-Content -Path $ReleaseFile -TotalCount 1 -Encoding UTF8)".Trim()
   Write-Host "[INFO] Archive install $archiveRelease; updates come from the OwnMind server"
 } elseif (Test-Path $OwnmindDir) {
   Write-Host "[INFO] Updating OwnMind MCP server"

@@ -65,7 +65,7 @@ if (-not (Test-Path $gitDir) -and (Test-Path $releaseFile)) {
         $L1 = 'error'
         $L1Detail = $Matches[1]
     } else {
-        $archiveRelease = "$(Get-Content -Path $releaseFile -TotalCount 1)".Trim()
+        $archiveRelease = "$(Get-Content -Path $releaseFile -TotalCount 1 -Encoding UTF8)".Trim()
         $L1 = 'error'
         $L1Detail = "release=$archiveRelease reason=helper_failed"
     }

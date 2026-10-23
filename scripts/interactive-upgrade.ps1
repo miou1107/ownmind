@@ -196,7 +196,7 @@ function Complete-OwnMindArchiveSwap {
   if (-not (Test-Path -LiteralPath (Join-Path $next '.release')) -or -not (Test-Path -LiteralPath (Join-Path $next 'install.ps1'))) {
     return 'FAILED swap_pending'
   }
-  $to = "$(Get-Content -LiteralPath (Join-Path $next '.release') -TotalCount 1)".Trim()
+  $to = "$(Get-Content -LiteralPath (Join-Path $next '.release') -TotalCount 1 -Encoding UTF8)".Trim()
   try {
     if (Test-Path -LiteralPath $prev) { Remove-OwnMindTreeSafe -Path $prev }
     Move-Item -LiteralPath $OwnMindDir -Destination $prev -ErrorAction Stop
@@ -219,7 +219,7 @@ function Complete-OwnMindArchiveSwap {
     $env:OWNMIND_API_URL = $ApiUrl
     $nodePathFile = Join-Path $OwnMindDir '.node-path'
     if (Test-Path -LiteralPath $nodePathFile) {
-      $named = "$(Get-Content -LiteralPath $nodePathFile -TotalCount 1)".Trim()
+      $named = "$(Get-Content -LiteralPath $nodePathFile -TotalCount 1 -Encoding UTF8)".Trim()
       if ($named -and $named.ToLower().StartsWith((Join-Path $OwnMindDir 'runtime\').ToLower())) {
         $env:OWNMIND_PRIVATE_NODE = '1'
         $env:OWNMIND_NODE = $named
@@ -289,7 +289,7 @@ $apiUrl = ""
 if ($ArchiveMode) {
   # --- 1-4 (archive install). Nothing in the live tree changes until the new release is
   # unpacked, carried over and installed beside it; the swap leaves the old one at .prev.
-  $archiveRelease = "$(Get-Content -LiteralPath (Join-Path $OwnMindDir '.release') -TotalCount 1)".Trim()
+  $archiveRelease = "$(Get-Content -LiteralPath (Join-Path $OwnMindDir '.release') -TotalCount 1 -Encoding UTF8)".Trim()
   Step "archive_mode" "Archive install ($archiveRelease); updating from the OwnMind server instead of git"
   # Step 7 dismisses the upgrade broadcasts with these, and the swap below re-runs install.ps1.
   $claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"

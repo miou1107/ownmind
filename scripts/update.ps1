@@ -460,7 +460,7 @@ Remove-Item (Join-Path $ClaudeDir "hooks\ownmind-worktree-setup.sh") -ErrorActio
 $NodeBinArgs = @()
 $nodePathFile = Join-Path $OwnMindDir ".node-path"
 if (Test-Path -LiteralPath $nodePathFile) {
-  $namedNode = "$(Get-Content -LiteralPath $nodePathFile -TotalCount 1)".Trim()
+  $namedNode = "$(Get-Content -LiteralPath $nodePathFile -TotalCount 1 -Encoding UTF8)".Trim()
   if ($namedNode -and $namedNode.ToLower().StartsWith((Join-Path $OwnMindDir "runtime\").ToLower())) {
     $NodeBinArgs = @('--node-bin', $namedNode)
   }
