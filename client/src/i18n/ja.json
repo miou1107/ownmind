@@ -320,7 +320,7 @@
   "team.load.never_detail_nomachine": "{date} にインストール",
   "team.load.not_installed": "未インストール",
   "team.load.tip.green": "このパソコンはメモリを読み込みました。OwnMind は正常に動作しています。",
-  "team.load.tip.yellow": "インストールは完了していますが、まだメモリを読み込んでいません。新しい会話を開くと緑になります。",
+  "team.load.tip.yellow": "インストールは完了していますが、メモリを読み込んだことは一度もありません。新しい会話を開くと緑になります。1 日たっても黄色のままなら、新しい会話を開いたかどうか本人に確認してください。",
   "team.load.tip.red": "インストール時にエラーが報告され、その後は読み込みがありません。インストール用の文章をもう一度 AI に貼り付けてもらってください。",
   "team.password_status.pending": "要変更",
   "team.password_status.done": "変更済",

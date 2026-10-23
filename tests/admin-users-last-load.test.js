@@ -101,6 +101,18 @@ describe('LIST_USERS_SQL rules behind the column', () => {
     assert.match(sql, /c\.summary->'fail'/);
   });
 
+  it('counts an install as finished only once its self-check has reported, not at the install_started beacon', () => {
+    assert.match(sql, /MIN\(c\.ts\) FILTER \(WHERE c\.trigger_kind IN \('post_install', 'post_upgrade', 'manual'\)\)/);
+    assert.doesNotMatch(sql, /MIN\(c\.ts\)(?! FILTER)/);
+  });
+
+  it('never shows a load later than now, and walks the indexes newest-first', () => {
+    assert.match(sql, /LEAST\(a\.ts, NOW\(\)\)/);
+    assert.match(sql, /ORDER BY a\.ts DESC LIMIT 1/);
+    assert.match(sql, /c\.machine IS NOT NULL ORDER BY c\.ts DESC LIMIT 1/);
+    assert.doesNotMatch(sql, /ARRAY_AGG/);
+  });
+
   it('still never returns the password hash or the full key', () => {
     assert.doesNotMatch(sql, /password_hash/);
     assert.doesNotMatch(sql, /SELECT \*/);

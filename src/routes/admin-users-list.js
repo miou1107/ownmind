@@ -20,19 +20,31 @@ export const LIST_USERS_SQL = `
          LEFT(u.api_key, 8) AS api_key_prefix,
          u.must_change_password, u.created_at, u.updated_at, u.deactivated_at,
          m.last_memory_load_at,
-         i.last_machine,
+         lm.last_machine,
          i.first_install_at,
          i.last_install_error_at
   FROM users u
   LEFT JOIN LATERAL (
-    SELECT a.ts AS last_memory_load_at
+    -- ts is the client's clock: a fast clock must not show a load in the future.
+    SELECT LEAST(a.ts, NOW()) AS last_memory_load_at
     FROM activity_logs a
     WHERE a.user_id = u.id AND a.event = 'init' AND a.source = 'hook'
     ORDER BY a.ts DESC
     LIMIT 1
   ) m ON TRUE
   LEFT JOIN LATERAL (
-    SELECT MIN(c.ts) AS first_install_at,
+    SELECT c.machine AS last_machine
+    FROM install_check_logs c
+    WHERE c.user_id = u.id AND c.machine IS NOT NULL
+    ORDER BY c.ts DESC
+    LIMIT 1
+  ) lm ON TRUE
+  LEFT JOIN LATERAL (
+    -- An install counts as finished once its self-check has reported (post_install,
+    -- post_upgrade, manual). The install_started beacon is written before the checks run,
+    -- so an install that died there has no finished row and must not show as installed.
+    SELECT MIN(c.ts) FILTER (WHERE c.trigger_kind IN ('post_install', 'post_upgrade', 'manual'))
+             AS first_install_at,
            -- An install error is an error_* report, or a post_install report whose
            -- self-check counted at least one failure.
            MAX(c.ts) FILTER (
@@ -40,8 +52,7 @@ export const LIST_USERS_SQL = `
                 OR (c.trigger_kind = 'post_install'
                     AND CASE WHEN jsonb_typeof(c.summary->'fail') = 'number'
                              THEN (c.summary->>'fail')::numeric > 0 ELSE FALSE END)
-           ) AS last_install_error_at,
-           (ARRAY_AGG(c.machine ORDER BY c.ts DESC) FILTER (WHERE c.machine IS NOT NULL))[1] AS last_machine
+           ) AS last_install_error_at
     FROM install_check_logs c
     WHERE c.user_id = u.id
   ) i ON TRUE

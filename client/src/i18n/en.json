@@ -320,7 +320,7 @@
   "team.load.never_detail_nomachine": "Installed {date}",
   "team.load.not_installed": "Not installed yet",
   "team.load.tip.green": "This computer has loaded memories. OwnMind is working on their side.",
-  "team.load.tip.yellow": "Installed, but no memories loaded yet. Opening a new conversation turns it green.",
+  "team.load.tip.yellow": "Installed, but memories have never been loaded. Opening a new conversation turns it green; if it is still yellow a day later, ask them whether they opened a new conversation.",
   "team.load.tip.red": "The install reported an error and nothing has loaded since. Ask them to paste the install text to their AI again.",
   "team.password_status.pending": "must change",
   "team.password_status.done": "changed",

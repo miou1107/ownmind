@@ -40,6 +40,7 @@ src/routes/admin-users-list.js                          — LIST_USERS_SQL and c
 client/src/pages/Admin/last-load.js                     — lastLoadState(row, now): green / yellow / red / none for the team page's last-memory-load cell, with the time wording in the viewer's local time
 tests/admin-users-last-load.test.js                     — the four fields pass through, a member with no rows gets nulls, one query for the whole team, the SQL rules for loads and install errors
 tests/team-last-load-state.test.js                      — every branch of lastLoadState: today / yesterday / dated time, error older than the last load stays green, yellow, red, none, deactivated
+tests/admin-users-last-load-real-db.test.js             — the list query against a real Postgres: a member per state (green, yellow, red, old error, beacon only, no summary, non-hook init, fast clock, error only), and an EXPLAIN with no seq scan on activity_logs or install_check_logs
 ```
 
 修改檔：

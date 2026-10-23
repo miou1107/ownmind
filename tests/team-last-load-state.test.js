@@ -110,6 +110,18 @@ describe('lastLoadState — none and deactivated', () => {
     assert.equal(s.tipKey, null);
   });
 
+  it('an install that died at its beacon (no finished install, no error) is none, not yellow', () => {
+    // The server leaves first_install_at null until a self-check has reported.
+    const s = lastLoadState(row({ last_machine: 'M5' }), NOW);
+    assert.equal(s.light, 'none');
+    assert.equal(s.labelKey, 'team.load.not_installed');
+  });
+
+  it('an install that died with an error report and no finished install is red', () => {
+    const s = lastLoadState(row({ last_machine: 'M9', last_install_error_at: at(10, 22, 15, 40) }), NOW);
+    assert.equal(s.light, 'red');
+  });
+
   it('a deactivated member gets the muted deactivated treatment, whatever the data says', () => {
     const s = lastLoadState(row({ deactivated_at: at(10, 20, 0, 0), last_memory_load_at: at(10, 23, 9, 12) }), NOW);
     assert.equal(s.light, 'none');
