@@ -139,6 +139,11 @@ src/lib/install-check-alerts.js, src/jobs/install-check-alerts.js — a memory_l
 docs/ai-install-runbook.md                              — Definition of done: a memory_load warning right after an install is expected, nothing to fix or re-run
 tests/self-check-memory-load.test.js, tests/install-check-alerts.test.js, tests/ai-install-runbook.test.js — post_install warns without a remedy, every other trigger fails; post_install memory_load neither alerts nor resolves, later triggers still alert; the manual's sentence
 tests/zero-touch-acceptance.e2e.mjs                     — a fresh install prints no [FAIL] line except the scheduler one this simulation causes, and memory_load is a warning with no Fix line
+hooks/ownmind-session-start.sh                          — the timeout stand-in's watchdog now stops its own sleep when the command finishes early (no sleep left running per conversation); comment on its two differences from GNU timeout (no child processes, 143 on timeout)
+tests/session-hook-without-timeout.test.js              — two more cases: the stand-in stops a command past its limit on time (143) and leaves no sleep; a hook whose output step hangs still exits 0 within its limit with nothing left in its process group
+install.sh, tests/install-git-stub-hooks-path.test.js   — the skip line reads "git is not usable on this machine (no developer tools); skipping the global git hooks path"
+tests/bootstrap-archive-mode-ps1.e2e.mjs                — the real-install case writes .no-usage-scanner as soon as the release is unpacked and requires install.ps1's opt-out line, so it never registers the developer's scheduled task
+.github/workflows/test.yml                              — install job: a time limit on each e2e step (15, 15, 20, 25 minutes) and 90 minutes for the job, so a slow run stops on the slow step
 ```
 
 ## v1.33.1 修改（2026-10-22，候選清單先比標題；開場交接提醒最多三筆）

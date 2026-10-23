@@ -466,18 +466,31 @@ test('bare Windows: the REAL install.ps1 on the server\'s own archive and nodejs
   const { buildInstallArchive } = await import('../src/services/install-archive.js');
   fixture.real = { archive: await buildInstallArchive({ repoRoot, version: 'v9.9.9', format: 'zip' }), node: nodeArchive };
   const win = makeCleanWindows();
+  // The scanner opt-out, as in the Mac acceptance (tests/zero-touch-acceptance.e2e.mjs): without
+  // it install.ps1 registers the "OwnMind Usage Scanner" scheduled task for the account running
+  // the test, which on a developer's own Windows machine is the developer's real task. The file
+  // cannot exist before the run (bootstrap would set an existing folder without .release aside),
+  // so it is written the moment the release is unpacked, and the run must say it skipped.
+  const dir = path.join(win.home, '.ownmind');
+  const optOut = setInterval(() => {
+    if (fs.existsSync(path.join(dir, '.release')) && !fs.existsSync(path.join(dir, '.no-usage-scanner'))) {
+      try { fs.writeFileSync(path.join(dir, '.no-usage-scanner'), ''); } catch { /* next tick */ }
+    }
+  }, 5);
   try {
     // The watcher would keep polling after this test ends; notifications are printed, not shown.
     const r = await runBootstrap(win, { OWNMIND_SKIP_FIRST_LOAD_WATCH: '1', OWNMIND_NOTIFY_DRY_RUN: '1' });
+    clearInterval(optOut);
     const tail = r.out.slice(-6000);
     assert.equal(r.status, 0, tail);
+    assert.match(r.out, /\[INFO\] Skipping usage scanner install \(\.no-usage-scanner opt-out\)/,
+      'the opt-out was not in place when install.ps1 reached the scanner; the run may have registered a scheduled task');
     assert.match(r.out, /INFO:archive_mode:/, tail);
     assert.match(r.out, /OK:unpack:release v9\.9\.9 unpacked/, tail);
     assert.match(r.out, new RegExp(`OK:node:private Node ${nodeArchive.version.replace(/\./g, '\\.')} installed`), tail);
     const lines = r.out.split(/\r?\n/).filter(Boolean);
     assert.match(lines[lines.length - 1], /^NEXT:verify:/, lines.slice(-4).join('\n'));
 
-    const dir = path.join(win.home, '.ownmind');
     assert.equal(readTrim(path.join(dir, '.release')), 'v9.9.9');
     const runtimeNode = path.join(dir, 'runtime', 'current', 'node.exe');
     assert.ok(fs.existsSync(runtimeNode), 'runtime\\current\\node.exe must exist');
@@ -491,6 +504,7 @@ test('bare Windows: the REAL install.ps1 on the server\'s own archive and nodejs
     const claudeJson = JSON.parse(readTrim(path.join(win.home, '.claude.json')));
     assert.ok(claudeJson.mcpServers?.ownmind, '~/.claude.json has no mcpServers.ownmind');
   } finally {
+    clearInterval(optOut);
     fixture.real = null;
     win.cleanup();
   }

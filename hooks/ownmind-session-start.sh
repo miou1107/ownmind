@@ -21,17 +21,27 @@ if [ -d "$OWNMIND_DIR/runtime/current/bin" ]; then PATH="$OWNMIND_DIR/runtime/cu
 # tests/session-hook-without-timeout.test.js). This stand-in runs the command and stops it after
 # N seconds, as the real one does. The command runs in the background so the clock can be kept;
 # none of the callers feeds it standard input.
+# Two differences from GNU timeout, both fine for the callers here: it stops only the command
+# itself, not children the command forks (every caller is a single node process that forks
+# none), and a command stopped on time returns 143 (SIGTERM), not 124.
+# The watchdog reaps its own `sleep` when it is told to stop; without that, every conversation
+# whose command finished early left a `sleep` running for the rest of the N seconds.
 if ! command -v timeout >/dev/null 2>&1; then
   timeout() {
     local secs="$1" pid watchdog rc
     shift
     "$@" &
     pid=$!
-    ( sleep "$secs"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    ( sleeper=''
+      trap '[ -n "$sleeper" ] && kill "$sleeper" 2>/dev/null; exit 0' TERM
+      sleep "$secs" & sleeper=$!
+      wait "$sleeper"
+      kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
     watchdog=$!
     wait "$pid"
     rc=$?
     kill "$watchdog" 2>/dev/null
+    wait "$watchdog" 2>/dev/null
     return "$rc"
   }
 fi

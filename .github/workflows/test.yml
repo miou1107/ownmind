@@ -89,7 +89,10 @@ jobs:
   install:
     name: clean install / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    # Above the sum of the step limits below (15 + 15 + 20 + 25 = 75) plus checkout, setup and
+    # npm ci, so a slow run stops on the step that is slow and says which one, instead of the
+    # whole job being cancelled with no message.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -102,12 +105,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test --test-timeout=900000 tests/install-clean-machine.e2e.mjs
+        timeout-minutes: 15
       - run: node --test --test-timeout=900000 tests/bootstrap-archive-mode.e2e.mjs
+        timeout-minutes: 15
       # The Windows twin of the step above: it runs bootstrap.ps1 and ensure-node-runtime.ps1 under
       # Windows PowerShell with no git and no node on PATH. It skips itself on the other two legs.
       - run: node --test --test-timeout=1200000 tests/bootstrap-archive-mode-ps1.e2e.mjs
+        timeout-minutes: 20
       # Zero-touch acceptance: the prompt's one-liner on a simulated clean Mac against the real
       # server (real Postgres in Docker, real Node from nodejs.org). It skips itself off macOS, and
       # loudly wherever Docker is missing, which includes the GitHub macOS runner today; its full
       # run is on a developer's Mac (docs/superpowers/plans/2026-10-23-zero-touch-install-evidence.md).
-      - run: node --test --test-timeout=1800000 tests/zero-touch-acceptance.e2e.mjs
+      - run: node --test --test-timeout=1500000 tests/zero-touch-acceptance.e2e.mjs
+        timeout-minutes: 25

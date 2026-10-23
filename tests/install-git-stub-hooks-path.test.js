@@ -41,7 +41,7 @@ test('with only the macOS git stub, the hooks path step skips git and the instal
     const r = runBlock(mac);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /BLOCK_DONE/);
-    assert.match(r.stdout, /\[WARN\] git not found, skipping global hooks path/);
+    assert.match(r.stdout, /\[WARN\] git is not usable on this machine \(no developer tools\); skipping the global git hooks path/);
     assert.ok(!fs.existsSync(mac.gitMarker), 'the git stub was executed; on a real Mac that opens the developer-tools dialog');
     assert.doesNotMatch(r.stderr, /requesting install/);
   } finally {

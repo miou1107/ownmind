@@ -926,7 +926,7 @@ if [ "$OWNMIND_GIT_WORKS" = 1 ]; then
   git config --global core.hooksPath "$HOME/.ownmind/git-hooks"
   echo "[ OK ] Set git global hooks path: $HOME/.ownmind/git-hooks"
 else
-  echo "[WARN] git not found, skipping global hooks path"
+  echo "[WARN] git is not usable on this machine (no developer tools); skipping the global git hooks path"
 fi
 # END global-hooks-path
 
