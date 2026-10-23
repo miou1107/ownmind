@@ -69,6 +69,24 @@ function sha256Of(file) {
   });
 }
 
+/**
+ * Copies `from` into `to`, keeping what isExcluded lets through. Each relative name is built from
+ * the directory entries themselves rather than from full paths: with fs.cp's filter comparing
+ * full paths, the Windows runner excluded nothing and packed db/, tests/ and runtime state.
+ * Symbolic links are left out; the release is plain files, and a link could point outside the tree.
+ */
+async function stageTree(from, to, prefix = '') {
+  await fsp.mkdir(to, { recursive: true });
+  for (const entry of await fsp.readdir(from, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (isExcluded(rel)) continue;
+    const src = path.join(from, entry.name);
+    const dest = path.join(to, entry.name);
+    if (entry.isDirectory()) await stageTree(src, dest, rel);
+    else if (entry.isFile()) await fsp.copyFile(src, dest);
+  }
+}
+
 async function build({ repoRoot, version, format }) {
   const stage = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-install-stage-'));
   // The source folder is part of the name: two servers (or two test files) on one machine
@@ -77,13 +95,7 @@ async function build({ repoRoot, version, format }) {
   const target = path.join(os.tmpdir(), `ownmind-install-${version}-${tree}.${format}`);
   const partial = `${target}.${process.pid}.partial`;
   try {
-    await fsp.cp(repoRoot, stage, {
-      recursive: true,
-      filter: (src) => {
-        const rel = path.relative(repoRoot, src).split(path.sep).join('/');
-        return rel === '' || !isExcluded(rel);
-      },
-    });
+    await stageTree(repoRoot, stage);
     await fsp.writeFile(path.join(stage, '.release'), `${version}\n`);
     if (format === 'zip') {
       await writeZipFromDir({ dir: stage, out: partial });
