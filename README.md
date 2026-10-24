@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **Website**: https://miou1107.github.io/ownmind/
 
-**Current version: v1.33.2** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.33.3** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -299,9 +299,9 @@ Because static rule files are fragile — AI hallucinations bypass them silently
 
 ## System Requirements
 
-- **Client**: Node.js 20+, Git 2.30+
+- **Client**: on macOS and Windows, nothing needs to be installed first; the installer brings whatever is missing. Linux needs Node.js 20+ and Git 2.30+ installed first.
 - **Server**: Self-host (Docker Compose one-click deploy provided) or use a licensed hosted service
-- **Platforms**: macOS / Linux / Windows (Windows users need full Git for Windows installer for sh.exe used by Git hooks)
+- **Platforms**: macOS / Linux / Windows (on Windows the Git hooks need sh.exe from the full Git for Windows installer; a machine without Git skips the Git hooks)
 - **Supported AI tools**: Claude Code, Codex CLI, Cursor, Copilot, OpenCode, Windsurf, Gemini CLI, or any client that reads MCP (Model Context Protocol: standard for AI ↔ external tool integration) or hooks
 
 ---
@@ -316,12 +316,26 @@ After installing OwnMind, log in to the admin console as admin to obtain your ac
 
 #### Option A: Let AI install (easiest)
 
-In your AI editor (e.g., Cursor or Claude Code) chat, type:
+In your AI editor (e.g., Cursor or Claude Code) chat, paste this message. The admin console's team page has a "Copy install command" button that fills in the key and URL for you:
 
-- **Fresh install**: `Install OwnMind (my key is YOUR_API_KEY, URL is YOUR_API_URL)`
+- **Fresh install**:
+
+  ```text
+  Install OwnMind for me.
+  First read YOUR_API_URL/install-manual.md and follow the manual.
+  Pick the line below that matches this computer's operating system and run it once. If the output shows NEXT, do what NEXT says; if it shows FIX, run the command on the FIX line first, then run the install line again; only if it shows ASK, come and ask me.
+  If the install needs me to click "Allow" or open a permission, tell me where to click, one step at a time. The installer handles every dependency itself; do not ask me to install anything by hand.
+
+  macOS:
+  curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+  Windows (PowerShell):
+  $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex
+  ```
+
 - **Auto upgrade**: `Upgrade OwnMind`
 
-AI auto-detects your OS and runs the installer.
+The AI reads the manual the server hands out (`YOUR_API_URL/install-manual.md`), runs the one line for your OS once, and follows the NEXT / FIX / ASK lines the installer prints. A computer without git or Node.js needs nothing installed by hand: the installer uses the release archive and a private Node.js under `~/.ownmind/runtime/`.
 
 #### Option B: One-line shell install
 
@@ -329,20 +343,20 @@ macOS or Linux:
 
 ```bash
 # Fresh install
-curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
 # Upgrade
-curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash
+curl -fsSL YOUR_API_URL/install.sh | bash
 ```
 
 Windows PowerShell:
 
 ```powershell
 # Fresh install
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex
 
 # Upgrade
-iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
+irm YOUR_API_URL/install.ps1 | iex
 ```
 
 > **Windows note**: OwnMind depends on the Bash shell (sh.exe) bundled with Git for Windows to run Git hooks. Install the full Git for Windows installer (not Lite or Portable), or commits will error out.

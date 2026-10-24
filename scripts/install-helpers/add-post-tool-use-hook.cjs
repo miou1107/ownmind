@@ -13,7 +13,11 @@
  * Before write, backup to settings.json.bak.<ts>; rollback on failure.
  *
  * Usage:
- *   node add-post-tool-use-hook.cjs <settings.json path> [--ownmind-dir <path>]
+ *   node add-post-tool-use-hook.cjs <settings.json path> [--ownmind-dir <path>] [--node-bin <path>]
+ *
+ *   --node-bin: absolute path of the private Node runtime, passed by the installers only on a
+ *   machine that has no other Node; the command then starts with it, quoted. An entry that is
+ *   already present is left as it is, in either shape (node-command.cjs).
  *
  * Exit codes:
  *   0  — success (including skipped)
@@ -27,6 +31,7 @@ const path = require('path');
 // v1.26.131 - os.homedir() as the last resort: HOME is unset on Windows, and the two
 // expressions this replaced produced a relative path and a TypeError respectively.
 const os = require('os');
+const { nodeInvocation } = require('./node-command.cjs');
 
 const MATCHER = 'mcp__ownmind__.*';
 // Identify whether the hook already exists by looking for 'ownmind-tty-echo' in the command string.
@@ -34,11 +39,11 @@ const MATCHER = 'mcp__ownmind__.*';
 // has type + command + timeout — extra fields are tolerated but shouldn't be depended on.
 const HOOK_IDENTIFIER_SUBSTR = 'ownmind-tty-echo';
 
-function buildHookEntry(ownmindDir) {
+function buildHookEntry(ownmindDir, nodeBin) {
   // Use an absolute path and invoke node directly — avoids PATH resolution issues.
   // The directory string may contain whitespace → wrap in double quotes so the shell parses correctly.
   const hookPath = path.join(ownmindDir, 'hooks', 'ownmind-tty-echo.cjs');
-  const cmd = `node "${hookPath}"`;
+  const cmd = `${nodeInvocation(nodeBin)} "${hookPath}"`;
   return {
     matcher: MATCHER,
     hooks: [
@@ -50,8 +55,8 @@ function buildHookEntry(ownmindDir) {
 /**
  * @returns {{ status: 'created' | 'added' | 'skipped' | 'error', message?: string }}
  */
-function addHook(settingsPath, ownmindDir) {
-  const entry = buildHookEntry(ownmindDir);
+function addHook(settingsPath, ownmindDir, { nodeBin } = {}) {
+  const entry = buildHookEntry(ownmindDir, nodeBin);
   let raw = '';
   let existed = false;
   try {
@@ -128,8 +133,15 @@ if (require.main === module) {
   let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE || os.homedir(), '.ownmind');
   const idx = args.indexOf('--ownmind-dir');
   if (idx >= 0 && args[idx + 1]) ownmindDir = args[idx + 1];
+  const nodeIdx = args.indexOf('--node-bin');
+  const nodeBin = nodeIdx >= 0 && args[nodeIdx + 1] ? args[nodeIdx + 1] : undefined;
 
-  const result = addHook(settingsPath, ownmindDir);
+  let result;
+  try {
+    result = addHook(settingsPath, ownmindDir, { nodeBin });
+  } catch (e) {
+    result = { status: 'error', message: e.message };
+  }
   if (result.status === 'error') {
     console.error(`[add-post-tool-use-hook] ERROR: ${result.message}`);
     process.exit(1);

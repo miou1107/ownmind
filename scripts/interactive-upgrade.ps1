@@ -18,6 +18,8 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 }
 
 $OwnMindDir = Join-Path $HOME ".ownmind"
+# A machine with no Node of its own runs the private one in runtime\current; no other PATH has it.
+if (Test-Path "$OwnmindDir\runtime\current\node.exe") { $env:Path = "$OwnmindDir\runtime\current;$env:Path" }
 $Ts = Get-Date -Format "yyyyMMdd-HHmmss"
 $BackupDir = Join-Path $HOME ".ownmind.bak.$Ts"
 # v1.26.98 — the log lives OUTSIDE $OwnMindDir, matching interactive-upgrade.sh (bug #15).
@@ -129,6 +131,58 @@ function Test-FileLockErrorText {
   return $Text -imatch $script:FileLockPattern
 }
 
+# --- runtime\current is a directory junction to the private Node (ensure-node-runtime.ps1) ---
+# Windows PowerShell 5.1's Remove-Item -Recurse and Copy-Item -Recurse FOLLOW junctions. The
+# junction's target is absolute (...\.ownmind\runtime\node-vX), so in a tree set aside beside the
+# live one (.ownmind.prev, .ownmind.broken.*) it names the LIVE Node: a recursive delete of that
+# tree deletes the Node every hook runs on, and a recursive copy duplicates it as a real folder.
+# Every recursive delete or copy of such a tree goes through the two functions below, which take
+# the junction out first and put it back with the same target.
+function Get-OwnMindPathAttributes {
+  param([string]$Path)
+  try { return [System.IO.File]::GetAttributes($Path) } catch { return $null }
+}
+function Test-OwnMindReparsePoint {
+  param([string]$Path)
+  $attrs = Get-OwnMindPathAttributes -Path $Path
+  return ($null -ne $attrs -and ($attrs -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+}
+function Get-OwnMindLinkTarget {
+  param([string]$Path)
+  try {
+    $target = @((Get-Item -LiteralPath $Path -Force -ErrorAction Stop).Target)
+    if ($target.Count -gt 0 -and $target[0]) { return [string]$target[0] }
+  } catch { }
+  return ''
+}
+function Remove-OwnMindTreeSafe {
+  param([string]$Path)
+  $link = Join-Path $Path 'runtime\current'
+  # Directory.Delete without recursion removes the junction itself, never what it points at.
+  if (Test-OwnMindReparsePoint -Path $link) { [System.IO.Directory]::Delete($link) }
+  Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+}
+function Copy-OwnMindTreeSafe {
+  param([string]$From, [string]$To)
+  $link = Join-Path $From 'runtime\current'
+  $target = ''
+  if (Test-OwnMindReparsePoint -Path $link) {
+    $target = Get-OwnMindLinkTarget -Path $link
+    [System.IO.Directory]::Delete($link)
+  }
+  try {
+    Copy-Item -Recurse -Path $From -Destination $To
+  } finally {
+    if ($target) {
+      try { New-Item -ItemType Junction -Path $link -Value $target -ErrorAction Stop | Out-Null } catch { }
+      $copied = Join-Path $To 'runtime\current'
+      if ((Test-Path -LiteralPath (Join-Path $To 'runtime')) -and $null -eq (Get-OwnMindPathAttributes -Path $copied)) {
+        try { New-Item -ItemType Junction -Path $copied -Value $target -ErrorAction Stop | Out-Null } catch { }
+      }
+    }
+  }
+}
+
 # --- v1.17.66 Self-check 觀測管道保證執行（IR-038） ---
 # 用 try { 主流程 } catch { 印錯記 exit code } finally { 跑 self-check }
 # 確保升級任何階段失敗，server 都能收到當下狀態 + 7 項本機 check + env。
@@ -148,7 +202,16 @@ try {
 # --- 0. Pre-check ---
 Step "check" "Checking OwnMind directory"
 if (-not (Test-Path $OwnMindDir)) { Fail "no_ownmind" "$OwnMindDir not found; run install.ps1 for fresh install" }
-if (-not (Test-Path (Join-Path $OwnMindDir ".git"))) { Fail "no_git" "$OwnMindDir is not a git repo" }
+# ARCHIVE_MODE: an install unpacked from a release archive by bootstrap on a machine without git
+# (a .release file and no .git). It updates from the OwnMind server through
+# shared\archive-update-cli.mjs, which stages the new release, swaps its code entries in (runtime\
+# and the other runtime state are never moved) and re-runs install.ps1; steps 1-4 below (backup, pull, npm, install re-run) are the git checkout's version
+# of that, and are skipped. bootstrap.ps1 delegates archive installs here only while this file
+# contains the literal ARCHIVE_MODE.
+# A swap journal without .release counts too: an update stopped part-way is resumed here.
+$ArchiveMode = (-not (Test-Path (Join-Path $OwnMindDir ".git"))) -and ((Test-Path (Join-Path $OwnMindDir ".release")) -or (Test-Path (Join-Path $OwnMindDir ".swap-journal.json")))
+$ArchiveSwapped = $false
+if (-not $ArchiveMode -and -not (Test-Path (Join-Path $OwnMindDir ".git"))) { Fail "no_git" "$OwnMindDir is not a git repo" }
 
 # #98 — before the backup, not after it. A machine with no `git` on PATH used to reach here,
 # copy the whole of ~/.ownmind aside, and then die on the first git call with PowerShell's raw
@@ -168,9 +231,58 @@ if (Test-Path $preflightHelper) {
   Step "check" "preflight.ps1 is not in this checkout; skipping the environment check"
 }
 
+$apiKey = ""
+$apiUrl = ""
+if ($ArchiveMode) {
+  # --- 1-4 (archive install). The update stages the new release in $OwnMindDir\.next and swaps
+  # code entries only (mcp, hooks, scripts, ...); runtime\ (where node.exe may be running) and
+  # the other runtime state are never moved. The previous release's code is kept in .prev.
+  $archiveRelease = "$(Get-Content -LiteralPath (Join-Path $OwnMindDir '.release') -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue)".Trim()
+  Step "archive_mode" "Archive install ($archiveRelease); updating from the OwnMind server instead of git"
+  # Step 7 dismisses the upgrade broadcasts with these.
+  $claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
+  if (Test-Path $claudeSettings) {
+    try {
+      $settings = Get-Content $claudeSettings -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($settings.mcpServers -and $settings.mcpServers.ownmind -and $settings.mcpServers.ownmind.env) {
+        $apiKey = $settings.mcpServers.ownmind.env.OWNMIND_API_KEY
+        $apiUrl = $settings.mcpServers.ownmind.env.OWNMIND_API_URL
+      }
+    } catch { }
+  }
+  # Not inside a folder whose code is about to be swapped; popped after step 6 as the checkout's is.
+  Push-Location $HOME
+  $archiveOut = & node (Join-Path $OwnMindDir 'shared\archive-update-cli.mjs') --dir $OwnMindDir 2>&1
+  $archiveOut | Out-File -Append $LogFile -Encoding utf8
+  # stdout lines arrive as strings, stderr lines as ErrorRecords; the result is the last string.
+  $archiveResult = "$($archiveOut | Where-Object { $_ -is [string] } | Select-Object -Last 1)".Trim()
+  if ($archiveResult -match '^UPDATED (.+)$') {
+    $ArchiveSwapped = $true
+    $BackupDir = Join-Path $OwnMindDir ".prev"
+    OK "archive_update" "Updated $archiveRelease -> $($Matches[1]); install.ps1 re-ran from the new release"
+  } elseif ($archiveResult -match '^CURRENT (.+)$') {
+    OK "archive_update" "Already on the server's release ($($Matches[1]))"
+  } elseif ($archiveResult -match '^FAILED (swap_pending|swap)$') {
+    # Part of the code may already be swapped; the journal lets the next run continue from there.
+    Report-Error -Kind "upgrade_file_locked" -Detail "archive swap stopped: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
+    Pop-Location
+    Fail "file_locked" "Files in $OwnMindDir are in use by another process (likely Claude Code); the update stopped and the next run continues where it stopped. Close Claude Code completely, then re-run upgrade."
+  } elseif ($archiveResult -eq 'FAILED reconfigure') {
+    Report-Error -Kind "upgrade_archive_install_failed" -Detail "install.ps1 failed after the swap: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
+    Pop-Location
+    Fail "install" "The new release is in place but install.ps1 failed (see $LogFile); the next update re-runs it. The previous release's code is in $OwnMindDir\.prev"
+  } else {
+    $shown = if ($archiveResult) { $archiveResult } else { 'no output' }
+    Report-Error -Kind "upgrade_archive_failed" -Detail "archive update failed (${shown}): $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
+    Pop-Location
+    Fail "archive_update" "Archive update failed ($shown); nothing was changed. See $LogFile"
+  }
+} else {
+# --- 1-4: a git checkout. Not indented, so the history of these steps stays readable.
+
 # --- 1. Backup ---
 Step "backup" "Backing up to $BackupDir"
-try { Copy-Item -Recurse -Path $OwnMindDir -Destination $BackupDir; OK "backup" "Backup complete" }
+try { Copy-OwnMindTreeSafe -From $OwnMindDir -To $BackupDir; OK "backup" "Backup complete" }
 catch { Fail "backup_failed" "Backup failed: $_" }
 
 # v1.26.98 — Rollback used to swallow its own failure: the catch printed one line and
@@ -204,7 +316,7 @@ function Rollback {
   Step "rollback" "Restoring backup $BackupDir -> $OwnMindDir"
   $script:RollbackFailed = $false
   try {
-    Remove-Item -Recurse -Force $OwnMindDir -ErrorAction Stop
+    Remove-OwnMindTreeSafe -Path $OwnMindDir
     Move-Item -Path $BackupDir -Destination $OwnMindDir -ErrorAction Stop
     OK "rollback" "Restored previous version"
   } catch {
@@ -381,8 +493,10 @@ if (-not (Test-Path $installScript)) {
   # arguments), not the command line. The URL travels the same way, since it is positional.
   $env:OWNMIND_API_KEY = $apiKey
   $env:OWNMIND_API_URL = $apiUrl
+  # An upgrade must not pop the "memory has loaded" notification that a first install gets.
+  $env:OWNMIND_SKIP_FIRST_LOAD_WATCH = '1'
   & powershell -ExecutionPolicy Bypass -File $installScript 2>&1 | Out-File -Append $LogFile -Encoding utf8
-  Remove-Item Env:OWNMIND_API_KEY, Env:OWNMIND_API_URL -ErrorAction SilentlyContinue
+  Remove-Item Env:OWNMIND_API_KEY, Env:OWNMIND_API_URL, Env:OWNMIND_SKIP_FIRST_LOAD_WATCH -ErrorAction SilentlyContinue
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Rollback
@@ -390,6 +504,7 @@ if (-not (Test-Path $installScript)) {
   }
   OK "install" "Setup complete"
 }
+} # end of steps 1-4 for a git checkout (ARCHIVE_MODE off)
 
 # --- 5. Re-register Task Scheduler ---
 $taskScript = Join-Path $OwnMindDir "scripts\windows\register-scanner-task.ps1"
@@ -501,15 +616,31 @@ $RetentionDays = if ($env:OWNMIND_BACKUP_RETENTION_DAYS) {
 Step "sweep" "Sweeping backups older than $RetentionDays days (if any)"
 try {
   $cutoff = (Get-Date).AddDays(-$RetentionDays)
+  # Also the folders bootstrap set aside as broken (.ownmind.broken.<ts>) and a .ownmind.prev
+  # beside the install. Each may hold the runtime\current junction, which
+  # Remove-OwnMindTreeSafe takes out first; a junction named like one of these is skipped, not followed.
   Get-ChildItem -LiteralPath $HOME -Directory -Force -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like '.ownmind.bak.*' -and $_.LastWriteTime -lt $cutoff } |
-    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+    Where-Object { ($_.Name -like '.ownmind.bak.*' -or $_.Name -like '.ownmind.broken.*' -or $_.Name -eq '.ownmind.prev') `
+      -and (($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) -and $_.LastWriteTime -lt $cutoff } |
+    ForEach-Object { try { Remove-OwnMindTreeSafe -Path $_.FullName } catch { } }
+  # An archive update keeps the previous release's code in .ownmind\.prev (inside the install).
+  $innerPrev = Join-Path $OwnMindDir '.prev'
+  if (Test-Path -LiteralPath $innerPrev) {
+    $innerItem = Get-Item -LiteralPath $innerPrev -Force -ErrorAction SilentlyContinue
+    if ($innerItem -and (($innerItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) -and $innerItem.LastWriteTime -lt $cutoff) {
+      try { Remove-OwnMindTreeSafe -Path $innerPrev } catch { }
+    }
+  }
   OK "sweep" "Old backup sweep complete"
 } catch {
   Step "sweep" "Sweep skipped (error: $($_.Exception.Message))"
 }
 
-OK "done" "Upgrade complete -> version $Version. Backup kept at $BackupDir (auto-swept after $RetentionDays days)"
+if ($ArchiveMode -and -not $ArchiveSwapped) {
+  OK "done" "Upgrade complete -> version $Version (already the server's release; nothing replaced)"
+} else {
+  OK "done" "Upgrade complete -> version $Version. Backup kept at $BackupDir (auto-swept after $RetentionDays days)"
+}
 
 # v1.17.86 — upgrade_complete beacon（IR-038 觀測管道補洞，跟 .sh 對稱）
 # 比 self-check 早一步、payload 簡單 + 5 秒 timeout + spool fallback，

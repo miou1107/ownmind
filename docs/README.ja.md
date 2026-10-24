@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **ウェブサイト**：https://miou1107.github.io/ownmind/
 
-**現在のバージョン：v1.33.2** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.33.3** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -298,9 +298,9 @@ graph LR
 
 ## システム要件
 
-- **クライアント**：Node.js 20+、Git 2.30+
+- **クライアント**：macOS と Windows では事前の準備は不要で、足りないものはインストーラーが用意します。Linux では Node.js 20+ と Git 2.30+ を先にインストールしてください。
 - **サーバー**：セルフホスト（Docker Compose ワンクリックデプロイ提供）、または認可ホスト型サービス利用
-- **対応プラットフォーム**：macOS / Linux / Windows（Windows ユーザーは Git for Windows フルインストーラ必要、Git hook が sh.exe を使用）
+- **対応プラットフォーム**：macOS / Linux / Windows（Windows の Git hook には Git for Windows フルインストーラの sh.exe が必要です。Git がないパソコンでは Git hook を省略します）
 - **対応 AI ツール**：Claude Code、Codex CLI、Cursor、Copilot、OpenCode、Windsurf、Gemini CLI など MCP（Model Context Protocol：AI と外部ツールの統合標準）またはフックを読めるクライアント
 
 ---
@@ -315,12 +315,26 @@ OwnMind インストール後、管理者として管理コンソールにログ
 
 #### 方法 A：AI 自動インストール（最も簡単）
 
-AI エディタ（例：Cursor または Claude Code）のチャットに入力：
+AI エディタ（例：Cursor または Claude Code）のチャットに、次のメッセージを貼り付けます。管理コンソールのユーザー管理ページにある「インストールコマンドをコピー」ボタンを押すと、キーと URL が入った状態でコピーされます：
 
-- **新規インストール**：`OwnMind をインストールして（key は YOUR_API_KEY、URL は YOUR_API_URL）`
+- **新規インストール**：
+
+  ```text
+  OwnMind をインストールしてください。
+  まず YOUR_API_URL/install-manual.md を読み、マニュアルの手順どおりに進めてください。
+  このパソコンの OS に合う行を下から選び、一度だけ実行してください。画面に NEXT が出たら NEXT の指示に従い、FIX が出たら FIX の行のコマンドを先に実行してからインストールコマンドをもう一度実行し、ASK が出たときだけ私に聞いてください。
+  インストール中に私が「許可」を押したり権限を開いたりする必要があるときは、どこを押すか一つずつ教えてください。必要なソフトはインストールコマンドが自分で用意するので、私に手動でインストールさせないでください。
+
+  macOS:
+  curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+  Windows (PowerShell):
+  $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex
+  ```
+
 - **自動アップグレード**：`OwnMind をアップグレード`
 
-AI が OS を自動検出してインストーラを実行。
+AI はまずサーバーが配布するマニュアル（`YOUR_API_URL/install-manual.md`）を読み、OS に合う一行を実行して、画面に出る NEXT・FIX・ASK に従います。git や Node.js が入っていないパソコンでも、インストールコマンドがリリースアーカイブと `~/.ownmind/runtime/` 配下の専用 Node.js を使うため、手動で入れるものはありません。
 
 #### 方法 B：ターミナルのワンラインコマンド
 
@@ -328,20 +342,20 @@ macOS または Linux：
 
 ```bash
 # 新規インストール
-curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
 # アップグレード
-curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash
+curl -fsSL YOUR_API_URL/install.sh | bash
 ```
 
 Windows PowerShell：
 
 ```powershell
 # 新規インストール
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex
 
 # アップグレード
-iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
+irm YOUR_API_URL/install.ps1 | iex
 ```
 
 > **Windows 注意**：OwnMind は Git for Windows 同梱の Bash シェル（sh.exe）に依存して Git hook を実行します。フル版の Git for Windows をインストール（Lite や Portable は不可）、さもないと commit 時にエラー発生。

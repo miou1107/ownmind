@@ -21,6 +21,8 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 }
 
 $OwnMindDir = Join-Path $HOME ".ownmind"
+# A machine with no Node of its own runs the private one in runtime\current; no other PATH has it.
+if (Test-Path "$OwnmindDir\runtime\current\node.exe") { $env:Path = "$OwnmindDir\runtime\current;$env:Path" }
 $ErrLog = Join-Path $OwnMindDir "logs\update-errors.log"
 New-Item -ItemType Directory -Force -Path (Split-Path $ErrLog) | Out-Null
 
@@ -451,19 +453,32 @@ if ((Test-Path $ClaudeSettings) -and (Test-Path $RemoveWorktreeHook)) {
 }
 Remove-Item (Join-Path $ClaudeDir "hooks\ownmind-worktree-setup.sh") -ErrorAction SilentlyContinue
 
+# A machine whose Node is the private runtime: .node-path names runtime\current\node.exe. The
+# four hook helpers below then write that absolute node into the hook commands, as install.ps1
+# does with OWNMIND_PRIVATE_NODE; without it a hook entry they add would be a bare `node` that a
+# machine with no node on PATH cannot start.
+$NodeBinArgs = @()
+$nodePathFile = Join-Path $OwnMindDir ".node-path"
+if (Test-Path -LiteralPath $nodePathFile) {
+  $namedNode = "$(Get-Content -LiteralPath $nodePathFile -TotalCount 1 -Encoding UTF8)".Trim()
+  if ($namedNode -and $namedNode.ToLower().StartsWith((Join-Path $OwnMindDir "runtime\").ToLower())) {
+    $NodeBinArgs = @('--node-bin', $namedNode)
+  }
+}
+
 # --- 3.3b PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 # No --bash: Windows always runs the node hook out of the checkout (see install.ps1's v1.26.80
 # note — System32\bash.exe is a WSL launcher, and ~ inside it is not this machine's home).
 $EnsurePreHook = Join-Path $OwnMindDir "scripts\install-helpers\ensure-pretooluse-hooks.cjs"
 if (Test-Path $EnsurePreHook) {
-  $preHookResult = & node $EnsurePreHook $ClaudeSettings --ownmind-dir $OwnMindDir 2>&1
+  $preHookResult = & node $EnsurePreHook $ClaudeSettings --ownmind-dir $OwnMindDir @NodeBinArgs 2>&1
   Write-Host "   PreToolUse iron-rule hook: $preHookResult"
 }
 
 # --- 3.4 SessionStart hook (v1.26.86, delegated to the shared implementation) ---
 $EnsureHook = Join-Path $OwnMindDir "scripts\install-helpers\ensure-session-hook.cjs"
 if (Test-Path $EnsureHook) {
-  $hookResult = & node $EnsureHook --ownmind-dir $OwnMindDir 2>&1
+  $hookResult = & node $EnsureHook --ownmind-dir $OwnMindDir @NodeBinArgs 2>&1
   if ($LASTEXITCODE -eq 0) {
     Write-Host "   SessionStart hook: $hookResult"
   } else {
@@ -502,12 +517,12 @@ if (Test-Path $EnsureKeyFile) {
 # 既有 user 升級時漏裝。Idempotent helper、多裝一次安全。
 $AddStopHookHelper = Join-Path $OwnMindDir "scripts\install-helpers\add-stop-hook.cjs"
 if ((Test-Path $AddStopHookHelper) -and (Test-Path $ClaudeSettings)) {
-  $stopResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnMindDir 2>&1
+  $stopResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnMindDir @NodeBinArgs 2>&1
   Write-Host "   Stop reply-lint hook：$stopResult"
 }
 $AddPostHookHelper = Join-Path $OwnMindDir "scripts\install-helpers\add-post-tool-use-hook.cjs"
 if ((Test-Path $AddPostHookHelper) -and (Test-Path $ClaudeSettings)) {
-  $postResult = & node $AddPostHookHelper $ClaudeSettings --ownmind-dir $OwnMindDir 2>&1
+  $postResult = & node $AddPostHookHelper $ClaudeSettings --ownmind-dir $OwnMindDir @NodeBinArgs 2>&1
   Write-Host "   PostToolUse banner hook：$postResult"
 }
 

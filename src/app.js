@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { tmpdir } from 'os';
 import logger from './utils/logger.js';
 import { CONTENT_SECURITY_POLICY } from './utils/content-security-policy.js';
 
@@ -82,6 +83,49 @@ app.use('/api/admin/setup', authLimiter);
 // 10 times per 15 minutes, enough to try password formats; once an admin exists the
 // endpoint auto-returns 403, and the rate limit is just a backstop against stray hits)
 app.use('/api/setup/init', authLimiter);
+// Zero-touch install: the three public scripts, the release archive and the first-load query.
+// Mounted ahead of apiLimiter so that downloading the archive does not count against the
+// 200 requests a minute of /api; these paths carry their own, lower ceiling instead.
+const installLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '請求太頻繁，請稍後再試' },
+  // first-load has its own per-account limit below: an office where several colleagues install
+  // at once shares one address, and each install's watcher asks four times a minute.
+  skip: (req) => req.originalUrl.startsWith('/api/install/first-load'),
+});
+app.use(['/install.sh', '/install.ps1', '/install-manual.md', '/api/install'], installLimiter);
+const firstLoadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // The key is the account's own key (the route requires it), so colleagues behind one
+  // address do not share a budget. A request without one is refused by auth anyway.
+  keyGenerator: (req) => req.headers.authorization || 'no-key',
+  message: { error: '請求太頻繁，請稍後再試' },
+});
+// A ceiling per address as well, high enough for a busy office, so made-up keys cannot buy a
+// fresh budget (and an auth lookup) on every request.
+const firstLoadAddressLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '請求太頻繁，請稍後再試' },
+});
+app.use('/api/install/first-load', firstLoadAddressLimiter, firstLoadLimiter);
+app.use(createInstallRouter({
+  query, auth, logger,
+  nodeArchive: createNodeArchiveService({
+    fetch: globalThis.fetch,
+    cacheDir: process.env.INSTALL_CACHE_DIR || join(tmpdir(), 'ownmind-install'),
+    now: Date.now,
+    logger,
+  }),
+}));
 app.use('/api', apiLimiter);
 
 // v1.19.8: first-run redirect middleware
@@ -160,6 +204,8 @@ import { createSessionLessonsRouter } from './routes/session-lessons.js';
 import { createActivityTouchRouter } from './routes/activity-touch.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { createReleaseRouter } from './routes/release.js';
+import { createInstallRouter } from './routes/install.js'; // zero-touch install
+import { createNodeArchiveService } from './services/node-archive.js';
 import handoffRoutes from './routes/handoff.js';
 import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';

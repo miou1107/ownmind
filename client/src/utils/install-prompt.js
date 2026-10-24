@@ -1,10 +1,29 @@
-// Build the "install OwnMind on my machine" prompt that admin copies into the
-// user's AI tool. Ported from src/public/index.html:1474-1480; the string shape
-// stays byte-identical so a machine already primed by the legacy tab keeps
-// working, and so a screenshot from a year ago still reads the same today.
+// Build the "install OwnMind on my machine" message that an admin copies into a colleague's
+// AI tool.
 //
-// Pure function on purpose: the React click handler adds clipboard write +
-// toast, but the composed string is testable without a DOM.
+// Zero-touch install: the message points at the OwnMind server, not at the public repository's
+// raw file host. It tells the AI to read the manual (GET /install-manual.md) first, run the
+// one-liner for the operating system once, and act on the NEXT / FIX / ASK lines the installer
+// prints. The server serves scripts/bootstrap.sh at /install.sh and scripts/bootstrap.ps1 at
+// /install.ps1, which work on a computer that has neither a version-control tool nor Node.js.
+//
+// Pure function on purpose: the React click handler adds clipboard write + toast, but the
+// composed string is testable without a DOM.
+
+// The Chinese wording below is drafted and shown to the product owner; final approval is still
+// pending, so do not edit a sentence without asking (tests/team-install-prompt.test.js pins it).
+const INSTALL_PROMPT = [
+  '幫我安裝 OwnMind。',
+  '先讀 <API_URL>/install-manual.md，照手冊的步驟做。',
+  '依這台電腦的作業系統，從下面挑一行執行，只執行一次。畫面上顯示 NEXT 就照 NEXT 做；顯示 FIX 就先執行 FIX 那一行的指令，再重跑一次安裝指令；顯示 ASK 才來問我。',
+  '安裝過程需要我按「允許」或開權限時，一步一步告訴我按哪裡。相依的軟體都由安裝指令自己處理，不要叫我手動裝。',
+  '',
+  'macOS:',
+  'curl -fsSL <API_URL>/install.sh | bash -s -- <KEY> <API_URL>',
+  '',
+  'Windows (PowerShell):',
+  "$env:OWNMIND_API_KEY='<KEY>'; $env:OWNMIND_API_URL='<API_URL>'; irm <API_URL>/install.ps1 | iex",
+].join('\n');
 
 export function buildInstallPrompt(user, apiUrl) {
   const apiKey = user && user.api_key;
@@ -15,13 +34,10 @@ export function buildInstallPrompt(user, apiUrl) {
     throw new Error('buildInstallPrompt: api_url is required');
   }
 
-  return `幫我安裝 OwnMind：
-
-macOS / Linux:
-curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- ${apiKey} ${apiUrl}
-
-Windows (PowerShell):
-$env:OWNMIND_API_KEY='${apiKey}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex`;
+  // A trailing slash would turn <API_URL>/install.sh into a double slash.
+  const url = apiUrl.replace(/\/+$/, '');
+  // One pass with a function replacer: a key containing `$&` or `$1` must come out as typed.
+  return INSTALL_PROMPT.replace(/<API_URL>|<KEY>/g, (token) => (token === '<KEY>' ? apiKey : url));
 }
 
 // Derive the API base URL the way the legacy tab did (src/public/index.html

@@ -631,3 +631,87 @@ describe('when the remote history was rewritten', () => {
     assert.ok(h.events.some((e) => e.event === 'update_realign_failed'));
   });
 });
+
+describe('runAutoUpdate on an archive install (.release, no .git)', () => {
+  beforeEach(async () => {
+    await fsp.rm(path.join(dir, '.git'), { recursive: true, force: true });
+    await fsp.writeFile(path.join(dir, '.release'), 'v1.0.0\n');
+  });
+
+  /** A runArchiveUpdate stand-in that records its deps and answers `result`. */
+  function fakeArchive(result) {
+    const calls = [];
+    return { calls, archiveUpdate: async (deps) => { calls.push(deps); return result; } };
+  }
+
+  it('delegates to the archive update with the same deps, and stamps the day when clean', async () => {
+    const { execFile, calls } = fakeExec();
+    const a = fakeArchive({ outcome: CLEAN, from: 'v1.0.0', to: 'v1.0.0' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, archiveUpdate: a.archiveUpdate, apiUrl: 'https://s', apiKey: 'k' });
+    assert.equal(out.outcome, CLEAN);
+    assert.equal(out.mode, 'archive');
+    assert.equal(calls.length, 0, 'nothing is run directly on an archive install');
+    assert.equal(a.calls.length, 1);
+    assert.equal(a.calls[0].ownmindDir, dir);
+    assert.equal(a.calls[0].apiUrl, 'https://s');
+    assert.equal(a.calls[0].apiKey, 'k');
+    assert.equal(a.calls[0].execFile, execFile);
+    assert.equal(a.calls[0].nodeBin, h.opts.execPath);
+    assert.equal(fs.readFileSync(h.opts.markerFile, 'utf8'), '2026-08-11');
+    assert.equal(fs.existsSync(h.opts.lockFile), false, 'the lock is released');
+  });
+
+  it('reads the credentials itself when the caller has none', async () => {
+    const a = fakeArchive({ outcome: CLEAN });
+    const h = harness();
+    await runAutoUpdate({
+      ...h.opts, execFile: fakeExec().execFile, archiveUpdate: a.archiveUpdate,
+      resolveCredentials: () => ({ apiUrl: 'https://from-settings', apiKey: 'settings-key' }),
+    });
+    assert.equal(a.calls[0].apiUrl, 'https://from-settings');
+    assert.equal(a.calls[0].apiKey, 'settings-key');
+  });
+
+  it('applied: a banner with the new version, and onApplied runs', async () => {
+    const a = fakeArchive({ outcome: APPLIED, from: 'v1.0.0', to: 'v1.1.0', version: '1.1.0' });
+    const h = harness();
+    let heard = null;
+    const out = await runAutoUpdate({
+      ...h.opts, execFile: fakeExec().execFile, archiveUpdate: a.archiveUpdate, apiUrl: 'u', apiKey: 'k',
+      onApplied: async (v) => { heard = v; },
+    });
+    assert.equal(out.outcome, APPLIED);
+    assert.equal(out.version, '1.1.0');
+    assert.deepEqual(h.banners, [{ outcome: 'applied', version: '1.1.0' }]);
+    assert.equal(heard, '1.1.0');
+  });
+
+  it('a blocked swap is retried by the next run: no stamp, no banner', async () => {
+    const a = fakeArchive({ outcome: FAILED, reason: 'swap_pending' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile: fakeExec().execFile, archiveUpdate: a.archiveUpdate, apiUrl: 'u', apiKey: 'k' });
+    assert.equal(out.outcome, FAILED);
+    assert.equal(out.reason, 'swap_pending');
+    assert.equal(fs.existsSync(h.opts.markerFile), false);
+    assert.deepEqual(h.banners, []);
+  });
+
+  it('any other failure: a failed banner naming the step, no stamp', async () => {
+    const a = fakeArchive({ outcome: FAILED, reason: 'npm' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile: fakeExec().execFile, archiveUpdate: a.archiveUpdate, apiUrl: 'u', apiKey: 'k' });
+    assert.equal(out.step, 'npm');
+    assert.deepEqual(h.banners, [{ outcome: 'failed', step: 'npm' }]);
+    assert.equal(fs.existsSync(h.opts.markerFile), false);
+  });
+
+  it('a directory with neither a checkout nor .release is still skipped as before', async () => {
+    await fsp.rm(path.join(dir, '.release'));
+    const a = fakeArchive({ outcome: CLEAN });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile: fakeExec().execFile, archiveUpdate: a.archiveUpdate });
+    assert.equal(out.reason, 'no_git_dir');
+    assert.equal(a.calls.length, 0);
+  });
+});

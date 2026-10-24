@@ -1,5 +1,6 @@
 @echo off
 REM v1.17.77: 多層 fallback (回報者 vin-windows-test)
+REM 0. %USERPROFILE%\.ownmind\runtime\current\node.exe - the private runtime, when there is one
 REM 1. where node — PATH 已設好的最快路徑
 REM 2. C:\Program Files\nodejs — winget OpenJS.NodeJS.LTS 預設位置
 REM 3. %ProgramFiles%\nodejs — 系統碟不是 C: 的環境
@@ -9,8 +10,12 @@ REM v1.17.79: 全部失敗時，把錯誤資訊 echo 到 errors\ spool 檔（觀
 REM   下次 self-check.cjs 跑時 drainErrorSpool 會把這個 .txt 上傳到 server，
 REM   admin dashboard 看得到「user X 的 MCP 起不來」事件，不必等 user 主動回報。
 
+REM Zero-touch install: a machine with no usable Node gets a private one in
+REM %USERPROFILE%\.ownmind\runtime\current (ensure-node-runtime.ps1). It is looked up first, by
+REM absolute path, because that machine has no node on PATH and Claude Code's PATH may be stale.
 SET NODE_EXE=
-FOR /F "tokens=*" %%i IN ('where node 2^>nul') DO SET NODE_EXE=%%i
+IF EXIST "%USERPROFILE%\.ownmind\runtime\current\node.exe" SET "NODE_EXE=%USERPROFILE%\.ownmind\runtime\current\node.exe"
+IF "%NODE_EXE%"=="" FOR /F "tokens=*" %%i IN ('where node 2^>nul') DO SET NODE_EXE=%%i
 IF "%NODE_EXE%"=="" IF EXIST "C:\Program Files\nodejs\node.exe" SET NODE_EXE=C:\Program Files\nodejs\node.exe
 IF "%NODE_EXE%"=="" IF EXIST "%ProgramFiles%\nodejs\node.exe" SET NODE_EXE=%ProgramFiles%\nodejs\node.exe
 IF "%NODE_EXE%"=="" IF EXIST "%LOCALAPPDATA%\Programs\nodejs\node.exe" SET NODE_EXE=%LOCALAPPDATA%\Programs\nodejs\node.exe
@@ -27,10 +32,11 @@ IF "%NODE_EXE%"=="" (
     echo kind=mcp_start_no_node
     echo detail=node.exe not found in PATH or known locations
     echo time=%DATE% %TIME%
-    echo searched=PATH; C:\Program Files\nodejs; %%ProgramFiles%%\nodejs; %%LOCALAPPDATA%%\Programs\nodejs
+    echo searched=%%USERPROFILE%%\.ownmind\runtime\current; PATH; C:\Program Files\nodejs; %%ProgramFiles%%\nodejs; %%LOCALAPPDATA%%\Programs\nodejs
     echo platform=win32
   )
   echo Error: node.exe not found in PATH or known locations: >&2
+  echo   - %%USERPROFILE%%\.ownmind\runtime\current\node.exe >&2
   echo   - C:\Program Files\nodejs\node.exe >&2
   echo   - %%ProgramFiles%%\nodejs\node.exe >&2
   echo   - %%LOCALAPPDATA%%\Programs\nodejs\node.exe >&2

@@ -30,6 +30,8 @@ import path from 'path';
 import { localDateOnly } from './local-date.js';
 import { tryAcquireUpdateLock, releaseUpdateLock } from './update-lock.js';
 import { fetchReleases, findReleaseTarget } from './release-target.js';
+import { runArchiveUpdate, isArchiveInstall } from './archive-update.js';
+import { readCredentials } from './helpers.js';
 
 /** Outcomes. Returned rather than only logged, so a caller can act on them. */
 export const SKIPPED = 'skipped';
@@ -164,6 +166,10 @@ function withNodeOnPath(env, nodeDir, isWindows) {
  *                                    directory, and that directory goes on the children's PATH
  * @param {object} [deps.env]        - environment the children inherit
  * @param {Function} [deps.today]    - () => 'YYYY-MM-DD', local
+ * @param {string} [deps.apiUrl]     - for an archive install (no .git, a .release file): the
+ * @param {string} [deps.apiKey]       server to update from; read with readCredentials() when absent
+ * @param {Function} [deps.fetch]    - for an archive install
+ * @param {Function} [deps.archiveUpdate] - runArchiveUpdate, replaceable in tests
  * @returns {Promise<{outcome: string, reason?: string, step?: string, version?: string}>}
  */
 export async function runAutoUpdate({
@@ -179,7 +185,12 @@ export async function runAutoUpdate({
   execPath = process.execPath,
   env = process.env,
   today = () => localDateOnly(),
-  fileSystem = fs
+  fileSystem = fs,
+  apiUrl = '',
+  apiKey = '',
+  fetch = globalThis.fetch,
+  archiveUpdate = runArchiveUpdate,
+  resolveCredentials = readCredentials
 }) {
   const isWindows = platform === 'win32';
   const npmCmd = isWindows ? 'npm.cmd' : 'npm';
@@ -194,7 +205,12 @@ export async function runAutoUpdate({
     logEvent('update_skipped', { source, reason: 'marker_today' });
     return { outcome: SKIPPED, reason: 'marker_today' };
   }
-  if (!fileSystem.existsSync(path.join(ownmindDir, '.git'))) {
+  // A machine installed from a release archive (bootstrap without git) has a .release file
+  // and no .git. It updates from the OwnMind server instead (shared/archive-update.js), under
+  // the same lock and daily marker as the git path below.
+  const archiveMode = !fileSystem.existsSync(path.join(ownmindDir, '.git'))
+    && isArchiveInstall(ownmindDir, fileSystem);
+  if (!archiveMode && !fileSystem.existsSync(path.join(ownmindDir, '.git'))) {
     logEvent('update_skipped', { source, reason: 'no_git_dir', dir: ownmindDir });
     return { outcome: SKIPPED, reason: 'no_git_dir' };
   }
@@ -230,6 +246,46 @@ export async function runAutoUpdate({
     queueBanner({ outcome: 'failed', step });
     return { outcome: FAILED, step };
   };
+
+  if (archiveMode) {
+    try {
+      let url = apiUrl;
+      let key = apiKey;
+      if (!url || !key) {
+        try { ({ apiUrl: url, apiKey: key } = resolveCredentials()); } catch { /* none found */ }
+      }
+      const r = await archiveUpdate({
+        ownmindDir, apiUrl: url, apiKey: key, execFile, fetch, fileSystem,
+        logEvent: (event, details) => logEvent(event, { source, ...details }),
+        platform, nodeBin: execPath, env,
+        // The lock goes stale after STALE_MS; download, npm and the installer can take longer
+        // on a slow network, so its time is refreshed after each long step.
+        keepAlive: () => { const t = new Date(); fs.utimesSync(lockFile, t, t); },
+      });
+      if (r.outcome === CLEAN || r.outcome === APPLIED) markToday();
+      release();
+      if (r.outcome === APPLIED) {
+        queueBanner({ outcome: 'applied', version: r.version });
+        if (onApplied) {
+          try { await onApplied(r.version); }
+          catch (e) {
+            logEvent('update_heartbeat_failed', {
+              source, error: e?.code || e?.message || String(e).slice(0, 120)
+            });
+          }
+        }
+        return { outcome: APPLIED, version: r.version, mode: 'archive' };
+      }
+      // A swap that a running process blocked is retried by the next run without a download;
+      // it is not a failure the person can do anything about, so no banner.
+      if (r.outcome === FAILED && r.reason !== 'swap_pending') queueBanner({ outcome: 'failed', step: r.reason });
+      return { outcome: r.outcome, reason: r.reason, step: r.outcome === FAILED ? r.reason : undefined, mode: 'archive' };
+    } catch (e) {
+      return fail('archive', e);
+    } finally {
+      release();
+    }
+  }
 
   logEvent('update_check', { source });
 

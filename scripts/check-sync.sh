@@ -16,6 +16,8 @@ ownmind_curl_auth() {
 }
 
 OWNMIND_DIR="${OWNMIND_DIR:-$HOME/.ownmind}"
+# A machine with no Node of its own runs the private one in runtime/current; no other PATH has it.
+if [ -d "$OWNMIND_DIR/runtime/current/bin" ]; then PATH="$OWNMIND_DIR/runtime/current/bin:$PATH"; export PATH; fi
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
 # v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
@@ -35,7 +37,17 @@ CLAUDE_DIR_WIN="$(to_win_path "${CLAUDE_DIR}")"
 # ============================================================
 L1="unknown"
 L1_DETAIL=""
-if [ -d "${OWNMIND_DIR}/.git" ]; then
+if [ ! -e "${OWNMIND_DIR}/.git" ] && { [ -f "${OWNMIND_DIR}/.release" ] || [ -f "${OWNMIND_DIR}/.swap-journal.json" ]; }; then
+  # An archive install (bootstrap without git): compared with the release the OwnMind server
+  # ships, which is what shared/archive-update.js updates it to. The helper prints
+  # `in_sync release=vX`, `behind release=vX server=vY` or `unknown release=vX reason=<code>`.
+  ARCHIVE_L1=$(node "${OWNMIND_DIR_WIN}/shared/archive-update-cli.mjs" --dir "${OWNMIND_DIR_WIN}" --check 2>/dev/null)
+  case "${ARCHIVE_L1}" in
+    "in_sync "*|"behind "*) L1="${ARCHIVE_L1%% *}"; L1_DETAIL="${ARCHIVE_L1#* }" ;;
+    "unknown "*) L1="error"; L1_DETAIL="${ARCHIVE_L1#* }" ;;
+    *) L1="error"; L1_DETAIL="release=$(head -n 1 "${OWNMIND_DIR}/.release" 2>/dev/null | tr -d '[:space:]') reason=helper_failed" ;;
+  esac
+elif [ -d "${OWNMIND_DIR}/.git" ]; then
   if command -v git >/dev/null 2>&1; then
     # v1.30.48: compared with the newest release tag on main, which is what updates install,
     # not with main's tip; a machine is in sync once it has that release (or is ahead of it).

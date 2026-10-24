@@ -4,6 +4,7 @@ import { useT } from '../../i18n/LocaleContext';
 import { useSession } from '../../session/SessionContext';
 import { apiGet, apiPost } from '../../api';
 import { mergeUsersWithUsage } from './user-merge.js';
+import { lastLoadState } from './last-load.js';
 import { buildInstallPrompt, currentApiUrl } from '../../utils/install-prompt.js';
 import { copyPending } from '../../utils/copy-pending.js';
 import RowMenu from './RowMenu.jsx';
@@ -31,6 +32,10 @@ function ymd(date) {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+// The light beside "最近一次載入記憶" and the pill for the two states that need a look.
+const LIGHT_DOT = { green: 'bg-emerald-500', yellow: 'bg-amber-500', red: 'bg-red-500' };
+const LIGHT_PILL = { yellow: 'bg-amber-100 text-amber-700', red: 'bg-red-100 text-red-700' };
 
 function roleBadgeClass(role) {
   switch (role) {
@@ -73,6 +78,7 @@ export default function TeamPage() {
   useEffect(() => { load(); }, []);
 
   const rows = useMemo(() => mergeUsersWithUsage(users, stats), [users, stats]);
+  const now = new Date();
 
   const adminCount = useMemo(
     () => users.filter((u) => !u.deactivated_at && (u.role === 'admin' || u.role === 'super_admin')).length,
@@ -234,6 +240,7 @@ export default function TeamPage() {
                 <th className="text-left px-3 py-2">{t('team.col.api_key')}</th>
                 <th className="text-left px-3 py-2">{t('team.col.role')}</th>
                 <th className="text-left px-3 py-2">{t('team.col.password_status')}</th>
+                <th className="text-left px-3 py-2">{t('team.col.last_load')}</th>
                 <th className="text-left px-3 py-2">{t('team.col.usage_7d')}</th>
                 <th className="text-right px-3 py-2 w-14"></th>
               </tr>
@@ -277,6 +284,29 @@ export default function TeamPage() {
                     ) : (
                       <span className="text-xs text-emerald-700">{t('team.password_status.done')}</span>
                     )}
+                  </td>
+                  <td className="px-3 py-3 text-xs">
+                    {(() => {
+                      const load = lastLoadState(row, now);
+                      if (load.deactivated) return <span className="text-slate-400">—</span>;
+                      if (load.light === 'none') return <span className="text-slate-400">{t(load.labelKey)}</span>;
+                      const label = t(load.labelKey, load.labelParams || undefined);
+                      const detail = !load.detail ? null
+                        : load.detail.key ? t(load.detail.key, load.detail.params) : load.detail.text;
+                      return (
+                        <>
+                          <span className="inline-flex items-center gap-2" title={t(load.tipKey)}>
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${LIGHT_DOT[load.light]}`} />
+                            {load.pill ? (
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${LIGHT_PILL[load.light]}`}>{label}</span>
+                            ) : (
+                              <span className="tabular-nums text-slate-700">{label}</span>
+                            )}
+                          </span>
+                          {detail && <div className="text-slate-500 mt-0.5 break-all">{detail}</div>}
+                        </>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-3 text-xs">
                     {row.deactivated_at ? (

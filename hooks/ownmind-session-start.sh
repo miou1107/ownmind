@@ -12,6 +12,39 @@ ownmind_curl_auth() {
 }
 
 OWNMIND_DIR="$HOME/.ownmind"
+# A machine with no Node of its own runs the private one in runtime/current; no other PATH has it.
+if [ -d "$OWNMIND_DIR/runtime/current/bin" ]; then PATH="$OWNMIND_DIR/runtime/current/bin:$PATH"; export PATH; fi
+# Stock macOS has no `timeout` (it is GNU coreutils: Homebrew puts it on a developer's Mac, a
+# colleague's Mac has none). Each `timeout N node ...` below was then "command not found" with
+# its stderr discarded, so the hook reported a successful load to the server and printed no
+# memory into the conversation (zero-touch acceptance run, 2026-10-23;
+# tests/session-hook-without-timeout.test.js). This stand-in runs the command and stops it after
+# N seconds, as the real one does. The command runs in the background so the clock can be kept;
+# none of the callers feeds it standard input.
+# Two differences from GNU timeout, both fine for the callers here: it stops only the command
+# itself, not children the command forks (every caller is a single node process that forks
+# none), and a command stopped on time returns 143 (SIGTERM), not 124.
+# The watchdog reaps its own `sleep` when it is told to stop; without that, every conversation
+# whose command finished early left a `sleep` running for the rest of the N seconds.
+if ! command -v timeout >/dev/null 2>&1; then
+  timeout() {
+    local secs="$1" pid watchdog rc
+    shift
+    "$@" &
+    pid=$!
+    ( sleeper=''
+      trap '[ -n "$sleeper" ] && kill "$sleeper" 2>/dev/null; exit 0' TERM
+      sleep "$secs" & sleeper=$!
+      wait "$sleeper"
+      kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    watchdog=$!
+    wait "$pid"
+    rc=$?
+    kill "$watchdog" 2>/dev/null
+    wait "$watchdog" 2>/dev/null
+    return "$rc"
+  }
+fi
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 MARKER_FILE="$OWNMIND_DIR/.last-update-check"
 LOCK_FILE="$OWNMIND_DIR/.update-lock"

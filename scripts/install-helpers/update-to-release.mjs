@@ -17,6 +17,10 @@
 //   vX.Y.Z            with --print
 // Exit:   0 on any of those; 1 when fetching or moving failed (the reason on stderr).
 //
+// An archive install (a .release file and no .git, from bootstrap on a machine without git) has
+// no tags to read: --print prints its .release, and a move is refused, because those installs
+// update from the OwnMind server (shared/archive-update-cli.mjs).
+//
 // Uncommitted changes in the checkout are kept (--autostash), as `git pull --rebase
 // --autostash` did; a conflict is aborted rather than left half-applied.
 
@@ -41,7 +45,19 @@ async function midRebase() {
   return ['rebase-merge', 'rebase-apply'].some((d) => fs.existsSync(path.join(cwd, '.git', d)));
 }
 
+function archiveRelease() {
+  if (fs.existsSync(path.join(cwd, '.git'))) return null;
+  try {
+    return fs.readFileSync(path.join(cwd, '.release'), 'utf8').split(/\r?\n/)[0].trim() || null;
+  } catch { return null; }
+}
+
 async function main() {
+  const archive = archiveRelease();
+  if (archive) {
+    if (printOnly) return archive;
+    throw new Error(`archive install ${archive}: updates come from the OwnMind server (node shared/archive-update-cli.mjs)`);
+  }
   if (!noFetch) await fetchReleases({ execFile, cwd });
   const target = await findReleaseTarget({ execFile, cwd });
   if (!target) return 'NO_RELEASE';

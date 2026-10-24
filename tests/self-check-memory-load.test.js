@@ -350,3 +350,70 @@ describe('the auto-update path runs the self-check too', () => {
     });
   }
 });
+
+// zero-touch install: right after a fresh install no conversation has started, so "never
+// loaded" is the expected state, not a fault. The installer's own self-check (trigger
+// post_install) reported it as FAIL with "Fix: Re-run the installer", and the colleague's AI,
+// which the install manual tells to act on what the installer prints, could re-run the install
+// in a loop. Every later trigger still fails, because by then a conversation should have loaded.
+describe('checkMemoryLoad — right after an install (trigger post_install)', () => {
+  const { checkMemoryLoad } = selfCheck;
+  const never = async () => ({ memory_load: { last_hook_init_at: null, hook_inits_7d: 0 } });
+  const settings = (command) => {
+    const dir = tempDir('ownmind-sc-');
+    const p = path.join(dir, 'settings.json');
+    fs.writeFileSync(p, JSON.stringify({
+      hooks: { SessionStart: [{ matcher: 'startup', hooks: [{ type: 'command', command }] }] },
+    }));
+    return p;
+  };
+
+  it('warns, says memories load in the next conversation, and offers no remedy', async () => {
+    // The hook file has to exist: a missing one is a reason it cannot load, which still fails.
+    // A file of its own, so the test does not depend on what this computer's home holds.
+    const hook = path.join(tempDir('ownmind-sc-hook-'), 'ownmind-session-start.sh');
+    fs.writeFileSync(hook, '#!/bin/bash\n');
+    const r = await checkMemoryLoad({
+      apiUrl: 'https://x', apiKey: 'k', trigger: 'post_install',
+      fetchSelfCheck: never,
+      settingsPath: settings(`bash ${hook}`),
+      resolveBinary: () => '/bin/bash',
+    });
+    assert.equal(r.status, 'warn');
+    assert.equal(r.detail, 'memories load in the next conversation');
+    assert.equal(r.fix, undefined, 'no remedy: there is nothing to do but open a conversation');
+  });
+
+  for (const trigger of ['post_upgrade', 'auto_update', 'manual', undefined]) {
+    it(`still fails with a remedy for trigger ${trigger ?? '(none)'}`, async () => {
+      const r = await checkMemoryLoad({
+        apiUrl: 'https://x', apiKey: 'k', trigger,
+        fetchSelfCheck: never,
+        settingsPath: settings('bash ~/.claude/hooks/ownmind-session-start.sh'),
+        resolveBinary: () => '/bin/bash',
+      });
+      assert.equal(r.status, 'fail');
+      assert.match(r.detail, /never loaded automatically/);
+      assert.ok(r.fix);
+    });
+  }
+
+  it('still fails right after an install when the machine shows why it never can load', async () => {
+    // No SessionStart hook registered: the next conversation will not load either.
+    const dir = tempDir('ownmind-sc-');
+    const p = path.join(dir, 'settings.json');
+    fs.writeFileSync(p, JSON.stringify({ hooks: {} }));
+    const r = await checkMemoryLoad({
+      apiUrl: 'https://x', apiKey: 'k', trigger: 'post_install',
+      fetchSelfCheck: never, settingsPath: p, resolveBinary: () => null,
+    });
+    assert.equal(r.status, 'fail');
+    assert.match(r.detail, /no SessionStart/);
+  });
+
+  it('the installer\'s trigger reaches the check', () => {
+    const src = fs.readFileSync(path.join(repoRoot, 'scripts/install-helpers/self-check.cjs'), 'utf8');
+    assert.match(src, /runAllChecks\(\{ quick: args\.quick, trigger: args\.trigger \}\)/);
+    assert.match(src, /checkMemoryLoad\(\{ apiUrl, apiKey, trigger \}\)/);
+  });
+});

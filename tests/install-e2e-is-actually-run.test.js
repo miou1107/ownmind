@@ -66,6 +66,70 @@ test('the clean-install test runs on all three platforms', () => {
   }
 });
 
+const ARCHIVE_E2E_FILE = 'tests/bootstrap-archive-mode.e2e.mjs';
+
+test('the archive-mode bootstrap test exists and a CI job runs it by name', () => {
+  assert.ok(
+    fs.existsSync(path.join(repoRoot, ARCHIVE_E2E_FILE)),
+    `${ARCHIVE_E2E_FILE} is gone; the only test that runs bootstrap.sh without git is not running`,
+  );
+  const job = installJob();
+  assert.ok(job, `${WORKFLOW} has no \`install\` job`);
+  const steps = (job.steps || []).filter((s) => typeof s.run === 'string');
+  const runner = steps.find((s) => s.run.includes(ARCHIVE_E2E_FILE));
+  assert.ok(runner, `no step in the install job runs ${ARCHIVE_E2E_FILE}`);
+  assert.ok(
+    runner.if === undefined,
+    `the step running ${ARCHIVE_E2E_FILE} is conditional (\`if: ${runner.if}\`), so it can skip silently`,
+  );
+  assert.ok(!ARCHIVE_E2E_FILE.endsWith('.test.js'), `${ARCHIVE_E2E_FILE} would now run inside npm test`);
+});
+
+const PS1_E2E_FILE = 'tests/bootstrap-archive-mode-ps1.e2e.mjs';
+
+test('the Windows archive-mode bootstrap test exists, skips itself off Windows, and a CI job runs it by name', () => {
+  assert.ok(
+    fs.existsSync(path.join(repoRoot, PS1_E2E_FILE)),
+    `${PS1_E2E_FILE} is gone; the only test that runs bootstrap.ps1 without git is not running`,
+  );
+  const source = fs.readFileSync(path.join(repoRoot, PS1_E2E_FILE), 'utf8');
+  assert.match(source, /process\.platform === 'win32' \? false :/, 'the test must skip itself on macOS and Linux');
+  const job = installJob();
+  assert.ok(job, `${WORKFLOW} has no \`install\` job`);
+  const steps = (job.steps || []).filter((s) => typeof s.run === 'string');
+  const runner = steps.find((s) => s.run.includes(PS1_E2E_FILE));
+  assert.ok(runner, `no step in the install job runs ${PS1_E2E_FILE}`);
+  assert.ok(
+    runner.if === undefined,
+    `the step running ${PS1_E2E_FILE} is conditional (\`if: ${runner.if}\`); it skips itself, so it needs no condition`,
+  );
+  assert.ok(!PS1_E2E_FILE.endsWith('.test.js'), `${PS1_E2E_FILE} would now run inside npm test`);
+  // The skip only means something if the job really has a Windows leg.
+  assert.ok(JSON.stringify(job.strategy?.matrix?.os || []).includes('windows-latest'));
+});
+
+const ACCEPTANCE_E2E_FILE = 'tests/zero-touch-acceptance.e2e.mjs';
+
+test('the zero-touch acceptance test exists, skips itself off macOS, and a CI job runs it by name', () => {
+  assert.ok(
+    fs.existsSync(path.join(repoRoot, ACCEPTANCE_E2E_FILE)),
+    `${ACCEPTANCE_E2E_FILE} is gone; the only test that runs the install prompt's one-liner against the real server is not running`,
+  );
+  const source = fs.readFileSync(path.join(repoRoot, ACCEPTANCE_E2E_FILE), 'utf8');
+  assert.match(source, /process\.platform === 'darwin' \? false :/, 'the test must skip itself on Linux and Windows');
+  const job = installJob();
+  assert.ok(job, `${WORKFLOW} has no \`install\` job`);
+  const steps = (job.steps || []).filter((s) => typeof s.run === 'string');
+  const runner = steps.find((s) => s.run.includes(ACCEPTANCE_E2E_FILE));
+  assert.ok(runner, `no step in the install job runs ${ACCEPTANCE_E2E_FILE}`);
+  assert.ok(
+    runner.if === undefined,
+    `the step running ${ACCEPTANCE_E2E_FILE} is conditional (\`if: ${runner.if}\`); it skips itself, so it needs no condition`,
+  );
+  assert.ok(!ACCEPTANCE_E2E_FILE.endsWith('.test.js'), `${ACCEPTANCE_E2E_FILE} would now run inside npm test`);
+  assert.ok(JSON.stringify(job.strategy?.matrix?.os || []).includes('macos-latest'), 'the install job must have a macOS leg');
+});
+
 test('the file is deliberately outside the default test glob', () => {
   // If it is ever renamed to `.test.js` it joins `npm test`, and every developer and every
   // matrix leg starts paying an npm install for it. That is a decision, not an accident, so

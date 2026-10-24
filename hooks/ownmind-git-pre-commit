@@ -2,6 +2,10 @@
 # OwnMind Git Pre-Commit Hook — Shell Wrapper
 # Runs the Node.js pre-commit verification, then chains existing hooks if present.
 
+# A machine with no Node of its own runs the private one in ~/.ownmind/runtime/current; no other
+# PATH has it (node.exe sits at its top on Windows, where this hook runs under Git's own sh).
+if [ -d "$HOME/.ownmind/runtime/current/bin" ]; then PATH="$HOME/.ownmind/runtime/current/bin:$PATH"; export PATH;
+elif [ -f "$HOME/.ownmind/runtime/current/node.exe" ]; then PATH="$HOME/.ownmind/runtime/current:$PATH"; export PATH; fi
 node "$HOME/.ownmind/hooks/ownmind-git-pre-commit.js"
 RESULT=$?
 if [ $RESULT -ne 0 ]; then

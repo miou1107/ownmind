@@ -634,6 +634,7 @@ async function checkMemoryLoad({
   resolveBinary = defaultResolveBinary,
   staleDays = 30,
   now = () => new Date(),
+  trigger,
 } = {}) {
   const NAME = 'memory_load';
   const evidence = collectMemoryLoadEvidence({ settingsPath, resolveBinary });
@@ -674,6 +675,17 @@ async function checkMemoryLoad({
     reasons.push('`bash` on this machine is the WSL launcher, whose home directory is not this one');
   }
   const why = reasons.length ? ` (${reasons.join('; ')})` : '';
+
+  // Zero-touch install: the installer's own run (post_install) comes before any conversation,
+  // so "never loaded" is the expected state there. It used to print FAIL with "Re-run the
+  // installer", which the colleague's AI, told by the install manual to act on what the
+  // installer prints, could follow in a loop. A warning with no remedy instead; a machine that
+  // shows a reason it cannot load (no hook, WSL bash) still fails, and every later trigger
+  // (post_upgrade, auto_update, manual) still fails, because by then a conversation should
+  // have loaded.
+  if (!load.last_hook_init_at && trigger === 'post_install' && reasons.length === 0) {
+    return withEvidence(warn(NAME, 'memories load in the next conversation'));
+  }
 
   if (!load.last_hook_init_at) {
     return withEvidence(fail(NAME,
@@ -738,7 +750,7 @@ function collectMemoryLoadEvidence({ settingsPath, resolveBinary }) {
 
   try {
     evidence.bash_path = resolveBinary('bash');
-    evidence.node_path = resolveBinary('node');
+    evidence.node_path = configuredNodePath({ settingsPath, command: cmd }) || resolveBinary('node');
   } catch { /* resolution failures are reported as null, not as a crash */ }
 
   // System32\bash.exe is Windows' WSL entry point. Present, runnable, and pointed at a
@@ -750,6 +762,28 @@ function collectMemoryLoadEvidence({ settingsPath, resolveBinary }) {
   if (evidence.bash_path) evidence.bash_path = sanitizePath(evidence.bash_path);
   if (evidence.node_path) evidence.node_path = sanitizePath(evidence.node_path);
   return evidence;
+}
+
+/**
+ * The Node the configuration names by absolute path, or null when it relies on PATH.
+ *
+ * On a machine whose only Node is the private runtime, the SessionStart command (Windows) or
+ * the MCP entry names that runtime directly, and it is the Node Claude Code will actually run.
+ * Reporting whatever `which node` finds instead would describe a different program — or none,
+ * since the private runtime is on no PATH but the installer's own.
+ */
+function configuredNodePath({ settingsPath, command }) {
+  try {
+    const { parseNodeCommand } = require('./node-command.cjs');
+    const parsed = command ? parseNodeCommand(command) : null;
+    if (parsed && parsed.absolute) return parsed.runtime;
+    // <home>/.claude/settings.json -> <home>, so a test's settings file keeps this hermetic.
+    const home = path.dirname(path.dirname(settingsPath));
+    const { configuredNodes } = require('./install-artifacts.cjs');
+    return configuredNodes({ home })[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 function defaultResolveBinary(bin) {
@@ -1314,7 +1348,7 @@ async function checkNamesFor({ quick = false, markerPath = ROUNDTRIP_MARKER, now
   return quick && !roundtripDue(markerPath, now) ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
 }
 
-async function runAllChecks({ quick = false } = {}) {
+async function runAllChecks({ quick = false, trigger } = {}) {
   const { apiKey, apiUrl } = readCredentials();
   const checks = [];
   checks.push(await safeCheck('mcp_files', checkMcpFiles));
@@ -1344,7 +1378,7 @@ async function runAllChecks({ quick = false } = {}) {
   checks.push(await safeCheck('install_complete', checkInstallComplete));
   checks.push(await safeCheck('scheduler', checkScheduler));
   // v1.26.81 — the one that asks whether the product's central feature works at all.
-  checks.push(await safeCheck('memory_load', () => checkMemoryLoad({ apiUrl, apiKey })));
+  checks.push(await safeCheck('memory_load', () => checkMemoryLoad({ apiUrl, apiKey, trigger })));
   // v1.26.72 — last, because it runs a real scan and is the slowest. Also the only one
   // that asks whether the data is arriving rather than whether things are installed.
   //
@@ -1770,7 +1804,7 @@ async function main() {
   const clientVersion = pkg?.version || 'unknown';
   const machine = os.hostname();
 
-  const { checks, apiKey, apiUrl } = await runAllChecks({ quick: args.quick });
+  const { checks, apiKey, apiUrl } = await runAllChecks({ quick: args.quick, trigger: args.trigger });
   // v1.17.66 — IR-038 observability pipeline: collect the current execution environment.
   const env = await collectEnv();
   const report = buildReport({ checks, trigger: args.trigger, clientVersion, machine, env });

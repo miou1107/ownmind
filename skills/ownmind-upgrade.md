@@ -40,6 +40,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME\.ownmind\scripts\check-sync.ps1"
 輸出格式（每行 `KEY:value`）：
 ```
 L1_REMOTE:in_sync | behind count=N | not_git | error
+L1_REMOTE:in_sync release=vX.Y.Z | behind release=vX.Y.Z server=vA.B.C | error release=vX.Y.Z reason=<code>
 L2_SERVER:in_sync version=X.Y.Z | outdated client=X.Y.Z server=A.B.C | ahead ... | error ...
 L3_DEPLOY:in_sync | drifted count=N
 L3_DRIFT_FILE:<path>
@@ -48,6 +49,8 @@ OVERALL:in_sync | needs_upgrade
 ```
 
 **回報 user 的邏輯**：
+- 第二行 `L1_REMOTE`（帶 `release=`）是沒有 git、從壓縮檔裝的機器，跟 git 安裝一樣是正常狀態：
+  `in_sync release=…` 就是最新，`behind release=… server=…` 跟 `behind count=N` 一樣處理。
 - `L4_STANDARDS:never_synced` 或 `unreadable` → 回「這台機器還沒把你的規範抓下來，掛勾現在
   什麼都檢查不了；開一個新對話就會抓」。
   **如果 L1／L2／L3 都是 in_sync，到這裡就停，不要問要不要升級、也不要走模式 B。**
@@ -119,8 +122,10 @@ OK:done:首次安裝完成
 依 prefix 回應 user：
 - `INFO:<code>:<msg>` — 「正在做：${msg}」
 - `OK:<code>:<msg>` — 「${msg}」
-- `ERROR:<code>:<msg>` — 立即停止、轉述錯誤 + 建議修復（下面錯誤碼表）
-- `ASK:<code>:<msg>` — 等 user 回答
+- `ERROR:<code>:<msg>` — 立即停止、轉述錯誤 + 建議修復（下面錯誤碼表）；後面跟著 `FIX:` 就照「安裝 OwnMind」一節處理
+- `FIX:<code>:<command>` — 可以自己跑的修復指令，跑完重跑一次安裝（最多三輪）
+- `ASK:<code>:<sentence>` — 把句子原文轉給 user，然後停下，不要重試
+- `NEXT:<kind>[:<detail>]` — 安裝成功後的下一步，照「安裝 OwnMind」一節處理
 
 ### Step 3：成功後 dismiss 升級廣播（v1.17.18 起改由腳本自動處理）
 
@@ -138,7 +143,71 @@ OK:done:首次安裝完成
 
 ---
 
+## 安裝 OwnMind（AI 替同事安裝時照這一節）
+
+Audience: the AI that runs the OwnMind installer on a colleague's computer. This section is self-contained; read it top to bottom before the first command.
+
+Read `<API_URL>/install-manual.md` first (anonymous, English; `<API_URL>` is the URL in the install message the colleague pasted). It is the full manual: what the installer changes, every code it prints, troubleshooting, the permission steps. If that address is unreachable, the rules below are the same rules; the manual and this section are kept identical by a test.
+
+### What to do
+
+<!-- rules:start -->
+1. Run the one-liner from the install message the colleague pasted, once. Read every line of its output.
+2. Every line the installer prints starts with one of six prefixes:
+
+| Prefix | Meaning | What you do |
+|---|---|---|
+| `INFO:<code>:<text>` | progress | nothing |
+| `OK:<code>:<text>` | a step finished | nothing |
+| `ERROR:<code>:<text>` | a stop | look for the `FIX:` or `ASK:` line next to it |
+| `FIX:<code>:<command>` | a repair you may run yourself | run the command, then run the one-liner again |
+| `ASK:<code>:<sentence>` | a stop only the person can resolve | say the sentence, then stop |
+| `NEXT:<kind>:<detail>` | what to do after a successful install | see "After a successful install" |
+
+   The text of a line is everything after its code. `ASK:<code>:` and `NEXT:verify:manual:` / `NEXT:verify:new-session:` are followed by the sentence or the title; colons inside that text belong to it.
+
+3. Which line wins:
+   - If any `ASK:` line appeared anywhere in the run, the ASK wins over every `FIX:` line: say its sentence and stop. A `FIX:` printed next to an ASK is the installer's last attempt, not an instruction.
+   - `ERROR:` followed by `FIX:` (and no ASK): run the fix, then run the one-liner again. At most three rounds. After the third, tell the user what the last `ERROR:` line said and stop.
+   - An `ERROR:` with no `FIX:` or `ASK:` after it: use the nearest earlier `FIX:` or `ASK:` line of the same run. If there is none, say the text of the `ERROR:` line to the user in plain words and stop.
+
+   `FIX:` payloads are commands you can run as printed. Where one shows `<KEY>` or `<API_URL>`, put in the API key and URL from the install message (the URL is already filled in when the installer knew it).
+
+   | `FIX:` code | What it is |
+   |---|---|
+   | `retry_install` | the command that runs the installer again (a download or unpack was cut off; the installer clears its own leftovers) |
+   | `rerun_with_args` | the same command, to be run with the API key and URL the colleague gave you |
+   | `use_fallback_source` | the command with `OWNMIND_SOURCE=github` set, so the installer skips the OwnMind server |
+   | `clear_partial` | removes the unfinished download folder; then run the one-liner again |
+
+4. `ASK:<code>:<sentence>`: say the sentence to the user exactly as printed (it is already in the user's language; codes: `no_network`, `node_download`, `disk_full`, `unsupported_os`), then stop. Do not retry, do not add advice of your own.
+5. Never suggest installing git, Node.js, Homebrew, the Xcode command line tools or winget. The installer brings its own runtime; a machine on which it could not is an `ASK:` case, not a chore for the user. (The `ERROR:` text of an unsupported system may mention Node.js; it is for the log, not for you to repeat.)
+6. Permissions. When your tool or the operating system refuses something the install needs, that is the one question you may ask your owner during the install. Name the permission, say what it is for and what they will see after granting it, in their language, one step at a time, naming the button or setting as it appears on screen. Then carry on with the install. Do not stop at "I do not have permission".
+<!-- rules:end -->
+
+### After a successful install
+
+<!-- verify:start -->
+The last line of the output is a `NEXT:` line.
+
+- `NEXT:verify:new-session:<title>` (you are running inside the Claude desktop app): tell the user OwnMind is installed and that a verification conversation is opening. Then start a new session with the desktop app's own session tool (`mcp__ccd_session__start_session`), using `<title>` from the line as the session title. If the session does not start by itself and the app shows a card instead, tell the user to click the card to open the check. The brief for that session is:
+  1. Confirm the OwnMind context appeared at your start.
+  2. Call `ownmind_search` once.
+  3. Save one memory (type project, text "OwnMind install check") and find it again with `ownmind_search`.
+  4. Remove that memory with `ownmind_disable`, reason `install check`.
+  5. Report one line per item, and say in the last line that the test memory was removed.
+- `NEXT:verify:manual:<sentence>` (a terminal or any other tool): say the sentence to the user as printed (it is already in their language). Nothing else to do.
+
+### Report to the user
+
+In the user's language, three sentences at most: it is installed, what happens next, and what the user should do (usually nothing). Do not list commands, file names or codes.
+<!-- verify:end -->
+
+---
+
 ## 錯誤碼 → 引導表
+
+這張表只適用於 git 安裝的升級與修復（模式 B）。替同事安裝時，一律照上一節「安裝 OwnMind」處理，不要用這張表的建議（它們會叫 user 自己動手，跟「不給自己加建議」衝突）。
 
 Bootstrap + interactive-upgrade 共用錯誤碼：
 

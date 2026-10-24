@@ -17,6 +17,15 @@
 # The remedy is printed inline as the exact command to run, not a link to a page. Somebody who
 # just watched an install die is not going to go reading.
 #
+# Zero-touch install (this file mirrors preflight.sh):
+#
+#  - git is how a checkout is updated. An install from the release archive has no .git and never
+#    calls git, so a missing git is not a failure when $OwnmindDir\.git does not exist.
+#  - A missing or old node is not something the person has to fix: the installer downloads a
+#    private Node into ~/.ownmind/runtime (ensure-node-runtime.ps1). It is still listed, with
+#    "(no action needed)" as the remedy, so the report says what is about to happen; Assert-
+#    OwnMindRequirements does not count it. npm comes with that Node, so it is not asked about.
+#
 # Note the one requirement this cannot report to the server: Report-Error runs node. A machine
 # with no node gets the message on screen and nothing in the admin console, and there is no way
 # around that from here.
@@ -27,6 +36,9 @@ Set-StrictMode -Version Latest
 # 20, ubuntu also on 24). Anything below that is untested rather than merely old, which is why
 # it is a stop and not a warning. Raise this here and the check follows.
 $script:OwnMindNodeFloor = 20
+
+# The remedy of a line that is only informational; Assert-OwnMindRequirements skips it.
+$script:OwnMindPreflightNoAction = '(no action needed)'
 
 function Get-OwnMindToolPath {
   param([Parameter(Mandatory = $true)][string]$Name)
@@ -90,18 +102,18 @@ function Test-OwnMindRequirements {
       'winget install --id Git.Git -e --source winget    (then open a new terminal so PATH is picked up)'
   }
 
+  # A missing, silent or old node is replaced by the private runtime, so it is reported as
+  # informational and npm (which comes with that runtime) is not asked about.
+  $nodePrivate = $false
   $node = Get-OwnMindToolPath 'node'
   if (-not $node) {
-    & $add 'node' 'node is not on PATH; the memory server, the self-check and the error reporter all run on it' `
-      'winget install --id OpenJS.NodeJS.LTS -e --source winget    (then open a new terminal so PATH is picked up)'
+    & $add 'node' 'private runtime will be installed' $script:OwnMindPreflightNoAction
+    $nodePrivate = $true
   } else {
     $major = Get-OwnMindNodeMajor $node
-    if ($major -lt 0) {
-      & $add 'node' "node at $node did not answer --version, so it cannot be used" `
-        'winget install --id OpenJS.NodeJS.LTS -e --source winget    (then open a new terminal so PATH is picked up)'
-    } elseif ($major -lt $script:OwnMindNodeFloor) {
-      & $add 'node' "node $major is below the oldest version OwnMind is tested on ($script:OwnMindNodeFloor)" `
-        'winget install --id OpenJS.NodeJS.LTS -e --source winget    (then open a new terminal so PATH is picked up)'
+    if ($major -lt 0 -or $major -lt $script:OwnMindNodeFloor) {
+      & $add 'node' 'private runtime will be installed' $script:OwnMindPreflightNoAction
+      $nodePrivate = $true
     }
   }
 
@@ -109,8 +121,11 @@ function Test-OwnMindRequirements {
   # partial install — a shim from nvs/Volta/Scoop that resolves and does not run. Asking it for
   # a version is the difference between "the file is there" and "it works", and that difference
   # is the whole reason this file exists.
-  $npm = Get-OwnMindToolPath 'npm'
-  if (-not $npm) {
+  $npm = ''
+  if (-not $nodePrivate) { $npm = Get-OwnMindToolPath 'npm' }
+  if ($nodePrivate) {
+    # npm comes with the private runtime; nothing to check yet.
+  } elseif (-not $npm) {
     & $add 'npm' 'npm is not on PATH; the memory server installs its dependencies with it' `
       'npm ships with Node.js — reinstall it: winget install --id OpenJS.NodeJS.LTS -e --source winget'
   } else {
@@ -143,7 +158,21 @@ function Test-OwnMindRequirements {
 function Assert-OwnMindRequirements {
   param([string]$Stage = 'install')
 
-  $failures = Test-OwnMindRequirements
+  # The informational lines are not failures. git is only a failure for a git checkout: an
+  # archive install has no .git and never calls it.
+  #
+  # Assign first, then pipe. Test-OwnMindRequirements returns its array wrapped (`,@(...)`) so that
+  # an empty result stays an array; piped straight into Where-Object that wrapper is ONE object,
+  # `$_` is the whole array, `$_.Remedy` is empty and a healthy machine counts as one failure.
+  # A plain assignment unwraps it, and an empty array stays an empty array.
+  $all = Test-OwnMindRequirements
+  if ($null -eq $all) { $all = @() }
+  $failures = @($all | Where-Object { $_.Remedy -ne $script:OwnMindPreflightNoAction })
+  $ownmindDir = $env:OWNMIND_DIR
+  if (-not $ownmindDir) { $ownmindDir = Join-Path $HOME '.ownmind' }
+  if (-not (Test-Path -LiteralPath (Join-Path $ownmindDir '.git'))) {
+    $failures = @($failures | Where-Object { $_.Name -ne 'git' })
+  }
   if ($failures.Count -eq 0) { return $true }
 
   Write-Host ""

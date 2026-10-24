@@ -22,6 +22,8 @@ ownmind_curl_auth() {
 set -u  # do not set -e; we want to control error paths ourselves
 
 OWNMIND_DIR="${HOME}/.ownmind"
+# A machine with no Node of its own runs the private one in runtime/current; no other PATH has it.
+if [ -d "$OWNMIND_DIR/runtime/current/bin" ]; then PATH="$OWNMIND_DIR/runtime/current/bin:$PATH"; export PATH; fi
 TS=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR="${HOME}/.ownmind.bak.${TS}"
 
@@ -120,7 +122,17 @@ last_log_lines() {
 # --- 0. Pre-check ---
 STEP "check" "Checking OwnMind directory"
 [ -d "${OWNMIND_DIR}" ] || FAIL "no_ownmind" "${OWNMIND_DIR} not found; run install.sh for fresh install"
-[ -d "${OWNMIND_DIR}/.git" ] || FAIL "no_git" "${OWNMIND_DIR} is not a git repo; cannot upgrade"
+# ARCHIVE_MODE: an install unpacked from a release archive by bootstrap on a machine without git
+# (a .release file and no .git). It updates from the OwnMind server through
+# shared/archive-update-cli.mjs, which stages the new release, swaps its code entries in (runtime/
+# and the other runtime state are never moved) and re-runs install.sh; steps 1-4 below (backup,
+# pull, npm, install re-run) are the git checkout's version of that, and are skipped. bootstrap.sh delegates archive installs here only while this file
+# contains the literal ARCHIVE_MODE.
+ARCHIVE_MODE=0
+ARCHIVE_SWAPPED=0
+# A swap journal without .release counts too: an update stopped part-way is resumed here.
+if [ ! -e "${OWNMIND_DIR}/.git" ] && { [ -f "${OWNMIND_DIR}/.release" ] || [ -f "${OWNMIND_DIR}/.swap-journal.json" ]; }; then ARCHIVE_MODE=1; fi
+[ "${ARCHIVE_MODE}" = "1" ] || [ -d "${OWNMIND_DIR}/.git" ] || FAIL "no_git" "${OWNMIND_DIR} is not a git repo; cannot upgrade"
 
 # #98 — before the backup, not after it. The test above asks whether the directory is a
 # repository; it has never asked whether the git executable exists, and those are different
@@ -135,6 +147,73 @@ if [ -f "${OWNMIND_DIR}/scripts/install-helpers/preflight.sh" ]; then
 else
   STEP "check" "preflight.sh is not in this checkout; skipping the environment check"
 fi
+
+# The API key and URL the installer was configured with, from ~/.claude/settings.json, into
+# API_KEY and API_URL (empty when there are none). Step 4 re-runs install.sh with them and step 7
+# uses them to dismiss the upgrade broadcasts.
+read_settings_creds() {
+  local claude_settings claude_settings_win creds
+  API_KEY=""
+  API_URL=""
+  claude_settings="${HOME}/.claude/settings.json"
+  claude_settings_win="$(to_win_path "${claude_settings}")"
+  [ -f "${claude_settings}" ] || return 0
+  creds=$(node -e "
+    try {
+      const s = JSON.parse(require('fs').readFileSync('${claude_settings_win}', 'utf8'));
+      const srv = (s.mcpServers && s.mcpServers.ownmind) || {};
+      const env = srv.env || {};
+      console.log(env.OWNMIND_API_KEY || '');
+      console.log(env.OWNMIND_API_URL || '');
+    } catch { process.exit(0); }
+  " 2>/dev/null)
+  API_KEY=$(echo "${creds}" | sed -n '1p')
+  API_URL=$(echo "${creds}" | sed -n '2p')
+}
+
+if [ "${ARCHIVE_MODE}" = "1" ]; then
+  # --- 1-4 (archive install). The update stages the new release in ${OWNMIND_DIR}/.next and then
+  # swaps code entries only (mcp, hooks, scripts, ...); runtime/ and every other piece of
+  # runtime state stay where they are. The previous release's code is kept in .prev.
+  ARCHIVE_RELEASE=$(head -n 1 "${OWNMIND_DIR}/.release" 2>/dev/null | tr -d '[:space:]')
+  ARCHIVE_SWAPPED=0
+  ROLLBACK_FAILED=0
+  BACKUP_DIR="${OWNMIND_DIR}/.prev"
+  # Step 6 calls this when local verification fails. An archive update is never rolled back
+  # automatically (a half-swapped tree is finished by the next run, not undone); the previous
+  # code stays in .prev for a person to put back.
+  rollback() {
+    ROLLBACK_FAILED=0
+    STEP "rollback" "Not rolled back automatically; the previous release's code is in ${OWNMIND_DIR}/.prev"
+  }
+  rollback_note() {
+    printf 'not rolled back; the previous release code is in %s/.prev' "${OWNMIND_DIR}"
+  }
+
+  STEP "archive_mode" "Archive install (${ARCHIVE_RELEASE:-unknown release}); updating from the OwnMind server instead of git"
+  read_settings_creds
+  # Not inside a folder whose code is about to be swapped.
+  cd "${HOME}" || true
+  ARCHIVE_RESULT=$(node "${OWNMIND_DIR_WIN}/shared/archive-update-cli.mjs" --dir "${OWNMIND_DIR_WIN}" 2>>"${LOG_FILE}")
+  echo "archive-update: ${ARCHIVE_RESULT}" >>"${LOG_FILE}"
+  case "${ARCHIVE_RESULT}" in
+    UPDATED*)
+      ARCHIVE_SWAPPED=1
+      OK "archive_update" "Updated ${ARCHIVE_RELEASE} -> ${ARCHIVE_RESULT#UPDATED }; install.sh re-ran from the new release" ;;
+    CURRENT*)
+      OK "archive_update" "Already on the server's release (${ARCHIVE_RESULT#CURRENT })" ;;
+    "FAILED swap_pending"|"FAILED swap")
+      report_error "upgrade_file_locked" "archive swap stopped: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
+      FAIL "file_locked" "Files in ${OWNMIND_DIR} are in use by another process (likely Claude Code); the update stopped and the next run continues where it stopped. Close Claude Code completely, then re-run upgrade." ;;
+    "FAILED reconfigure")
+      report_error "upgrade_archive_install_failed" "install.sh failed after the swap: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
+      FAIL "install" "The new release is in place but install.sh failed (see ${LOG_FILE}); the next update re-runs it. The previous release's code is in ${OWNMIND_DIR}/.prev" ;;
+    *)
+      report_error "upgrade_archive_failed" "archive update failed (${ARCHIVE_RESULT:-no output}): $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
+      FAIL "archive_update" "Archive update failed (${ARCHIVE_RESULT:-no output}); nothing was changed. See ${LOG_FILE}" ;;
+  esac
+else
+# --- 1-4: a git checkout. Not indented, so the history of these steps stays readable.
 
 # --- 1. Backup ---
 STEP "backup" "Backing up to ${BACKUP_DIR}"
@@ -344,7 +423,8 @@ else
   install_status=0
   # The key goes through the environment, not the command line (install.sh reads it there
   # when the first argument is empty): `ps` shows every account each command line.
-  OWNMIND_INSTALL_KEY="${API_KEY}" bash install.sh "" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
+  # An upgrade must not pop the "memory has loaded" notification that a first install gets.
+  OWNMIND_SKIP_FIRST_LOAD_WATCH=1 OWNMIND_INSTALL_KEY="${API_KEY}" bash install.sh "" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
   if [ "${install_status}" -eq 0 ]; then
     OK "install" "Setup complete"
   elif [ "${install_status}" -eq 2 ]; then
@@ -355,6 +435,7 @@ else
     FAIL "install" "install.sh failed (see ${LOG_FILE}); $(rollback_note)"
   fi
 fi
+fi # end of steps 1-4 for a git checkout (ARCHIVE_MODE=0)
 
 # --- 5. Re-register the scheduled task ---
 case "$(uname -s)" in
@@ -449,10 +530,24 @@ fi
 # special-char noise from wc).
 RETENTION_DAYS="${OWNMIND_BACKUP_RETENTION_DAYS:-7}"
 STEP "sweep" "Sweeping backups older than ${RETENTION_DAYS} days (if any)"
-find "${HOME}" -maxdepth 1 -type d -name '.ownmind.bak.*' -mtime +"${RETENTION_DAYS}" -exec rm -rf {} + 2>/dev/null || true
+# Also the directories bootstrap set aside as broken (.ownmind.broken.<ts>) and the release an
+# archive update replaced (.ownmind.prev); the helper unlinks runtime/current before deleting.
+# The find below is for a release that does not have the helper yet.
+SWEEP_HELPER="${OWNMIND_DIR}/scripts/install-helpers/sweep-old-trees.sh"
+if [ -f "${SWEEP_HELPER}" ]; then
+  # shellcheck source=./install-helpers/sweep-old-trees.sh
+  . "${SWEEP_HELPER}"
+  ownmind_sweep_old_trees "${HOME}" "${RETENTION_DAYS}"
+else
+  find "${HOME}" -maxdepth 1 -type d -name '.ownmind.bak.*' -mtime +"${RETENTION_DAYS}" -exec rm -rf {} + 2>/dev/null || true
+fi
 OK "sweep" "Old backup sweep complete"
 
-OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} (auto-swept after ${RETENTION_DAYS} days)"
+if [ "${ARCHIVE_MODE}" = "1" ] && [ "${ARCHIVE_SWAPPED}" != "1" ]; then
+  OK "done" "Upgrade complete -> version ${VERSION} (already the server's release; nothing replaced)"
+else
+  OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} (auto-swept after ${RETENTION_DAYS} days)"
+fi
 
 # v1.17.86 — upgrade_complete beacon (IR-038 observability backfill).
 # Earlier than self-check, with a small payload that can't stall — the server at least sees

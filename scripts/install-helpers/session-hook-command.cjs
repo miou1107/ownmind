@@ -29,6 +29,10 @@
 // Node needs no such detection. OwnMind already requires Node 20+, the installer resolves
 // and caches it, and an absolute path leaves nothing for a shell to reinterpret.
 
+const {
+  nodeInvocation, parseNodeCommand, isOwnNodeCommand, isCurrentNodeCommand, effectiveNodeBin,
+} = require('./node-command.cjs');
+
 const MATCHERS = ['startup', 'resume', 'clear', 'compact'];
 const HOOK_TIMEOUT_SECONDS = 10;
 
@@ -43,9 +47,13 @@ const UNIX_COMMAND = 'bash ~/.claude/hooks/ownmind-session-start.sh';
  * @param {object}  opts
  * @param {string}  opts.platform  process.platform value ('win32' | 'darwin' | 'linux')
  * @param {string} [opts.hookDir]  absolute path of ~/.claude/hooks — required on Windows
+ * @param {string} [opts.nodeBin]  absolute path of the private Node runtime, only on a machine
+ *                                 that has no other Node. Windows then runs the hook with it;
+ *                                 the Unix command is unchanged because the bash hook puts
+ *                                 ~/.ownmind/runtime/current/bin on PATH itself.
  * @returns {string}
  */
-function sessionStartCommand({ platform, hookDir, ownmindDir } = {}) {
+function sessionStartCommand({ platform, hookDir, ownmindDir, nodeBin } = {}) {
   if (platform !== 'win32') return UNIX_COMMAND;
 
   // v1.26.85 — run the copy under ~/.ownmind/hooks, never the one under ~/.claude/hooks.
@@ -66,7 +74,7 @@ function sessionStartCommand({ platform, hookDir, ownmindDir } = {}) {
       .replace(/\/\.claude\/hooks$/, '/.ownmind/hooks');
   // Quoted because a Windows home directory routinely contains a space
   // ("C:\Users\Jane Doe\"), and unquoted it would arrive as two arguments.
-  return `node "${base}/ownmind-session-start.js"`;
+  return `${nodeInvocation(nodeBin)} "${base}/ownmind-session-start.js"`;
 }
 
 /**
@@ -96,7 +104,7 @@ function isOwnmindSessionEntry(entry) {
  * — the fix would ship and change nothing on a single affected machine.
  *
  * @param {Array}  existingEntries  the SessionStart entries that are ours
- * @param {object} opts             { platform, hookDir }
+ * @param {object} opts             { platform, hookDir, ownmindDir, nodeBin }
  */
 function needsRewrite(existingEntries, opts) {
   if (!existingEntries || existingEntries.length === 0) return false;
@@ -111,16 +119,29 @@ function needsRewrite(existingEntries, opts) {
   // (the dead copy under ~/.claude/hooks), so path differences are drift to repair, not
   // customisation to respect. Customisation = a different script or extra arguments.
   const allCommandsAreOurs = existingEntries.every(
-    (e) => e.hooks?.every((h) => isGeneratedCommand(h.command)),
+    (e) => e.hooks?.every((h) => isGeneratedCommand(h.command, { nodeBin: opts?.nodeBin })),
   );
   if (!allCommandsAreOurs) return false;
 
-  const desired = sessionStartCommand(opts);
+  const eff = effectiveOptions(existingEntries, opts);
+  const desired = sessionStartCommand(eff);
   const hasAllMatchers = MATCHERS.every((m) => existingEntries.some((e) => e.matcher === m));
+  // An entry that runs our hook with the private runtime is current while that runtime exists
+  // and no nodeBin was asked for: an upgrade must not flip a working entry into the other shape.
   const allCommandsCurrent = existingEntries.every(
-    (e) => e.hooks?.every((h) => h.command === desired),
+    (e) => e.hooks?.every((h) => isCurrentNodeCommand(h.command, desired, { nodeBin: eff.nodeBin })),
   );
   return !hasAllMatchers || !allCommandsCurrent;
+}
+
+/**
+ * The options to generate replacements with. Without a requested nodeBin (every updater run),
+ * a private runtime that an existing entry of ours already runs, and that still exists, is kept:
+ * a rewrite for a missing matcher must not write bare `node` onto a machine with no other Node.
+ */
+function effectiveOptions(existingEntries, opts = {}) {
+  const commands = (existingEntries || []).flatMap((e) => (e.hooks || []).map((h) => h.command));
+  return { ...opts, nodeBin: effectiveNodeBin(commands, { nodeBin: opts.nodeBin }) };
 }
 
 /**
@@ -137,7 +158,7 @@ function needsRewrite(existingEntries, opts) {
  * on a new conversation and not on resume, clear or compact. Quoting is spelling, not
  * intent.
  */
-function isGeneratedCommand(command) {
+function isGeneratedCommand(command, { nodeBin } = {}) {
   const c = String(command || '').trim();
   if (!c) return false;
   // <runtime> <path-to-our-hook>, and nothing else. The path may be bare, "quoted" or
@@ -147,14 +168,19 @@ function isGeneratedCommand(command) {
   // space ("C:\Users\Jane Doe"), and an unquoted command with a space is still just our
   // hook. The basename check below still rejects deliberate edits — trailing arguments
   // make the last path segment stop being exactly our filename.
-  const m = c.match(/^(node|bash)\s+(?:"([^"]+)"|'([^']+)'|(.+))$/);
+  //
+  // The runtime may also be a quoted absolute path to node / node.exe, but only OwnMind's own
+  // (under .ownmind/runtime/, or the nodeBin this run writes): that is the shape the installer
+  // writes on a machine whose only Node is the private one. A hand-written
+  // "C:\Program Files\nodejs\node.exe" in front of our hook is the user's (node-command.cjs).
+  if (parseNodeCommand(c)) {
+    const own = isOwnNodeCommand(c, { nodeBin });
+    return Boolean(own) && own.target.split(/[/\\]/).pop() === 'ownmind-session-start.js';
+  }
+  const m = c.match(/^bash\s+(?:"([^"]+)"|'([^']+)'|(.+))$/);
   if (!m) return false;
-  const runtime = m[1];
-  const target = m[2] || m[3] || m[4];
-  const file = target.split(/[/\\]/).pop();
-  return runtime === 'node'
-    ? file === 'ownmind-session-start.js'
-    : file === 'ownmind-session-start.sh';
+  const target = m[1] || m[2] || m[3];
+  return target.split(/[/\\]/).pop() === 'ownmind-session-start.sh';
 }
 
 module.exports = {
@@ -166,4 +192,5 @@ module.exports = {
   isOwnmindSessionEntry,
   isGeneratedCommand,
   needsRewrite,
+  effectiveOptions,
 };

@@ -61,15 +61,25 @@ describe('mcp/start.cmd — fallback when node is missing (v1.17.77)', () => {
   });
 });
 
-describe('install.ps1 — persists node install dir into User PATH (v1.17.77)', () => {
+describe('install.ps1 — no longer writes the node dir into User PATH (zero-touch install)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
 
-  it('after installing node, checks whether User PATH contains the nodejs dir, adds it if not', () => {
-    // Must call SetEnvironmentVariable("Path", ..., "User") to persist.
-    assert.match(
+  it('does not persist any node directory into User PATH', () => {
+    // The v1.17.77 step existed because winget installed node into Program Files without
+    // touching the running session's PATH. install.ps1 no longer installs node with winget:
+    // a system node is already on PATH, and the private runtime (runtime\\current\\node.exe)
+    // is reached by absolute path (start.cmd's first lookup) and by the PATH prepend inside
+    // the installer process. Adding the private runtime to the User PATH would shadow the
+    // person's own node for every other program.
+    assert.doesNotMatch(
       content,
       /SetEnvironmentVariable\(["']Path["']\s*,[^,]+,\s*["']User["']\)/,
-      'must persist via User scope SetEnvironmentVariable, otherwise the new terminal misses it again'
+      'install.ps1 must not write the User PATH'
     );
+  });
+
+  it('start.cmd still has the fallback chain for a system node that is missing from a stale PATH', () => {
+    const cmd = fs.readFileSync(path.join(repoRoot, 'mcp/start.cmd'), 'utf8');
+    assert.match(cmd, /C:\\Program Files\\nodejs\\node\.exe/i);
   });
 });

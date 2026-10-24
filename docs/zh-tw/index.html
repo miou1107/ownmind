@@ -288,10 +288,19 @@ docker compose up -d</pre>
       </div>
       <div class="box">
         <h3>電腦連上伺服器</h3>
-        <p>在 Claude Code 或 Cursor 的對話框貼一句，AI 會自己裝好；也可以在終端機跑一行。</p>
-        <pre class="prompt">安裝 OwnMind（我的金鑰是 YOUR_API_KEY、網址是 YOUR_API_URL）</pre>
-        <p class="or">或在終端機：</p>
-        <pre>curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL</pre>
+        <p>在 Claude Code 或 Cursor 的對話框貼上這段訊息，AI 會自己裝好；也可以在終端機跑一行。</p>
+        <pre class="prompt">幫我安裝 OwnMind。
+先讀 YOUR_API_URL/install-manual.md，照手冊的步驟做。
+依這台電腦的作業系統，從下面挑一行執行，只執行一次。畫面上顯示 NEXT 就照 NEXT 做；顯示 FIX 就先執行 FIX 那一行的指令，再重跑一次安裝指令；顯示 ASK 才來問我。
+安裝過程需要我按「允許」或開權限時，一步一步告訴我按哪裡。相依的軟體都由安裝指令自己處理，不要叫我手動裝。
+
+macOS:
+curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+Windows (PowerShell):
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex</pre>
+        <p class="or">或在 macOS 的終端機：</p>
+        <pre>curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL</pre>
       </div>
     </div>
   </div>

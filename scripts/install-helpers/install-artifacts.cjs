@@ -25,6 +25,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
+const { parseNodeCommand, isAbsolutePath, isNodeBasename } = require('./node-command.cjs');
 
 /**
  * Two things this list deliberately does NOT do.
@@ -48,6 +50,8 @@ const path = require('path');
  * @property {(ctx: Ctx) => string[]} locate  candidate paths; any one present satisfies it
  * @property {'file'|'dir'} kind
  * @property {(ctx: Ctx) => boolean} [applies]  skip the artifact entirely when false
+ * @property {boolean} [every]  every candidate must be present, not just one
+ * @property {(target: string) => boolean} [verify]  a present file must also pass this
  *
  * @typedef {{home: string, ownmindDir: string}} Ctx
  */
@@ -99,6 +103,58 @@ function registeredIronRuleTarget({ home }) {
     }
   }
   return null;
+}
+
+/**
+ * Every absolute Node path the configuration tells Claude Code to run, in the order found.
+ *
+ * On a machine whose only Node is the private runtime, the installer writes that runtime's
+ * absolute path as the MCP entry's command (~/.claude.json) and in front of each node-run hook
+ * (settings.json). Bare `node` resolves through whatever PATH the caller has, so only the
+ * absolute paths are this check's business: they are the ones that break silently when the
+ * runtime is removed or truncated. Unreadable files yield nothing; other artifacts already
+ * speak to a broken install.
+ */
+function configuredNodes({ home }) {
+  const found = [];
+  const add = (p) => { if (p && !found.includes(p)) found.push(p); };
+
+  try {
+    // Lazily: a half-updated checkout without this helper must not take the whole list down.
+    const { readJson, CLAUDE_JSON } = require('./register-mcp.cjs');
+    const entry = readJson(path.join(home, CLAUDE_JSON))?.mcpServers?.ownmind;
+    const cmd = entry && typeof entry.command === 'string' ? entry.command : '';
+    if (isAbsolutePath(cmd) && isNodeBasename(cmd)) add(cmd);
+  } catch { /* nothing readable is configured */ }
+
+  try {
+    const raw = fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8');
+    const settings = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+    for (const groups of Object.values((settings && settings.hooks) || {})) {
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        for (const h of (group && Array.isArray(group.hooks) ? group.hooks : [])) {
+          const parsed = h && typeof h.command === 'string' ? parseNodeCommand(h.command) : null;
+          // Only OwnMind's own runtime: a developer's own absolute-node hooks are not ours to judge.
+          if (parsed && parsed.absolute && parsed.ownmind) add(parsed.runtime);
+        }
+      }
+    }
+  } catch { /* nothing readable is configured */ }
+
+  return found;
+}
+
+/** True when `nodeBin` starts and prints a version — existing is not starting. */
+function nodeRuns(nodeBin) {
+  try {
+    const out = execFileSync(nodeBin, ['--version'], {
+      encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+    });
+    return /^v\d+\./.test(String(out).trim());
+  } catch {
+    return false;
+  }
 }
 
 /** @type {Artifact[]} */
@@ -195,6 +251,25 @@ const ARTIFACTS = [
     kind: 'file',
     locate: ({ ownmindDir }) => [path.join(ownmindDir, 'mcp', 'index.js')],
   },
+  {
+    // Only on a machine whose configuration names a Node by absolute path (the private runtime):
+    // every one of them has to start, because Claude Code runs exactly that file and nothing
+    // else. A machine on bare `node` is unaffected and checks the same count as before.
+    id: 'configured_node',
+    describe: 'the Node.js that Claude Code is configured to run for OwnMind (it must start)',
+    kind: 'file',
+    every: true,
+    verify: nodeRuns,
+    applies: (ctx) => configuredNodes(ctx).length > 0,
+    // Never empty: `locate` is called ahead of `applies` by anything that enumerates the list.
+    locate: (ctx) => {
+      const nodes = configuredNodes(ctx);
+      if (nodes.length) return nodes;
+      return [process.platform === 'win32'
+        ? path.join(ctx.ownmindDir, 'runtime', 'current', 'node.exe')
+        : path.join(ctx.ownmindDir, 'runtime', 'current', 'bin', 'node')];
+    },
+  },
 ];
 
 /**
@@ -219,15 +294,21 @@ function checkInstallArtifacts(opts = {}) {
     if (typeof artifact.applies === 'function' && !artifact.applies(ctx)) continue;
     checked += 1;
     const candidates = artifact.locate(ctx);
-    const present = candidates.some((target) => {
+    const isPresent = (target) => {
       try {
         const st = fs.statSync(target);
-        return artifact.kind === 'dir' ? st.isDirectory() : st.isFile();
+        if (!(artifact.kind === 'dir' ? st.isDirectory() : st.isFile())) return false;
+        return typeof artifact.verify === 'function' ? Boolean(artifact.verify(target)) : true;
       } catch {
         return false;
       }
-    });
-    if (!present) {
+    };
+    if (artifact.every) {
+      const absent = candidates.find((target) => !isPresent(target));
+      if (absent !== undefined) {
+        missing.push({ id: artifact.id, describe: artifact.describe, path: absent });
+      }
+    } else if (!candidates.some(isPresent)) {
       missing.push({ id: artifact.id, describe: artifact.describe, path: candidates[0] });
     }
   }
@@ -235,7 +316,7 @@ function checkInstallArtifacts(opts = {}) {
   return { ok: missing.length === 0, missing, checked };
 }
 
-module.exports = { ARTIFACTS, checkInstallArtifacts };
+module.exports = { ARTIFACTS, checkInstallArtifacts, configuredNodes };
 
 // CLI: used by install.sh at the end of a run. Exit 1 and name what is missing.
 if (require.main === module) {

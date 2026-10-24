@@ -39,6 +39,7 @@ const LATEST_REPORTS_SQL = `
          COALESCE(u.name, u.email) AS user_name,
          l.machine,
          l.client_version,
+         l.trigger_kind,
          l.full_log->'checks'      AS checks
   FROM install_check_logs l
   JOIN users u ON u.id = l.user_id

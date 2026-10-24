@@ -28,6 +28,20 @@ COPY scripts/bootstrap.ps1 ./scripts/bootstrap.ps1
 # 不到它 —— 但少了它，任何人把 CMD 改成 npm start 都會在啟動時炸掉，而那是個看不出原因的
 # 錯誤。一行 COPY 換掉一個地雷。它在映像裡只會發現 build 已經在了、然後立刻結束。
 COPY scripts/ensure-console-build.js ./scripts/ensure-console-build.js
+# Zero-touch install: GET /api/install/archive packs these from the container's own
+# filesystem (src/services/install-archive.js), and /install.sh and /install.ps1 are
+# read from here. The archive leaves out db/, tests/, node_modules and all of src/ except
+# src/utils/, so only src/ needs its entry above. Everything the client installs from has to be
+# listed; a path missing here is missing from every no-git install.
+COPY scripts/ ./scripts/
+COPY install.sh install.ps1 ./
+COPY mcp/ ./mcp/
+COPY hooks/ ./hooks/
+COPY skills/ ./skills/
+COPY configs/ ./configs/
+# The release archive for machines without git is packed from this image, and install.sh
+# installs the two mods from mods/; without this line those machines silently get neither.
+COPY mods/ ./mods/
 # shared/ 被 server 端多個模組 import（events.js 需要 id-helper，若未來也可能需要
 # helpers.js 等）。scanners/ 內有 base.js / id-helper.js / claude-code.js / codex.js
 # / opencode.js / vscode-telemetry.js / cursor.js / antigravity.js；id-helper 是
@@ -37,6 +51,10 @@ COPY shared/ ./shared/
 # Without it the parse falls back to [] and the footer's changelog modal is empty
 # in production while working on every developer machine.
 COPY CHANGELOG.md ./CHANGELOG.md
+# Zero-touch install: GET /install-manual.md serves this file (src/routes/install.js). Without the
+# COPY the route answers 404 manual_not_available in production while working in development.
+# The matching re-include is in .dockerignore (docs/ is otherwise excluded).
+COPY docs/ai-install-runbook.md docs/ai-install-runbook.md
 
 # v1.20：藍綠並存策略 — 新版 client build 產物放 dashboard/
 # v1.26.60：整併結束，映像裡只剩一個後台。/me 跟 /admin 兩個舊介面的靜態檔都搬到 repo

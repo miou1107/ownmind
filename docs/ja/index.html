@@ -288,10 +288,19 @@ docker compose up -d</pre>
       </div>
       <div class="box">
         <h3>マシンをつなぐ</h3>
-        <p>Claude Code や Cursor のチャットに一行貼れば AI が自分でインストールします。ターミナルで一行実行しても同じです。</p>
-        <pre class="prompt">OwnMind をインストールして（キーは YOUR_API_KEY、URL は YOUR_API_URL）</pre>
-        <p class="or">またはターミナルで：</p>
-        <pre>curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL</pre>
+        <p>Claude Code や Cursor のチャットにこのメッセージを貼れば AI が自分でインストールします。ターミナルで一行実行しても同じです。</p>
+        <pre class="prompt">OwnMind をインストールしてください。
+まず YOUR_API_URL/install-manual.md を読み、マニュアルの手順どおりに進めてください。
+このパソコンの OS に合う行を下から選び、一度だけ実行してください。画面に NEXT が出たら NEXT の指示に従い、FIX が出たら FIX の行のコマンドを先に実行してからインストールコマンドをもう一度実行し、ASK が出たときだけ私に聞いてください。
+インストール中に私が「許可」を押したり権限を開いたりする必要があるときは、どこを押すか一つずつ教えてください。必要なソフトはインストールコマンドが自分で用意するので、私に手動でインストールさせないでください。
+
+macOS:
+curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+Windows (PowerShell):
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm YOUR_API_URL/install.ps1 | iex</pre>
+        <p class="or">または macOS のターミナルで：</p>
+        <pre>curl -fsSL YOUR_API_URL/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL</pre>
       </div>
     </div>
   </div>

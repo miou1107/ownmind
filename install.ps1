@@ -28,17 +28,77 @@ function Reload-Path {
   }
 }
 
+# --- The output grammar the AI reads (see scripts/bootstrap.ps1) ---
+#   ERROR:<code>:<message> then FIX:<code>:<command>   a stop the AI can repair and retry
+#   ASK:<code>:<sentence>                              a stop only the person can resolve
+#   NEXT:<kind>[:<detail>]                             what to do after a successful install
+# Write-OwnMindLocalized asks the OwnMind checkout's install-messages.cjs for a sentence in the
+# person's language (the Windows UI culture picks it), and returns the English literal when
+# there is no node or no checkout yet, and prints it while the console is still in UTF-8. The literal must equal hooks/locales/en.json:
+# tests/install-messages.test.js checks that.
+function Write-OwnMindLocalized {
+  param(
+    [string]$Prefix = '',
+    [Parameter(Mandatory = $true)][string[]]$Command,
+    [Parameter(Mandatory = $true)][string]$Literal
+  )
+  $text = ''
+  try {
+    $helper = Join-Path $HOME '.ownmind\scripts\install-helpers\install-messages.cjs'
+    $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+    if ($node -and (Test-Path -LiteralPath $helper)) {
+      $argv = @($helper) + $Command
+      if (-not $env:OWNMIND_LOCALE_FORCE) { $argv += @('--locale', (Get-UICulture).Name) }
+      $exe = [string]@($node)[0].Source
+      $previous = [Console]::OutputEncoding
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+      try {
+        $out = & $exe @argv 2>$null
+        if ($LASTEXITCODE -eq 0 -and $out) {
+          $text = $Prefix + ("$out").Trim()
+          Write-Host $text
+        }
+      } finally {
+        [Console]::OutputEncoding = $previous
+      }
+    }
+  } catch { }
+  if (-not $text) {
+    $text = $Prefix + $Literal
+    Write-Host $text
+  }
+  return $text
+}
+function Write-OwnMindAsk {
+  param([Parameter(Mandatory = $true)][string]$Code, [Parameter(Mandatory = $true)][string]$Literal)
+  Write-OwnMindLocalized -Command @('ask', $Code) -Literal $Literal | Out-Null
+}
+# The PowerShell command that runs the installer again: the server's own install.ps1, with the
+# key left as <KEY> for the AI to fill in from the install message.
+function Get-OwnMindRetryCommand {
+  $api = '<API_URL>'
+  $known = Get-Variable -Name OwnMindFixApi -Scope Global -ErrorAction SilentlyContinue
+  if ($known -and $known.Value) { $api = [string]$known.Value }
+  return ('$env:OWNMIND_API_KEY=''<KEY>''; $env:OWNMIND_API_URL=''' + $api + '''; irm ' + $api + '/install.ps1 | iex')
+}
+
 # --- 參數處理（同時支援 param 和環境變數，irm | iex 不支援 param）---
 # 過濾 flag-like args（如舊版 interactive-upgrade.ps1 傳的 --update），避免被當 API key
 $PosArgs = @($args | Where-Object { $_ -notlike '-*' })
 if ($PosArgs.Count -ge 1) { $ApiKey = $PosArgs[0] } else { $ApiKey = $env:OWNMIND_API_KEY }
 if ($PosArgs.Count -ge 2) { $ApiUrl = $PosArgs[1] } else { $ApiUrl = $env:OWNMIND_API_URL }
+$global:OwnMindFixApi = ''
+if ($ApiUrl) { $global:OwnMindFixApi = "$ApiUrl".TrimEnd('/') }
 
 if (-not $ApiKey) {
+  Write-Host "ERROR:missing_args:API Key and API URL required"
+  Write-Host "FIX:rerun_with_args:`$env:OWNMIND_API_KEY='<KEY>'; `$env:OWNMIND_API_URL='<API_URL>'; irm <API_URL>/install.ps1 | iex"
   Write-Error "API Key required`nUsage:   .\install.ps1 YOUR_API_KEY YOUR_API_URL`nOr env:  `$env:OWNMIND_API_KEY='xxx'; `$env:OWNMIND_API_URL='https://...'"
   exit 1
 }
 if (-not $ApiUrl) {
+  Write-Host "ERROR:missing_args:API Key and API URL required"
+  Write-Host "FIX:rerun_with_args:`$env:OWNMIND_API_KEY='<KEY>'; `$env:OWNMIND_API_URL='<API_URL>'; irm <API_URL>/install.ps1 | iex"
   Write-Error "API URL required`nUsage: .\install.ps1 YOUR_API_KEY YOUR_API_URL"
   exit 1
 }
@@ -94,93 +154,70 @@ function Maybe-LoadReportError {
   if (Test-Path $h) { . $h }
 }
 
-# --- 檢查必要工具（v1.17.76：缺 git/node 走 winget 自動裝，回報者 vin-windows-test）---
-# v1.17.75 之前：缺 git 或 node 直接 Write-Error exit，user 沒裝過 = 完全卡死。
-# 現在：跟 sqlite3 同 pattern → winget 自動裝、reload PATH、再驗證一次。
-function Install-WithWinget {
-  param(
-    [string]$ToolName,    # "git" / "node"
-    [string]$WingetId,    # "Git.Git" / "OpenJS.NodeJS.LTS"
-    [string]$ManualUrl    # 手動安裝 fallback URL
-  )
-  Write-Host "[WARN] $ToolName not found (required by OwnMind)" -ForegroundColor Yellow
-  $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
-  if (-not $hasWinget) {
-    Write-Error "$ToolName missing and winget unavailable. Install from $ManualUrl then retry."
-    exit 1
-  }
-  Write-Host "[INFO] Auto-installing $WingetId via winget (1-2 min)"
+# --- Node.js (>= v20; required by the scanner and the MCP server) ---
+# A machine with no usable node gets a private Node in ~/.ownmind/runtime, downloaded by
+# scripts/install-helpers/ensure-node-runtime.ps1 with no winget, no password and no dialog (the same
+# as install.sh on a Mac). git is no longer installed or required here: bootstrap.ps1 installs from
+# the release archive when there is none. A machine whose node is v20 or newer keeps using it.
+#
+# The helper lives in the OwnMind checkout, which on a first install is cloned further down; in
+# that case the step is deferred until the checkout is there ($NodeStepPending).
+#
+# The private runtime is reached by its absolute path (runtime\current\node.exe) and by the PATH
+# prepend inside this process, never through the User PATH. The step that used to write the node
+# directory into the User PATH after a winget install is gone with the winget install: a system
+# node is already on PATH, and a private one must not be added to it.
+$NodeHelper = Join-Path $HOME '.ownmind\scripts\install-helpers\ensure-node-runtime.ps1'
+$NodeStepPending = $false
+
+function Test-NodeUsable {
+  $cmd = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+  if (-not $cmd) { return $false }
   try {
-    winget install --id $WingetId --scope user --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Error "winget install $WingetId failed (exit=$LASTEXITCODE). Install $ToolName manually ($ManualUrl) and retry."
-      exit 1
-    }
-  } catch {
-    Write-Error "winget install $WingetId failed: $_. Install $ToolName manually ($ManualUrl) and retry."
-    exit 1
-  }
-  Reload-Path
-  if (-not (Get-Command $ToolName -ErrorAction SilentlyContinue)) {
-    Write-Error "$ToolName installed but not visible in current PowerShell session. Close this terminal completely, reopen, and re-run the same install command."
-    exit 1
-  }
-  Write-Host "[ OK ] $ToolName installed (PATH reloaded)" -ForegroundColor Green
+    $exe = [string]@($cmd)[0].Source
+    $raw = & $exe --version 2>$null
+    $major = [int]((("$raw".Trim()) -replace '^v', '') -split '\.' | Select-Object -First 1)
+    return ($major -ge 20)
+  } catch { return $false }
 }
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  try {
-    Install-WithWinget -ToolName "git" -WingetId "Git.Git" -ManualUrl "https://git-scm.com/download/win"
-  } catch {
-    Report-Error -Kind "install_winget_git_failed" -Detail "winget Git.Git failed: $_"
-    throw
+# Node version check (>= v20, scanner / mcp need it)
+function Confirm-NodeVersion {
+  $nodeVerRaw = ""
+  try { $nodeVerRaw = (& node --version 2>$null) } catch { }
+  $nodeVer = "$nodeVerRaw" -replace '^v', ''
+  $nodeMajor = 0
+  try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
+  if ($nodeMajor -lt 20) {
+    Write-Host "ERROR:node_missing:Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+. Running the installer again downloads a private Node.js when none is usable."
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
+    Write-Error "Node.js is missing or too old ($nodeVerRaw); OwnMind requires v20+. Run the install again: it downloads a private Node.js when none is usable."
+    exit 1
   }
-}
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  try {
-    Install-WithWinget -ToolName "node" -WingetId "OpenJS.NodeJS.LTS" -ManualUrl "https://nodejs.org/"
-  } catch {
-    Report-Error -Kind "install_winget_node_failed" -Detail "winget OpenJS.NodeJS.LTS failed: $_"
-    throw
-  }
+  Write-Host "   Node.js: $nodeVerRaw ✓" -ForegroundColor Gray
 }
 
-# Node 版本驗證（>= v20，scanner / mcp 需要）
-$nodeVerRaw = (& node --version 2>$null)
-$nodeVer = $nodeVerRaw -replace '^v', ''
-$nodeMajor = 0
-try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
-if ($nodeMajor -lt 20) {
-  Write-Error "Node.js too old ($nodeVerRaw); OwnMind requires v20+. Upgrade with: winget upgrade OpenJS.NodeJS.LTS"
+function Invoke-NodeStep {
+  . $NodeHelper
+  $nodeOk = @(Ensure-OwnMindNode -ApiUrl $ApiUrl -ApiKey $ApiKey) | Select-Object -Last 1
+  if (-not $nodeOk) {
+    Report-Error -Kind "install_node_runtime_failed" -Detail "no usable Node.js and the private runtime could not be installed"
+    # grammar-allow: Ensure-OwnMindNode has already printed its own ERROR with FIX or ASK
+    exit 1
+  }
+  $script:NodeStepPending = $false
+  Confirm-NodeVersion
+}
+
+if (Test-Path $NodeHelper) {
+  Invoke-NodeStep
+} elseif ((Test-NodeUsable) -or -not (Test-Path (Join-Path $HOME '.ownmind'))) {
+  $NodeStepPending = $true
+} else {
+  Write-Host "ERROR:node_missing:Node.js is missing or too old, and this OwnMind checkout is too old to install one. Running the installer again brings the checkout up to date and installs a private Node.js."
+  Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
+  Write-Error "Node.js is missing or too old, and this OwnMind checkout is too old to install one. Install Node.js v20+ LTS from https://nodejs.org/ and retry"
   exit 1
-}
-Write-Host "   Node.js: $nodeVerRaw ✓" -ForegroundColor Gray
-
-# --- v1.17.77: 把 node 安裝目錄持久化寫入 User PATH（回報者 vin-windows-test 第二輪）---
-# 為什麼必要：winget 只更新 Machine PATH，但 already-running 的 Claude Code 不會 reload；
-# 它 spawn `cmd.exe /c start.cmd` 時繼承的 PATH 仍 stale → MCP server 起不來。
-# 寫 User PATH 確保「下次開新 terminal / 重啟 Claude Code」就會找到，跟 fallback 兩層守住。
-$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
-if ($nodeCmd) {
-  $nodeDir = (Split-Path -Parent $nodeCmd.Path).TrimEnd('\')
-  $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
-  $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-  $allParts = @()
-  if ($userPath) { $allParts += $userPath -split ';' }
-  if ($machinePath) { $allParts += $machinePath -split ';' }
-  $alreadyInPath = $false
-  foreach ($p in $allParts) {
-    if ($p -and ($p.TrimEnd('\') -ieq $nodeDir)) { $alreadyInPath = $true; break }
-  }
-  if (-not $alreadyInPath) {
-    $newUserPath = if ($userPath) { "$userPath;$nodeDir" } else { $nodeDir }
-    try {
-      [System.Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
-      Write-Host "[ OK ] Node path persisted to User PATH ($nodeDir) - effective after terminal/Claude Code restart" -ForegroundColor Green
-    } catch {
-      Write-Host "[WARN] Failed to write User PATH: $_ (non-fatal; start.cmd has fallback)" -ForegroundColor Yellow
-    }
-  }
 }
 
 # --- sqlite3 自動裝（v1.17.14，Tier 2 Cursor/Antigravity/OpenCode 需要）---
@@ -259,6 +296,10 @@ function Test-ShAvailable {
   return $null
 }
 
+# When this run began: the watcher started at the end asks the server whether memory has loaded
+# since this moment, so a load from before the install never counts as the install working.
+$InstallStartedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+
 # --- 提前建立所有需要的目錄 ---
 $OwnmindDir     = Join-Path $HOME ".ownmind"
 $ClaudeDir       = Join-Path $HOME ".claude"
@@ -276,7 +317,15 @@ foreach ($dir in @($ClaudeDir, $SkillDir, $HookDir)) {
 # the same as every automatic update (update-to-release.mjs; see install.sh). A checkout too
 # old to have the helper falls back to the pull once.
 $ReleaseHelper = Join-Path $OwnmindDir "scripts\install-helpers\update-to-release.mjs"
-if (Test-Path $OwnmindDir) {
+# An archive install (a .release file and no .git: unpacked by bootstrap.ps1 on a machine without
+# git) is updated by shared/archive-update.js from the OwnMind server, never here. It is also
+# what bootstrap.ps1 has just unpacked when it runs this script, so it is used as it is.
+$ReleaseFile = Join-Path $OwnmindDir ".release"
+# A swap journal without .release counts too: an update stopped part-way is still an archive install.
+if ((Test-Path $OwnmindDir) -and ((Test-Path $ReleaseFile) -or (Test-Path (Join-Path $OwnmindDir ".swap-journal.json"))) -and -not (Test-Path (Join-Path $OwnmindDir ".git"))) {
+  $archiveRelease = "$(Get-Content -Path $ReleaseFile -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue)".Trim()
+  Write-Host "[INFO] Archive install $archiveRelease; updates come from the OwnMind server"
+} elseif (Test-Path $OwnmindDir) {
   Write-Host "[INFO] Updating OwnMind MCP server"
   if (Test-Path $ReleaseHelper) {
     Push-Location $OwnmindDir
@@ -290,17 +339,30 @@ if (Test-Path $OwnmindDir) {
   if ($LASTEXITCODE -ne 0) {
     Maybe-LoadReportError
     Report-Error -Kind "install_git_pull_failed" -Detail "更新 $OwnmindDir 失敗（更新到最新正式版，或舊版的 git pull）"
+    Write-Host "ERROR:update_failed:Updating OwnMind failed. Run bootstrap or fix manually"
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
     Write-Error "git pull failed. Run bootstrap or fix manually and retry"
     exit 1
   }
 } else {
   Write-Host "[INFO] Cloning OwnMind MCP server"
+  if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) {
+    Report-Error -Kind "install_git_clone_failed" -Detail "git is not installed and there is no OwnMind folder to update"
+    Write-Host "ERROR:git_missing:git is not installed, and there is no OwnMind folder yet. The installer from the server installs from the release archive without git."
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
+    Write-Error "git is not installed, and there is no OwnMind folder yet. Run bootstrap.ps1, which installs from the release archive without git."
+    exit 1
+  }
   git clone -q https://github.com/miou1107/ownmind.git $OwnmindDir
   if ($LASTEXITCODE -ne 0) {
     Report-Error -Kind "install_git_clone_failed" -Detail "git clone github.com/miou1107/ownmind 失敗"
+    Write-Host "ERROR:git_clone:git clone failed (network or GitHub access)"
+    Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
     Write-Error "git clone failed (network or GitHub access)"
     exit 1
   }
+  # The node step deferred above needs the clone, and the release lookup below needs node.
+  if ($NodeStepPending -and (Test-Path $NodeHelper)) { Invoke-NodeStep }
   # A fresh clone is main's tip; step back to the newest release. Nothing local to lose.
   Push-Location $OwnmindDir
   $release = "$(& node $ReleaseHelper --print)".Trim()
@@ -312,14 +374,25 @@ if (Test-Path $OwnmindDir) {
   }
   Pop-Location
 }
+# An existing checkout that was too old to carry the node helper has just been updated and now
+# does; a checkout that still lacks it (and a node that works) simply carries on.
+if ($NodeStepPending) {
+  if (Test-Path $NodeHelper) { Invoke-NodeStep } else { $NodeStepPending = $false; Confirm-NodeVersion }
+}
 Maybe-LoadReportError
 
 Write-Host "[INFO] Installing dependencies"
 Push-Location (Join-Path $OwnmindDir "mcp")
-npm install -q 2>$null
+$npmOutput = "$(cmd /c "npm install -q 2>&1" | Out-String)"
 if ($LASTEXITCODE -ne 0) {
   Pop-Location
   Report-Error -Kind "install_npm_failed" -Detail "npm install 在 $OwnmindDir\mcp 失敗"
+  Write-Host "ERROR:npm_install:npm install failed."
+  if ($npmOutput -match 'ENOSPC|no space left|not enough space on the disk') {
+    Write-OwnMindAsk -Code disk_full -Literal "ASK:disk_full:This computer is out of disk space, so the installer stopped. Free at least 500 MB, then paste the same install message to the AI again."
+  } else {
+    Write-Host "FIX:retry_install:$(Get-OwnMindRetryCommand)"
+  }
   Write-Error "npm install failed. Try: npm install -g npm@latest and retry"
   exit 1
 }
@@ -446,11 +519,17 @@ if (-not (Test-Path $RegisterCli)) {
   }
 }
 
+# Shared by 2.1, 2.2 and 4c: on a machine whose only Node is the private runtime
+# (ensure-node-runtime.ps1 sets OWNMIND_PRIVATE_NODE=1), the hook helpers write its absolute
+# path in front of each hook. Nothing else on the machine has that runtime on its PATH.
+$NodeBinArgs = @()
+if ($env:OWNMIND_PRIVATE_NODE -eq '1' -and $env:OWNMIND_NODE) { $NodeBinArgs = @('--node-bin', $env:OWNMIND_NODE) }
+
 # --- 2.1 v1.17.71 OwnMind 在場感：加 PostToolUse hook 把 banner 印到 user terminal ---
 # 用同一支跨平台 Node helper（idempotent + backup + atomic）。
 $AddHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\add-post-tool-use-hook.cjs"
 if (Test-Path $AddHookHelper) {
-  $hookResult = & node $AddHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  $hookResult = & node $AddHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   Write-Host "   PostToolUse banner hook：$hookResult"
 }
 
@@ -458,7 +537,7 @@ if (Test-Path $AddHookHelper) {
 # 每輪 AI 回話結束自動掃中英混雜 + 行話沒附白話說明、違反就印 banner 到 terminal
 $AddStopHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\add-stop-hook.cjs"
 if (Test-Path $AddStopHookHelper) {
-  $stopHookResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  $stopHookResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   Write-Host "   Stop reply-lint hook：$stopHookResult"
 }
 
@@ -572,7 +651,7 @@ $HookCmdHelper = Join-Path $OwnmindDir "scripts\install-helpers\session-hook-com
 # helper edits settings.json on disk, which is why nothing below re-writes a stale snapshot.
 $PreHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\ensure-pretooluse-hooks.cjs"
 if (Test-Path $PreHookHelper) {
-  $preHookResult = & node $PreHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  $preHookResult = & node $PreHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   Write-Host "   PreToolUse iron-rule hook: $preHookResult"
 } else {
   Write-Host "[WARN] ensure-pretooluse-hooks.cjs not found (stale upgrade?) — skipped PreToolUse hook registration" -ForegroundColor Yellow
@@ -591,7 +670,7 @@ if (Test-Path $PreHookHelper) {
 # is why the ordering constraint that used to be spelled out here no longer has a subject.
 $EnsureHook = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-session-hook.cjs'
 if (Test-Path $EnsureHook) {
-  $hookResult = & node $EnsureHook --ownmind-dir $OwnmindDir 2>&1
+  $hookResult = & node $EnsureHook --ownmind-dir $OwnmindDir @NodeBinArgs 2>&1
   if ($LASTEXITCODE -eq 0) {
     Write-Host "[ OK ] SessionStart hook: $hookResult"
   } else {
@@ -867,5 +946,48 @@ if (-not $HasBash) {
 }
 Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
-Write-Host "Open a new Claude Code session - OwnMind will auto-load your memory."
-Write-Host ""
+# zero-touch-install, Task 14: the colleague gets a desktop notification once memory has really
+# loaded. That happens in the next conversation, after this script has exited, so a watcher
+# (scripts\install-helpers\first-load-watch.cjs) waits for it for up to ten minutes. The script
+# starts the real watcher in its own session without the key in its environment and returns at
+# once; Start-Process -WindowStyle Hidden only keeps this short call from flashing a console
+# window. It reads the key from the credentials files itself: nothing secret is in its arguments.
+# The upgraders set OWNMIND_SKIP_FIRST_LOAD_WATCH=1, because an update must not pop a notification.
+if ($env:OWNMIND_SKIP_FIRST_LOAD_WATCH -ne '1') {
+  try {
+    $WatchScript = Join-Path $OwnmindDir 'scripts\install-helpers\first-load-watch.cjs'
+    $WatchNode = $env:OWNMIND_NODE
+    if (-not $WatchNode) {
+      $found = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+      if ($found) { $WatchNode = [string]@($found)[0].Source }
+    }
+    if ($WatchNode -and (Test-Path -LiteralPath $WatchScript)) {
+      Start-Process -WindowStyle Hidden -FilePath $WatchNode -ArgumentList @("`"$WatchScript`"", '--since', $InstallStartedAt)
+    }
+  } catch { }
+}
+# What the AI does next depends on where it is running (zero-touch-install, Task 12):
+#   Claude desktop app (CLAUDE_CODE_ENTRYPOINT=claude-desktop, or CLAUDE_CODE_DESKTOP_APP_VERSION set)
+#     -> NEXT:verify:new-session   the AI opens a verification conversation itself
+#   Claude Code in a terminal (CLAUDE_CODE_ENTRYPOINT=cli, or unset with a terminal on stdin)
+#     -> NEXT:verify:manual:<sentence about /exit and claude>
+#   anything else -> NEXT:verify:manual:<sentence about a new conversation>
+# This is the last line printed: whatever reads the output last reads the instruction.
+$HasTerminal = $false
+try { $HasTerminal = ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) } catch { }
+$NextLine = ''
+$NextEnglish = ''
+if ($env:CLAUDE_CODE_ENTRYPOINT -eq 'claude-desktop' -or $env:CLAUDE_CODE_DESKTOP_APP_VERSION) {
+  $NextEnglish = 'NEXT:verify:new-session:OwnMind install check'
+  $NextLine = Write-OwnMindLocalized -Prefix 'NEXT:verify:new-session:' -Command @('say', 'install.verify.session_title') -Literal "OwnMind install check"
+} elseif ($env:CLAUDE_CODE_ENTRYPOINT -eq 'cli' -or (-not $env:CLAUDE_CODE_ENTRYPOINT -and $HasTerminal)) {
+  $NextEnglish = 'NEXT:verify:manual:OwnMind is installed. Type /exit, then run claude again, and your memory will load.'
+  $NextLine = Write-OwnMindLocalized -Prefix 'NEXT:verify:manual:' -Command @('say', 'install.next.verify_manual_terminal') -Literal "OwnMind is installed. Type /exit, then run claude again, and your memory will load."
+} else {
+  $NextEnglish = 'NEXT:verify:manual:OwnMind is installed. Start a new conversation and your memory will load.'
+  $NextLine = Write-OwnMindLocalized -Prefix 'NEXT:verify:manual:' -Command @('say', 'install.next.verify_manual_generic') -Literal "OwnMind is installed. Start a new conversation and your memory will load."
+}
+# bootstrap asked for a copy (OWNMIND_NEXT_FILE) so that it can print the line again as its own last line
+if ($env:OWNMIND_NEXT_FILE -and $NextLine) {
+  try { [System.IO.File]::WriteAllText($env:OWNMIND_NEXT_FILE, "$NextLine`n$NextEnglish`n", (New-Object System.Text.UTF8Encoding $false)) } catch { }
+}

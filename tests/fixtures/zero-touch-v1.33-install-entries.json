@@ -1,0 +1,132 @@
+{
+  "generatedFrom": "install.sh at origin/main 0dc8d4d06c33547eb36131e7df76d3550abe29b6",
+  "settings": {
+    "mcpServers": {
+      "ownmind": {
+        "command": "node",
+        "args": [
+          "{HOME}/.ownmind/mcp/index.js"
+        ],
+        "env": {
+          "OWNMIND_API_URL": "http://127.0.0.1:56134",
+          "OWNMIND_API_KEY": "{KEY}",
+          "OWNMIND_TOOL": "claude-code"
+        }
+      }
+    },
+    "hooks": {
+      "PostToolUse": [
+        {
+          "matcher": "mcp__ownmind__.*",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"{HOME}/.ownmind/hooks/ownmind-tty-echo.cjs\""
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"{HOME}/.ownmind/hooks/ownmind-reply-lint.js\""
+            }
+          ]
+        }
+      ],
+      "PreToolUse": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"{HOME}/.ownmind/hooks/ownmind-iron-rule-check.js\""
+            }
+          ],
+          "matcher": "Bash"
+        },
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"{HOME}/.ownmind/hooks/ownmind-iron-rule-check.js\""
+            }
+          ],
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit"
+        }
+      ],
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"{HOME}/.ownmind/hooks/ownmind-prompt-inject.js\""
+            }
+          ]
+        }
+      ],
+      "SessionStart": [
+        {
+          "matcher": "startup",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash ~/.claude/hooks/ownmind-session-start.sh",
+              "timeout": 10
+            }
+          ]
+        },
+        {
+          "matcher": "resume",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash ~/.claude/hooks/ownmind-session-start.sh",
+              "timeout": 10
+            }
+          ]
+        },
+        {
+          "matcher": "clear",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash ~/.claude/hooks/ownmind-session-start.sh",
+              "timeout": 10
+            }
+          ]
+        },
+        {
+          "matcher": "compact",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash ~/.claude/hooks/ownmind-session-start.sh",
+              "timeout": 10
+            }
+          ]
+        }
+      ]
+    },
+    "env": {
+      "CLAUDE_CODE_PLUGIN_DIRS": "{HOME}/.ownmind/mods/ownmind-monitor:{HOME}/.ownmind/mods/wrapup-check",
+      "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
+    }
+  },
+  "claudeJson": {
+    "mcpServers": {
+      "ownmind": {
+        "command": "node",
+        "args": [
+          "{HOME}/.ownmind/mcp/index.js"
+        ],
+        "env": {
+          "OWNMIND_API_URL": "http://127.0.0.1:56134",
+          "OWNMIND_API_KEY": "{KEY}",
+          "OWNMIND_TOOL": "claude-code"
+        }
+      }
+    }
+  }
+}

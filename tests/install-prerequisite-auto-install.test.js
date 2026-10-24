@@ -40,16 +40,14 @@ describe('install.ps1 — missing prerequisites must not just error-exit', () =>
     );
   });
 
-  it('when node is missing, calls winget OpenJS.NodeJS.LTS (not just Write-Error)', () => {
-    // Allow both forms: inline `winget install ... OpenJS.NodeJS.LTS`, or a helper
-    // function with parameters. What matters is that the file mentions both
-    // `winget install` and OpenJS.NodeJS.LTS.
-    assert.match(content, /winget\s+install/i, 'must contain a winget install call');
-    assert.match(
-      content,
-      /OpenJS\.NodeJS\.LTS/,
-      'the Node.js winget package id must appear in install.ps1 (proves it is wired for auto-install)'
-    );
+  it('when node is missing or old, installs the private runtime instead of calling winget', () => {
+    // Replaced the winget OpenJS.NodeJS.LTS install: a machine without winget, or with winget
+    // blocked, could not follow it. tests/install-ps1-private-node.test.js pins the details.
+    assert.match(content, /ensure-node-runtime\.ps1/);
+    assert.match(content, /Ensure-OwnMindNode\s+-ApiUrl\s+\$ApiUrl\s+-ApiKey\s+\$ApiKey/);
+    assert.doesNotMatch(content, /OpenJS\.NodeJS\.LTS/);
+    // winget stays for the optional sqlite3 step only
+    assert.match(content, /SQLite\.SQLite/);
   });
 
   it('after node is auto-installed, must reload Machine + User PATH (winget does not refresh the current session)', () => {
@@ -65,12 +63,9 @@ describe('install.ps1 — missing prerequisites must not just error-exit', () =>
     );
   });
 
-  it('when git is missing, calls winget Git.Git (not just Write-Error)', () => {
-    assert.match(
-      content,
-      /["']Git\.Git["']/,
-      'the Git winget package id must appear in install.ps1 (proves it is wired for auto-install)'
-    );
+  it('git is neither installed nor required by install.ps1 (bootstrap.ps1 installs from the release archive)', () => {
+    assert.doesNotMatch(content, /Git\.Git/, 'install.ps1 must not install git with winget any more');
+    assert.doesNotMatch(content, /Install-WithWinget/);
   });
 
   it('node version must be checked >= 20 (Tier 2 scanner requirement)', () => {
@@ -88,15 +83,15 @@ describe('install.ps1 — missing prerequisites must not just error-exit', () =>
   });
 });
 
-describe('install.sh — missing node: mac uses brew, linux uses apt/dnf', () => {
+describe('install.sh — missing node: mac downloads a private runtime, linux uses apt/dnf', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.sh'), 'utf8');
 
-  it('when node is missing on mac, tries brew install node', () => {
-    assert.match(
-      content,
-      /command -v node[\s\S]*?brew\s+install\s+node/,
-      'mac without node should attempt `brew install node` (fall back to manual hint)'
-    );
+  it('when node is missing or old on mac, installs the private runtime instead of brew', () => {
+    // Replaced the brew install node block: a Mac with no node and no admin rights could not
+    // follow it. tests/node-runtime-mac.test.js runs the real helper.
+    assert.match(content, /ensure-node-runtime\.sh/);
+    assert.match(content, /ownmind_ensure_node "\$API_URL" "\$API_KEY"/);
+    assert.doesNotMatch(content, /brew\s+install\s+node/);
   });
 
   it('when node is missing on linux, prints apt / dnf install commands', () => {

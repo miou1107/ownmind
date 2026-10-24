@@ -21,7 +21,9 @@
 // So the marshalling is gone. The file is read and written by the same Node code the
 // updaters already run and the tests already cover; PowerShell only has to spawn it.
 //
-// Usage:  node ensure-session-hook.cjs [--settings <path>] [--ownmind-dir <path>]
+// Usage:  node ensure-session-hook.cjs [--settings <path>] [--ownmind-dir <path>] [--node-bin <path>]
+//         --node-bin: absolute path of the private Node runtime; the installers pass it only on
+//         a machine that has no other Node (OWNMIND_PRIVATE_NODE=1).
 // Output: one machine-readable line —
 //         OK:hook:unchanged | OK:hook:installed | OK:hook:repaired | OK:hook:user_customised
 //         ERROR:hook:<why>
@@ -32,14 +34,16 @@ const os = require('os');
 const path = require('path');
 
 const {
-  sessionStartEntries, isOwnmindSessionEntry, needsRewrite,
+  sessionStartEntries, isOwnmindSessionEntry, needsRewrite, effectiveOptions,
 } = require('./session-hook-command.cjs');
+const { isCurrentNodeCommand } = require('./node-command.cjs');
 
 function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--settings') args.settings = argv[++i];
     else if (argv[i] === '--ownmind-dir') args.ownmindDir = argv[++i];
+    else if (argv[i] === '--node-bin') args.nodeBin = argv[++i];
     // Lets the tests exercise the Windows branch from a Mac. The real callers never pass it.
     else if (argv[i] === '--platform') args.platform = argv[++i];
   }
@@ -49,12 +53,12 @@ function parseArgs(argv) {
 /**
  * @returns {{ status: string, changed: boolean, settings: object }}
  */
-function ensureSessionHook(settings, { platform = process.platform, ownmindDir } = {}) {
+function ensureSessionHook(settings, { platform = process.platform, ownmindDir, nodeBin } = {}) {
   const s = settings && typeof settings === 'object' ? settings : {};
   if (!s.hooks || typeof s.hooks !== 'object') s.hooks = {};
   if (!Array.isArray(s.hooks.SessionStart)) s.hooks.SessionStart = [];
 
-  const opts = { platform, ownmindDir };
+  const opts = { platform, ownmindDir, nodeBin };
   const mine = s.hooks.SessionStart.filter(isOwnmindSessionEntry);
 
   if (mine.length === 0) {
@@ -62,15 +66,19 @@ function ensureSessionHook(settings, { platform = process.platform, ownmindDir }
     return { status: 'installed', changed: true, settings: s };
   }
 
+  // Without a requested nodeBin, a private runtime one of our entries already runs is kept.
+  const eff = effectiveOptions(mine, opts);
+
   if (!needsRewrite(mine, opts)) {
     // Either already correct, or deliberately edited by the user — needsRewrite refuses to
     // touch a command we did not generate, and that refusal is the point.
-    const ours = mine.every((e) => e.hooks?.every((h) => h.command === sessionStartEntries(opts)[0].hooks[0].command));
+    const desired = sessionStartEntries(eff)[0].hooks[0].command;
+    const ours = mine.every((e) => e.hooks?.every((h) => isCurrentNodeCommand(h.command, desired, { nodeBin: eff.nodeBin })));
     return { status: ours ? 'unchanged' : 'user_customised', changed: false, settings: s };
   }
 
   s.hooks.SessionStart = s.hooks.SessionStart.filter((e) => !isOwnmindSessionEntry(e));
-  s.hooks.SessionStart.push(...sessionStartEntries(opts));
+  s.hooks.SessionStart.push(...sessionStartEntries(eff));
   return { status: 'repaired', changed: true, settings: s };
 }
 
@@ -110,7 +118,9 @@ function main() {
 
   let result;
   try {
-    result = ensureSessionHook(settings, { ownmindDir, platform: args.platform || process.platform });
+    result = ensureSessionHook(settings, {
+      ownmindDir, platform: args.platform || process.platform, nodeBin: args.nodeBin || undefined,
+    });
   } catch (e) {
     process.stdout.write(`ERROR:hook:${e.message}\n`);
     process.exit(1);

@@ -119,7 +119,7 @@ describe('team pages stop counting a deactivated account', () => {
     assert.match(read('src', 'jobs', 'weeklyReport.js'), /role IN \('admin', 'user'\) AND deactivated_at IS NULL/);
   });
   it('the user list says who is deactivated', () => {
-    assert.match(read('src', 'routes', 'admin.js'), /deactivated_at FROM users ORDER BY/);
+    assert.match(read('src', 'routes', 'admin-users-list.js'), /u\.deactivated_at,[\s\S]*FROM users u/);
   });
 });
 

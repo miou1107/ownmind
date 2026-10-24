@@ -18,6 +18,8 @@ $ClaudeDir  = if ($env:CLAUDE_DIR)  { $env:CLAUDE_DIR }  else { Join-Path $HOME 
 # script is being fixed for.
 if (-not [System.IO.Path]::IsPathRooted($OwnmindDir)) { $OwnmindDir = Join-Path (Get-Location).Path $OwnmindDir }
 if (-not [System.IO.Path]::IsPathRooted($ClaudeDir))  { $ClaudeDir  = Join-Path (Get-Location).Path $ClaudeDir }
+# A machine with no Node of its own runs the private one in runtime\current; no other PATH has it.
+if (Test-Path "$OwnmindDir\runtime\current\node.exe") { $env:Path = "$OwnmindDir\runtime\current;$env:Path" }
 
 function Write-Tag([string]$line) { Write-Output $line }
 
@@ -49,7 +51,25 @@ function Read-Utf8Text([string]$path) {
 $L1 = 'unknown'
 $L1Detail = ''
 $gitDir = Join-Path $OwnmindDir '.git'
-if (Test-Path $gitDir) {
+$releaseFile = Join-Path $OwnmindDir '.release'
+if (-not (Test-Path $gitDir) -and ((Test-Path $releaseFile) -or (Test-Path (Join-Path $OwnmindDir '.swap-journal.json')))) {
+    # An archive install (bootstrap without git): compared with the release the OwnMind server
+    # ships (see check-sync.sh). The helper prints `in_sync release=vX`,
+    # `behind release=vX server=vY` or `unknown release=vX reason=<code>`.
+    $archiveHelper = Join-Path $OwnmindDir 'shared\archive-update-cli.mjs'
+    $archiveL1 = "$(& node $archiveHelper --dir $OwnmindDir --check 2>$null)".Trim()
+    if ($archiveL1 -match '^(in_sync|behind) (.+)$') {
+        $L1 = $Matches[1]
+        $L1Detail = $Matches[2]
+    } elseif ($archiveL1 -match '^unknown (.+)$') {
+        $L1 = 'error'
+        $L1Detail = $Matches[1]
+    } else {
+        $archiveRelease = "$(Get-Content -Path $releaseFile -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue)".Trim()
+        $L1 = 'error'
+        $L1Detail = "release=$archiveRelease reason=helper_failed"
+    }
+} elseif (Test-Path $gitDir) {
     $gitCmd = Get-Command git -ErrorAction SilentlyContinue
     if ($gitCmd) {
         # v1.30.48: compared with the newest release tag on main, which is what updates install,

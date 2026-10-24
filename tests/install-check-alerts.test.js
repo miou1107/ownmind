@@ -227,6 +227,51 @@ describe('evaluateFailures — deduplicate within a single call', () => {
   });
 });
 
+// zero-touch install: the installer's own self-check (trigger post_install) runs before any
+// conversation, so its memory_load verdict says nothing yet. Clients from this release send a
+// warning there; older clients still send a failure. Neither may raise an admin alert, and
+// neither may mark an announced failure resolved. The next report (auto_update, post_upgrade,
+// manual) decides, as before.
+describe('evaluateFailures — memory_load right after an install decides nothing', () => {
+  const newClientWarn = { name: 'memory_load', status: 'warn', detail: 'memories load in the next conversation' };
+
+  it('an older client\'s FAIL from post_install raises no alert', () => {
+    const { newFailures } = evaluateFailures({
+      reports: [{ ...member5Report([MEMBER5_MEMORY_LOAD_FAIL]), trigger_kind: 'post_install' }],
+      knownState: [],
+    });
+    assert.equal(newFailures.length, 0);
+  });
+
+  it('post_install neither resolves an announced memory_load failure (warn or fail)', () => {
+    for (const check of [newClientWarn, MEMBER5_MEMORY_LOAD_FAIL]) {
+      const { newFailures, resolved, detailChanges } = evaluateFailures({
+        reports: [{ ...member5Report([check]), trigger_kind: 'post_install' }],
+        knownState: [announced()],
+      });
+      assert.deepEqual({ newFailures, resolved, detailChanges }, { newFailures: [], resolved: [], detailChanges: [] });
+    }
+  });
+
+  it('other checks in a post_install report still alert', () => {
+    const { newFailures } = evaluateFailures({
+      reports: [{ ...member5Report([MEMBER5_MEMORY_LOAD_FAIL, { name: 'mcp_launches', status: 'fail', detail: 'x' }]), trigger_kind: 'post_install' }],
+      knownState: [],
+    });
+    assert.deepEqual(newFailures.map((f) => f.check_name), ['mcp_launches']);
+  });
+
+  for (const trigger_kind of ['auto_update', 'post_upgrade', 'manual', undefined]) {
+    it(`a memory_load FAIL from ${trigger_kind ?? 'a report without a trigger'} still alerts`, () => {
+      const { newFailures } = evaluateFailures({
+        reports: [{ ...member5Report([MEMBER5_MEMORY_LOAD_FAIL]), trigger_kind }],
+        knownState: [],
+      });
+      assert.equal(newFailures.length, 1);
+    });
+  }
+});
+
 describe('stateKey', () => {
   it('distinguishes machines that share a check name', () => {
     assert.notEqual(stateKey(3, 'A', 'memory_load'), stateKey(3, 'B', 'memory_load'));

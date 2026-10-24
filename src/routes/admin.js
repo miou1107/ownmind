@@ -9,6 +9,7 @@ import { requireFields } from '../utils/require-fields.js';
 import { writeAuditLog } from '../utils/audit-log.js';
 import { revokeUserSessions } from '../utils/web-session.js';
 import { safeEqual } from '../utils/safe-equal.js';
+import { createListUsersHandler } from './admin-users-list.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
@@ -86,25 +87,7 @@ router.use(adminAuth);
 /**
  * GET /users — list all users.
  */
-router.get('/users', async (req, res) => {
-  try {
-    const result = await query(
-      // v1.26.49: added must_change_password so the team-management page can
-      // show whether each user is still on their initial password (spec:
-      // openspec/changes/archive/v1.26.49-team-management-page/spec.md, Requirement 2).
-      //
-      // v1.30.38: the full api_key is not in this list. Authentication looks a user up by key alone,
-      // so every admin holding every key — the super_admin's included — let any admin act
-      // as the super_admin. The prefix is for display; the full key comes one user at a
-      // time from GET /users/:id/api-key (src/routes/admin-api-key.js).
-      'SELECT id, name, email, role, LEFT(api_key, 8) AS api_key_prefix, must_change_password, created_at, updated_at, deactivated_at FROM users ORDER BY created_at DESC'
-    );
-    res.json(result.rows);
-  } catch (err) {
-    logger.error('list users failed', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
-  }
-});
+router.get('/users', createListUsersHandler({ query, logger }));
 
 /**
  * POST /users — create a user.
