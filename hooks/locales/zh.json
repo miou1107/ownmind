@@ -55,5 +55,15 @@
   "install.verify.session_title": "OwnMind 安裝驗證",
   "install.notify.loaded": "OwnMind 已經在運作，記憶載入了。",
   "install.notify.not_loaded": "OwnMind 裝好了，但還沒載入記憶。開一個新對話試試；還是沒有，就把「修 OwnMind」貼給 AI。",
-  "install.ask.unsupported_os": "安裝程式目前只支援 macOS 和 Windows，沒辦法安裝在這台電腦的系統上。"
+  "install.ask.unsupported_os": "安裝程式目前只支援 macOS 和 Windows，沒辦法安裝在這台電腦的系統上。",
+  "pendingItems.header.all": "OwnMind：{count} 張單等你處理",
+  "pendingItems.header.new": "OwnMind：{count} 張新單等你處理",
+  "pendingItems.item": "・{label}　{title}（{ref}）{url}",
+  "pendingItems.more": "・還有 {count} 張沒有列出，Claude 桌面版的「待處理單據」面板有完整清單",
+  "pendingItems.kind.assigned": "待處理",
+  "pendingItems.kind.review": "待審核",
+  "pendingItems.kind.failing": "測試未通過",
+  "pendingItems.kind.comment": "待回覆",
+  "pendingItems.expired.github": "GitHub 登入已過期，需重新登入才能列出等你處理的單",
+  "pendingItems.expired.gitlab": "GitLab（{host}）登入已過期，需重新登入才能列出等你處理的單"
 }

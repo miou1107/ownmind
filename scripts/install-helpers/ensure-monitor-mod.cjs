@@ -43,6 +43,7 @@ const path = require('path');
 const MODS = [
   { name: 'ownmind-monitor', optOut: '.no-monitor-mod' },
   { name: 'wrapup-check', optOut: '.no-wrapup-mod' },
+  { name: 'pending-items', optOut: '.no-pending-items-mod' },
 ];
 const DIRS_KEY = 'CLAUDE_CODE_PLUGIN_DIRS';
 const FLAG_KEY = 'CLAUDE_CODE_ENABLE_FUNCTION_HOOKS';

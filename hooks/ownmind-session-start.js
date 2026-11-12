@@ -28,6 +28,7 @@ import { fetchPendingHandoffs, mergeHandoffs, markConsolidationShown, consolidat
 import { projectAliases } from './lib/project-aliases.js';
 import { missingSkillsFor, missingSkillNotice } from './lib/missing-skills.js';
 import { t } from './lib/i18n.js';
+import { checkPendingItems, contextNote } from './lib/pending-items.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
 import { tryAcquireUpdateLock, releaseUpdateLock, isContention } from '../shared/update-lock.js';
 import { localDateOnly, localIsoTimestamp } from '../shared/local-date.js';
@@ -405,6 +406,9 @@ async function main() {
   // never. Started here and awaited after the other fetches, so on a bad network its 3s
   // timeout overlaps theirs instead of adding to them.
   const pendingHandoffs = fetchPendingHandoffs({ apiUrl, apiKey });
+  // v1.33.4 — issues, PRs and MRs waiting on the user (issue #203). Started here, awaited at
+  // the end, so its own timeout overlaps the other fetches instead of adding to them.
+  const pendingItems = checkPendingItems({ t }).catch(() => ({ text: null }));
   const projectName = PROJECT_NAME;
 
   try {
@@ -447,7 +451,7 @@ async function main() {
     projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
     claudeConfigDir: process.env.CLAUDE_CONFIG_DIR,
   });
-  const systemMessage = missingSkillNotice(missingSkills, t);
+  const skillNotice = missingSkillNotice(missingSkills, t);
 
   try {
     initData = mergeHandoffs(initData, await pendingHandoffs);
@@ -482,6 +486,11 @@ async function main() {
       }
     }
   } catch { /* never block session start */ }
+
+  const pendingText = (await pendingItems).text;
+  if (pendingText) lines.push(contextNote(pendingText));
+  // What the person sees: the missing-skill notice, then the items waiting on them.
+  const systemMessage = [skillNotice, pendingText].filter(Boolean).join('\n\n');
 
   console.log(JSON.stringify({
     ...(systemMessage && { systemMessage }),

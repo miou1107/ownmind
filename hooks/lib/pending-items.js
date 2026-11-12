@@ -1,0 +1,429 @@
+/**
+ * v1.33.4 — the issues, PRs and MRs waiting on the user, across every repository (issue #203).
+ *
+ * Collectors ask GitHub (through the `gh` CLI the user is already signed in to) and each
+ * GitLab host listed in ~/.ownmind/git-hosts.json. `decide` turns their answers into what is
+ * new since the last list shown today, and `render` turns that into the lines the user sees.
+ * The state file also holds the full current list, which the desktop pane reads.
+ *
+ * Every function here fails closed to "nothing to say": a reminder that cannot be computed must
+ * never cost the session its start or its turn.
+ */
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import https from 'node:https';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
+import { localDateOnly, localIsoTimestamp } from '../../shared/local-date.js';
+
+export const HOST_TIMEOUT_MS = 2500;
+export const MAX_LINES = 10;
+// The whole check, every host together. The macOS session-start script runs under `timeout 5`
+// and writes its only output after this resolves; a slow host must not cost the session its
+// context.
+export const TOTAL_BUDGET_MS = 2500;
+export const RECHECK_MINUTES = 60;
+const MAX_PER_SEARCH = 30;
+const MAX_FAILING_LOOKUPS = 10;
+
+export function defaultStatePath(home = os.homedir()) {
+  return path.join(home, '.ownmind', 'state', 'pending-items.json');
+}
+
+export function defaultHostsPath(home = os.homedir()) {
+  return path.join(home, '.ownmind', 'git-hosts.json');
+}
+
+// ---------------------------------------------------------------------------------------------
+// GitHub
+
+const GH_QUERY = `query {
+  viewer { login }
+  assigned: search(query: "is:open is:issue assignee:@me archived:false", type: ISSUE, first: ${MAX_PER_SEARCH}) {
+    nodes { ... on Issue { number title url updatedAt repository { nameWithOwner } } }
+  }
+  review: search(query: "is:open is:pr review-requested:@me archived:false", type: ISSUE, first: ${MAX_PER_SEARCH}) {
+    nodes { ... on PullRequest { number title url updatedAt author { login } repository { nameWithOwner } } }
+  }
+  authored: search(query: "is:open is:pr author:@me archived:false", type: ISSUE, first: ${MAX_PER_SEARCH}) {
+    nodes { ... on PullRequest { number title url updatedAt repository { nameWithOwner }
+      comments(last: 10) { nodes { createdAt author { login } } }
+      reviews(last: 10) { nodes { submittedAt author { login } } }
+      commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } } } }
+  }
+}`;
+
+// A hook may run with a shorter PATH than the user's shell; try the usual install places too.
+const GH_CANDIDATES = ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh', '/usr/bin/gh', 'C:\\Program Files\\GitHub CLI\\gh.exe'];
+
+/** Runs `gh` with a hard timeout. Never rejects. */
+export async function runGh(args, timeoutMs = HOST_TIMEOUT_MS) {
+  let last = { code: -1, error: 'ENOENT', stdout: '', stderr: '' };
+  for (const bin of GH_CANDIDATES) {
+    last = await runGhAt(bin, args, timeoutMs);
+    if (last.error !== 'ENOENT') return last;
+  }
+  return last;
+}
+
+function runGhAt(bin, args, timeoutMs) {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    } catch (err) {
+      resolve({ code: -1, error: err?.code || 'spawn', stdout: '', stderr: '' });
+      return;
+    }
+    let stdout = '';
+    let stderr = '';
+    let done = false;
+    const finish = (r) => { if (!done) { done = true; clearTimeout(timer); resolve(r); } };
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* already gone */ }
+      finish({ code: -1, error: 'timeout', stdout, stderr });
+    }, timeoutMs);
+    child.stdout.on('data', (c) => { stdout += c; });
+    child.stderr.on('data', (c) => { stderr += c; });
+    child.on('error', (err) => finish({ code: -1, error: err?.code || 'spawn', stdout, stderr }));
+    child.on('close', (code) => finish({ code, stdout, stderr }));
+  });
+}
+
+function ghStatusOf(res) {
+  if (res.error === 'ENOENT') return 'absent';
+  if (res.error) return 'error';
+  const err = String(res.stderr || '');
+  if (/HTTP 401|Bad credentials|token .*(expired|revoked|invalid)/i.test(err)) return 'refused';
+  if (/gh auth login|not logged in/i.test(err)) return 'absent';
+  return 'error';
+}
+
+export async function collectGithub({ run = runGh, timeoutMs = HOST_TIMEOUT_MS } = {}) {
+  const host = 'github';
+  const res = await run(['api', 'graphql', '-f', `query=${GH_QUERY}`], timeoutMs);
+  // gh exits non-zero when any part of the query errors (an organisation that needs SSO, say),
+  // yet still prints what it could read. Use that; only a reply with no data is a failure.
+  let data = null;
+  try { data = JSON.parse(res.stdout || '').data || null; } catch { data = null; }
+  if (!data) return { host, status: res.code === 0 ? 'error' : ghStatusOf(res), items: [] };
+  const me = data.viewer?.login || '';
+
+  const items = [];
+  const commentMarks = {};
+  const authoredMeta = {};
+  const base = (n) => ({
+    key: `github:${n.repository?.nameWithOwner}#${n.number}`,
+    title: n.title,
+    url: n.url,
+    at: n.updatedAt,
+  });
+  for (const n of data.assigned?.nodes || []) {
+    if (!n?.number) continue;
+    items.push({ ...base(n), kind: 'assigned', signal: '', ref: `${n.repository?.nameWithOwner} issue #${n.number}` });
+  }
+  for (const n of data.review?.nodes || []) {
+    if (!n?.number) continue;
+    items.push({ ...base(n), kind: 'review', signal: '', ref: `${n.repository?.nameWithOwner} PR #${n.number}`, who: n.author?.login || '' });
+  }
+  for (const n of data.authored?.nodes || []) {
+    if (!n?.number) continue;
+    const b = { ...base(n), ref: `${n.repository?.nameWithOwner} PR #${n.number}` };
+    commentMarks[b.key] = latestFromOthers([
+      ...(n.comments?.nodes || []).map((c) => ({ at: c?.createdAt, who: c?.author?.login })),
+      ...(n.reviews?.nodes || []).map((c) => ({ at: c?.submittedAt, who: c?.author?.login })),
+    ], (who) => who === me);
+    authoredMeta[b.key] = { title: b.title, url: b.url, ref: b.ref };
+    const commit = n.commits?.nodes?.[0]?.commit;
+    const state = commit?.statusCheckRollup?.state;
+    if (state === 'FAILURE' || state === 'ERROR') items.push({ ...b, kind: 'failing', signal: commit?.oid || '' });
+  }
+  return { host, status: 'ok', items, commentMarks, authoredMeta };
+}
+
+/**
+ * The time of the newest comment someone else wrote, or '' when there is none. The user's own
+ * replies and bots do not count: a reply to the reviewer is not something waiting on the user.
+ */
+export function latestFromOthers(entries, isMe) {
+  let latest = '';
+  for (const e of entries) {
+    if (!e?.at || !e.who || isMe(e.who) || /\[bot\]$|-bot$/i.test(e.who)) continue;
+    if (e.at > latest) latest = e.at;
+  }
+  return latest;
+}
+
+// ---------------------------------------------------------------------------------------------
+// GitLab
+
+/** GET with a PRIVATE-TOKEN header and a hard timeout. Never rejects with anything but errors. */
+export function gitlabGet(url, token, timeoutMs = HOST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { headers: { 'PRIVATE-TOKEN': token }, timeout: timeoutMs }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+export function readGitHosts(file = defaultHostsPath()) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const list = Array.isArray(raw?.gitlab) ? raw.gitlab : [];
+    return list
+      .filter((h) => h && typeof h.url === 'string' && h.url.trim() && typeof h.token === 'string' && h.token)
+      .map((h) => ({ url: h.url.trim().replace(/\/+$/, ''), token: h.token }));
+  } catch {
+    return [];
+  }
+}
+
+export async function collectGitlab({ host, fetchJson = gitlabGet, timeoutMs = HOST_TIMEOUT_MS }) {
+  const id = `gitlab:${host.url}`;
+  const get = async (p) => {
+    const r = await fetchJson(`${host.url}${p}`, host.token, timeoutMs);
+    if (r.status === 401) { const e = new Error('refused'); e.refused = true; throw e; }
+    if (r.status !== 200) throw new Error(`status ${r.status}`);
+    return JSON.parse(r.body);
+  };
+  try {
+    const me = await get('/api/v4/user');
+    const [assigned, review, authored] = await Promise.all([
+      get(`/api/v4/issues?scope=assigned_to_me&state=opened&per_page=${MAX_PER_SEARCH}`),
+      get(`/api/v4/merge_requests?scope=all&state=opened&reviewer_id=${me.id}&per_page=${MAX_PER_SEARCH}`),
+      get(`/api/v4/merge_requests?scope=created_by_me&state=opened&per_page=${MAX_PER_SEARCH}`),
+    ]);
+    const items = [];
+    const commentMarks = {};
+    const authoredMeta = {};
+    const base = (x) => ({
+      key: `${id}:${x.references?.full || `${x.project_id}${x.iid}`}`,
+      title: x.title,
+      url: x.web_url,
+      at: x.updated_at,
+      ref: x.references?.full || String(x.iid),
+    });
+    for (const x of Array.isArray(assigned) ? assigned : []) items.push({ ...base(x), kind: 'assigned', signal: '' });
+    for (const x of Array.isArray(review) ? review : []) items.push({ ...base(x), kind: 'review', signal: '', who: x.author?.username || '' });
+    const mine = Array.isArray(authored) ? authored : [];
+    // The list endpoint carries neither the pipeline nor who wrote the notes; ask for the first
+    // few MRs one by one, both questions at once.
+    const looked = mine.slice(0, MAX_FAILING_LOOKUPS);
+    const [detail, notes] = await Promise.all([
+      Promise.all(looked.map((x) => get(`/api/v4/projects/${x.project_id}/merge_requests/${x.iid}`).catch(() => null))),
+      Promise.all(looked.map((x) => get(`/api/v4/projects/${x.project_id}/merge_requests/${x.iid}/notes?sort=desc&order_by=created_at&per_page=20`).catch(() => null))),
+    ]);
+    looked.forEach((x, i) => {
+      const b = base(x);
+      authoredMeta[b.key] = { title: b.title, url: b.url, ref: b.ref };
+      if (Array.isArray(notes[i])) {
+        commentMarks[b.key] = latestFromOthers(
+          notes[i].filter((n) => !n?.system).map((n) => ({ at: n.created_at, who: n.author?.bot ? 'x-bot' : String(n.author?.id ?? '') })),
+          (who) => who === String(me.id),
+        );
+      }
+      const p = detail[i]?.head_pipeline;
+      if (p?.status === 'failed') items.push({ ...b, kind: 'failing', signal: p.sha || x.sha || '' });
+    });
+    return { host: id, status: 'ok', items, commentMarks, authoredMeta };
+  } catch (err) {
+    return { host: id, status: err?.refused ? 'refused' : 'error', items: [] };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// What is new, and what the user sees
+
+const idOf = (i) => `${i.key}:${i.kind}:${i.signal || ''}`;
+
+/**
+ * @param {object} state      previous state file contents ({} when none)
+ * @param {Array}  results    collector answers: { host, status, items, commentMarks?, authoredMeta? }
+ * @param {Date}   now
+ * @returns {{ state, fresh, expired, firstToday }}
+ */
+export function decide(state, results, now) {
+  const prev = state && typeof state === 'object' ? state : {};
+  const day = localDateOnly(now);
+  const firstToday = prev.day !== day;
+  const shown = new Set(firstToday ? [] : (prev.shownToday || []));
+  const hosts = { ...(prev.hosts || {}) };
+  const baseline = { ...(prev.commentBaseline || {}) };
+  const prevItems = Array.isArray(prev.items) ? prev.items : [];
+  const expired = [];
+  const current = [];
+  // Items of a host that did not answer this time: kept for the pane, marked stale, never listed
+  // as new — otherwise yesterday's list comes back every morning the host is unreachable.
+  const carried = [];
+
+  for (const r of results) {
+    if (!r || !r.host) continue;
+    if (r.status === 'ok') {
+      hosts[r.host] = 'ok';
+      for (const i of r.items || []) current.push({ ...i, host: r.host });
+      for (const [k, mark] of Object.entries(r.commentMarks || {})) {
+        const before = baseline[k];
+        if (before !== undefined && mark && mark > before) {
+          const meta = r.authoredMeta?.[k] || {};
+          current.push({ key: k, kind: 'comment', signal: String(mark), title: meta.title || k, url: meta.url || '', ref: meta.ref || k, host: r.host });
+        }
+        baseline[k] = mark;
+      }
+      // A comment flagged earlier today stays in the pane for the rest of the day.
+      if (!firstToday) {
+        for (const p of prevItems) {
+          if (p.host === r.host && p.kind === 'comment' && !current.some((c) => c.key === p.key && c.kind === 'comment')) current.push(p);
+        }
+      }
+      continue;
+    }
+    if (r.status === 'refused' && (hosts[r.host] === 'ok' || hosts[r.host] === 'expired')) {
+      hosts[r.host] = 'expired';
+      expired.push(r.host);
+    }
+    // Not answered this time. Signed out or uninstalled: its items are gone. Otherwise the pane
+    // keeps them, marked stale.
+    if (r.status !== 'absent') {
+      for (const p of prevItems) if (p.host === r.host) carried.push({ ...p, stale: true });
+    }
+  }
+
+  const fresh = current.filter((i) => !shown.has(idOf(i)));
+  for (const i of fresh) shown.add(idOf(i));
+
+  return {
+    firstToday,
+    fresh,
+    expired,
+    state: {
+      day,
+      lastCheckAt: localIsoTimestamp(now),
+      shownToday: [...shown],
+      commentBaseline: baseline,
+      hosts,
+      items: [...current, ...carried],
+    },
+  };
+}
+
+function hostName(h) {
+  try { return new URL(h.replace(/^gitlab:/, '')).host; } catch { return h; }
+}
+
+/** The user-facing text, or null when there is nothing to say. `t` is hooks/lib/i18n.js's t. */
+export function render({ fresh, expired, firstToday }, t) {
+  const lines = [];
+  if (fresh.length) {
+    lines.push(t(firstToday ? 'pendingItems.header.all' : 'pendingItems.header.new', { count: fresh.length }));
+    // Someone waiting on the user comes first: a review request, then the user's own PR that
+    // broke or got an answer, then the issues assigned to them.
+    const order = { review: 0, failing: 1, comment: 2, assigned: 3 };
+    const sorted = [...fresh].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
+    for (const i of sorted.slice(0, MAX_LINES)) {
+      lines.push(t('pendingItems.item', {
+        label: t(`pendingItems.kind.${i.kind}`), title: i.title, ref: i.ref, url: i.url,
+      }));
+    }
+    if (fresh.length > MAX_LINES) lines.push(t('pendingItems.more', { count: fresh.length - MAX_LINES }));
+  }
+  for (const h of expired) {
+    lines.push(h === 'github'
+      ? t('pendingItems.expired.github')
+      : t('pendingItems.expired.gitlab', { host: hostName(h) }));
+  }
+  return lines.length ? lines.join('\n') : null;
+}
+
+export function isDue(state, now, minutes = RECHECK_MINUTES) {
+  const last = Date.parse(state?.lastCheckAt || '');
+  if (!Number.isFinite(last)) return true;
+  return now.getTime() - last >= minutes * 60 * 1000;
+}
+
+export function readState(statePath = defaultStatePath()) {
+  try { return JSON.parse(fs.readFileSync(statePath, 'utf8')) || {}; } catch { return {}; }
+}
+
+function writeState(statePath, state) {
+  const tmp = `${statePath}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+    fs.renameSync(tmp, statePath);
+  } catch {
+    // The pane shows the previous list; the next check writes again.
+    try { fs.unlinkSync(tmp); } catch { /* nothing was written */ }
+  }
+}
+
+export function defaultCollectors({ hostsPath = defaultHostsPath() } = {}) {
+  return [
+    { host: 'github', run: () => collectGithub() },
+    ...readGitHosts(hostsPath).map((host) => ({ host: `gitlab:${host.url}`, run: () => collectGitlab({ host }) })),
+  ];
+}
+
+/**
+ * Every collector in parallel, under one shared deadline. A collector still running when the
+ * deadline passes counts as an error for its host (its items stay in the pane, marked stale).
+ * Collectors are either functions or { host, run }.
+ */
+export async function runCollectors(collectors, budgetMs = TOTAL_BUDGET_MS) {
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, budgetMs); });
+  try {
+    return await Promise.all(collectors.map((c) => {
+      const run = typeof c === 'function' ? c : c.run;
+      const late = deadline.then(() => (typeof c === 'function' ? null : { host: c.host, status: 'error', items: [] }));
+      return Promise.race([Promise.resolve().then(run).catch(() => null), late]);
+    }));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Run every collector in parallel, update the state file, and say what the user should see.
+ * @returns {Promise<{ text: string|null, fresh: Array, expired: Array }>}
+ */
+export async function checkPendingItems({
+  statePath = defaultStatePath(),
+  collectors = defaultCollectors(),
+  now = new Date(),
+  t,
+  budgetMs = TOTAL_BUDGET_MS,
+} = {}) {
+  if (process.env.OWNMIND_PENDING_ITEMS === 'off') return { text: null, fresh: [], expired: [] };
+  try {
+    const results = await runCollectors(collectors, budgetMs);
+    const verdict = decide(readState(statePath), results.filter(Boolean), now);
+    writeState(statePath, verdict.state);
+    return { text: render(verdict, t), fresh: verdict.fresh, expired: verdict.expired };
+  } catch {
+    return { text: null, fresh: [], expired: [] };
+  }
+}
+
+/** The per-prompt entry point: check only when the last check is an hour old. */
+export async function recheckPendingItemsIfDue({ statePath = defaultStatePath(), now = new Date(), t, collectors } = {}) {
+  if (process.env.OWNMIND_PENDING_ITEMS === 'off') return { text: null, fresh: [], expired: [] };
+  if (!isDue(readState(statePath), now)) return { text: null, fresh: [], expired: [] };
+  return checkPendingItems({ statePath, now, t, ...(collectors && { collectors }) });
+}
+
+/** The model-facing note that rides along with the user-facing text. English by policy. */
+export function contextNote(text) {
+  if (!text) return '';
+  return [
+    '[OwnMind] The user was just shown these items waiting on them on GitHub / GitLab:',
+    text,
+    'You do not need to repeat the list. If the user asks to handle one, open its link.',
+  ].join('\n');
+}

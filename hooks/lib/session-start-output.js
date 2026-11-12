@@ -23,6 +23,7 @@ import { renderSessionContext } from './render-session-context.js';
 import { roleForProfile, fetchBugReportNotifications } from './bug-report-notifications.js';
 import { missingSkillsFor, missingSkillNotice } from './missing-skills.js';
 import { t } from './i18n.js';
+import { checkPendingItems, contextNote } from './pending-items.js';
 import { readCredentials, resolveProjectName } from '../../shared/helpers.js';
 import { fetchProjectTasks } from './fetch-project-tasks.js';
 import { fetchPendingHandoffs, mergeHandoffs, markConsolidationShown, consolidationMarksOn } from './session-live-state.js';
@@ -82,6 +83,9 @@ const pendingHandoffs = (() => {
     return fetchPendingHandoffs({ apiUrl, apiKey });
   } catch { return Promise.resolve(null); }
 })();
+// v1.33.4 — issues, PRs and MRs waiting on the user (issue #203). Started here and awaited just
+// before the write, so its timeout overlaps the fetches above instead of adding to them.
+const pendingItems = checkPendingItems({ t }).catch(() => ({ text: null }));
 
 try {
   const { apiKey, apiUrl } = readCredentials();
@@ -116,7 +120,7 @@ const missingSkills = missingSkillsFor(initData, {
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   claudeConfigDir: process.env.CLAUDE_CONFIG_DIR,
 });
-const systemMessage = missingSkillNotice(missingSkills, t);
+const skillNotice = missingSkillNotice(missingSkills, t);
 
 try {
   initData = mergeHandoffs(initData, await pendingHandoffs);
@@ -173,11 +177,15 @@ const marksAfterOutput = () => {
 //
 // That last line is the 10.66s from the original paragraph, reproduced. 300ms buys the clean
 // exit and stays far inside the hook's 10s budget.
+const pendingText = (await pendingItems).text;
+// What the person sees: the missing-skill notice, then the items waiting on them.
+const systemMessage = [skillNotice, pendingText].filter(Boolean).join('\n\n');
+
 process.stdout.write(JSON.stringify({
   ...(systemMessage && { systemMessage }),
   hookSpecificOutput: {
     hookEventName: 'SessionStart',
-    additionalContext
+    additionalContext: pendingText ? `${additionalContext}\n${contextNote(pendingText)}` : additionalContext
   }
 }), () => {
   marksAfterOutput().then(() => {
