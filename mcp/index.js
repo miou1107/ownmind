@@ -284,6 +284,7 @@ const TYPE_MAP = {
   ownmind_task_done: 'Task card finished',
   ownmind_task_drop: 'Task card handed back',
   ownmind_task_reopen: 'Task card reopened',
+  ownmind_bug_report_status: 'Bug report status recorded',
   ownmind_dismiss_notice: 'Notice turned off',
   ownmind_log_session: 'Session logged',
   ownmind_get_secret: 'Secret management',
@@ -884,6 +885,20 @@ const TOOLS = [
         reason: { type: "string", description: "Why it is handed back" },
       },
       required: ["id", "reason"],
+    },
+  },
+  {
+    name: "ownmind_bug_report_status",
+    description: "Record what was decided about a bug report (admins only): triaged, in_progress, fixed, or wontfix with a reason. Call this when the person says a report is handled, is being worked on, or will not be fixed. fixed and wontfix close the report, and the person who sent it is told at their next conversation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Bug report id" },
+        status: { type: "string", enum: ["triaged", "in_progress", "fixed", "wontfix"], description: "The new status" },
+        status_reason: { type: "string", enum: ["by_design", "duplicate", "low_priority", "cannot_reproduce", "wontfix_other"], description: "(required with wontfix) Why it will not be fixed" },
+        status_reason_note: { type: "string", description: "(required with wontfix_other; optional otherwise) One line the reporter reads" },
+      },
+      required: ["id", "status"],
     },
   },
   {
@@ -1586,6 +1601,14 @@ async function handleTool(name, args) {
         reason: args.reason, sync_token: currentSyncToken,
       });
       logEvent('task_drop', { id: args.id });
+      return data;
+    }
+
+    case "ownmind_bug_report_status": {
+      const data = await callApi("PATCH", `/api/bug-reports/${encodeURIComponent(String(args.id))}/status`, {
+        status: args.status, status_reason: args.status_reason, status_reason_note: args.status_reason_note,
+      });
+      logEvent('bug_report_status', { id: args.id, status: args.status });
       return data;
     }
 

@@ -252,7 +252,8 @@ router.get('/notifications', auth, async (req, res) => {
       // Reports I sent that are resolved but not yet read.
       const reporterRows = await query(
         `SELECT id, title, status, status_reason, status_reason_note,
-                bug_fingerprint, resolved_at
+                bug_fingerprint, resolved_at,
+                (SELECT name FROM users WHERE id = bug_reports.user_id) AS reporter_name
            FROM bug_reports
           WHERE user_id = $1
             AND resolved_at IS NOT NULL
@@ -291,7 +292,8 @@ router.get('/notifications', auth, async (req, res) => {
       const excludeOwn = muteOwn.rows.length > 0;
 
       const sql = `
-        SELECT id, title, severity, bug_fingerprint, user_id, created_at
+        SELECT id, title, severity, bug_fingerprint, user_id, created_at,
+               (SELECT name FROM users WHERE id = bug_reports.user_id) AS reporter_name
           FROM bug_reports
          WHERE status = 'new'
          ${excludeOwn ? 'AND user_id <> $1' : ''}
