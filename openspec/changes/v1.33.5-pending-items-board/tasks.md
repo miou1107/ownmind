@@ -1,0 +1,8 @@
+- [x] Items carry `project` (GitHub repository name; GitLab product label via `projectLabels`, else repository name)
+- [x] `readGitHosts` keeps `projectLabels` as string-to-string pairs only
+- [x] Comment items carry `project` and `at`
+- [x] Items carry `person`: the issue's opener (not the user), the PR's author, the last commenter who is not the user
+- [x] `hooks/pending-items-check.js` for the refresh button
+- [x] Pane: groups, fold, select, refresh, logos, days-ago, labels only where they differ
+- [x] Pane: select and refresh button share the first row; initials circle for `person` on each card
+- [x] Tests: tests/pending-items.test.js, mods/pending-items/hooks/pane.test.tsx

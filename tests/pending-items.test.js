@@ -22,10 +22,10 @@ const repo = (n) => ({ nameWithOwner: n });
 
 test('collectGithub: maps the three searches to items', async () => {
   const run = async () => ({ code: 0, stdout: ghPayload({
-    assigned: [{ number: 64, title: 'Morning message shows codes', url: 'https://github.com/example/app/issues/64', updatedAt: '2026-11-12T01:00:00Z', repository: repo('example/app') }],
+    assigned: [{ number: 64, title: 'Morning message shows codes', url: 'https://github.com/example/app/issues/64', updatedAt: '2026-11-12T01:00:00Z', author: { login: 'member-4', name: 'Jane Doe' }, repository: repo('example/app') }],
     review: [{ number: 7, title: 'Add a quota', url: 'https://github.com/example/api/pull/7', updatedAt: '2026-11-12T02:00:00Z', author: { login: 'member-2' }, repository: repo('example/api') }],
     authored: [
-      { number: 50, title: 'Skip button', url: 'https://github.com/example/web/pull/50', updatedAt: '2026-11-13T00:40:00Z', repository: repo('example/web'), comments: { nodes: [{ createdAt: '2026-11-12T09:00:00Z', author: { login: 'member-2' } }, { createdAt: '2026-11-12T10:00:00Z', author: { login: 'me' } }, { createdAt: '2026-11-12T11:00:00Z', author: { login: 'ci-helper[bot]' } }] }, reviews: { nodes: [{ submittedAt: '2026-11-12T08:00:00Z', author: { login: 'member-3' } }] }, commits: { nodes: [{ commit: { oid: 'abc', statusCheckRollup: { state: 'FAILURE' } } }] } },
+      { number: 50, title: 'Skip button', url: 'https://github.com/example/web/pull/50', updatedAt: '2026-11-13T00:40:00Z', repository: repo('example/web'), comments: { nodes: [{ createdAt: '2026-11-12T09:00:00Z', author: { login: 'member-2', name: 'Alex Lee' } }, { createdAt: '2026-11-12T10:00:00Z', author: { login: 'me' } }, { createdAt: '2026-11-12T11:00:00Z', author: { login: 'ci-helper[bot]' } }] }, reviews: { nodes: [{ submittedAt: '2026-11-12T08:00:00Z', author: { login: 'member-3' } }] }, commits: { nodes: [{ commit: { oid: 'abc', statusCheckRollup: { state: 'FAILURE' } } }] } },
       { number: 51, title: 'Green one', url: 'https://github.com/example/web/pull/51', updatedAt: '2026-11-13T00:40:00Z', repository: repo('example/web'), comments: { nodes: [] }, reviews: { nodes: [] }, commits: { nodes: [{ commit: { oid: 'def', statusCheckRollup: { state: 'SUCCESS' } } }] } },
     ],
   }), stderr: '' });
@@ -42,6 +42,61 @@ test('collectGithub: maps the three searches to items', async () => {
   const review = r.items.find((i) => i.kind === 'review');
   assert.equal(review.who, 'member-2');
   assert.equal(review.ref, 'example/api PR #7');
+  // The pane groups cards by project: a GitHub item's project is its repository's name.
+  assert.deepEqual(Object.fromEntries(r.items.map((i) => [i.key, i.project])), {
+    'github:example/api#7': 'api', 'github:example/app#64': 'app', 'github:example/web#50': 'web',
+  });
+  assert.equal(r.authoredMeta['github:example/web#51'].project, 'web');
+  // Who is waiting, for the initials on the card: the name when GitHub has one, else the login.
+  assert.equal(r.items.find((i) => i.kind === 'assigned').person, 'Jane Doe');
+  assert.equal(review.person, 'member-2');
+  assert.deepEqual(r.commentWho, { 'github:example/web#50': 'Alex Lee' });
+});
+
+test('collectGithub: bots are never the person waiting (GraphQL names them without [bot])', async () => {
+  const bot = { __typename: 'Bot', login: 'dependabot' };
+  const run = async () => ({ code: 0, stdout: ghPayload({
+    review: [{ number: 8, title: 'Bump a package', url: 'https://github.com/example/api/pull/8', updatedAt: '2026-11-12T02:00:00Z', author: bot, repository: repo('example/api') }],
+    authored: [{ number: 52, title: 'Mine', url: 'https://github.com/example/web/pull/52', updatedAt: '2026-11-13T00:40:00Z', repository: repo('example/web'),
+      comments: { nodes: [{ createdAt: '2026-11-12T09:00:00Z', author: { __typename: 'User', login: 'member-2', name: 'Alex Lee' } }, { createdAt: '2026-11-12T12:00:00Z', author: { __typename: 'Bot', login: 'coverage-reporter' } }] },
+      reviews: { nodes: [] }, commits: { nodes: [] } }],
+  }), stderr: '' });
+  const r = await collectGithub({ run });
+  assert.equal(r.items.find((i) => i.kind === 'review').person, '');
+  // The bot's later comment neither counts as a reply nor names anyone.
+  assert.deepEqual(r.commentMarks, { 'github:example/web#52': '2026-11-12T09:00:00Z' });
+  assert.deepEqual(r.commentWho, { 'github:example/web#52': 'Alex Lee' });
+});
+
+test('collectGitlab: a self-reviewed MR and token bots name nobody', async () => {
+  const host = { url: 'https://git.example.com', token: 'x', projectLabels: {} };
+  const routes = {
+    '/api/v4/user': { id: 9, username: 'me' },
+    '/api/v4/issues?scope=assigned_to_me&state=opened&per_page=30': [],
+    '/api/v4/merge_requests?scope=all&state=opened&reviewer_id=9&per_page=30': [{ iid: 7, project_id: 1, title: 'Self review', web_url: 'https://git.example.com/g/p/-/merge_requests/7', updated_at: '2026-11-12T03:00:00Z', references: { full: 'g/p!7' }, author: { id: 9, username: 'me', name: 'Me Myself' } }],
+    '/api/v4/merge_requests?scope=created_by_me&state=opened&per_page=30': [{ iid: 8, project_id: 1, title: 'Mine', web_url: 'https://git.example.com/g/p/-/merge_requests/8', updated_at: '2026-11-13T07:32:00Z', references: { full: 'g/p!8' } }],
+    '/api/v4/projects/1/merge_requests/8': { head_pipeline: null },
+    '/api/v4/projects/1/merge_requests/8/notes?sort=desc&order_by=created_at&per_page=20': [
+      { created_at: '2026-11-13T08:00:00Z', system: false, author: { id: 50, username: 'project_1_bot_abc123', name: 'Release token' } },
+      { created_at: '2026-11-13T07:40:00Z', system: false, author: { id: 3, username: 'member-3', name: 'Sam Wu' } },
+    ],
+  };
+  const fetchJson = async (url) => {
+    const p = url.replace('https://git.example.com', '');
+    return p in routes ? { status: 200, body: JSON.stringify(routes[p]) } : { status: 404, body: '{}' };
+  };
+  const r = await collectGitlab({ host, fetchJson });
+  assert.equal(r.items.find((i) => i.kind === 'review').person, '');
+  assert.deepEqual(r.commentMarks, { 'gitlab:https://git.example.com:g/p!8': '2026-11-13T07:40:00Z' });
+  assert.deepEqual(r.commentWho, { 'gitlab:https://git.example.com:g/p!8': 'Sam Wu' });
+});
+
+test('collectGithub: an issue the user opened and assigned to themself names nobody', async () => {
+  const run = async () => ({ code: 0, stdout: ghPayload({
+    assigned: [{ number: 3, title: 'Note to self', url: 'https://github.com/example/app/issues/3', updatedAt: '2026-11-12T01:00:00Z', author: { login: 'me', name: 'Me Myself' }, repository: repo('example/app') }],
+  }), stderr: '' });
+  const r = await collectGithub({ run });
+  assert.equal(r.items[0].person, '');
 });
 
 test('collectGithub: bad credentials is refused, a missing CLI or no login is absent, a timeout is an error', async () => {
@@ -52,21 +107,23 @@ test('collectGithub: bad credentials is refused, a missing CLI or no login is ab
 });
 
 test('collectGitlab: 401 on /user is refused; assigned, review and failing MRs are mapped', async () => {
-  const host = { url: 'https://git.example.com', token: 'x' };
+  // One repository holding several products: its issues carry a label per product, and the
+  // host entry names which labels are products, so the pane can group them apart.
+  const host = { url: 'https://git.example.com', token: 'x', projectLabels: { billing: 'Billing' } };
   const refused = await collectGitlab({ host, fetchJson: async () => ({ status: 401, body: '{}' }) });
   assert.equal(refused.status, 'refused');
   assert.equal(refused.host, 'gitlab:https://git.example.com');
 
   const routes = {
     '/api/v4/user': { id: 9, username: 'me' },
-    '/api/v4/issues?scope=assigned_to_me&state=opened&per_page=30': [{ iid: 112, project_id: 1, title: 'Price warning', web_url: 'https://git.example.com/g/p/-/issues/112', updated_at: '2026-11-13T05:50:00Z', references: { full: 'g/p#112' } }],
-    '/api/v4/merge_requests?scope=all&state=opened&reviewer_id=9&per_page=30': [{ iid: 401, project_id: 1, title: 'Quota', web_url: 'https://git.example.com/g/p/-/merge_requests/401', updated_at: '2026-11-12T03:00:00Z', references: { full: 'g/p!401' }, author: { username: 'member-2' } }],
+    '/api/v4/issues?scope=assigned_to_me&state=opened&per_page=30': [{ iid: 112, project_id: 1, title: 'Price warning', web_url: 'https://git.example.com/g/p/-/issues/112', updated_at: '2026-11-13T05:50:00Z', references: { full: 'g/p#112' }, labels: ['enhancement', 'billing'], author: { id: 4, username: 'member-4', name: 'Jane Doe' } }],
+    '/api/v4/merge_requests?scope=all&state=opened&reviewer_id=9&per_page=30': [{ iid: 401, project_id: 1, title: 'Quota', web_url: 'https://git.example.com/g/p/-/merge_requests/401', updated_at: '2026-11-12T03:00:00Z', references: { full: 'g/p!401' }, author: { id: 2, username: 'member-2', name: 'Alex Lee' } }],
     '/api/v4/merge_requests?scope=created_by_me&state=opened&per_page=30': [{ iid: 405, project_id: 1, title: 'Background upload', web_url: 'https://git.example.com/g/p/-/merge_requests/405', updated_at: '2026-11-13T07:32:00Z', references: { full: 'g/p!405' }, user_notes_count: 4, sha: 'f00' }],
     '/api/v4/projects/1/merge_requests/405': { head_pipeline: { status: 'failed', sha: 'f00' } },
     '/api/v4/projects/1/merge_requests/405/notes?sort=desc&order_by=created_at&per_page=20': [
       { created_at: '2026-11-13T07:40:00Z', system: false, author: { id: 9 } },
       { created_at: '2026-11-13T07:35:00Z', system: true, author: { id: 3 } },
-      { created_at: '2026-11-13T07:32:00Z', system: false, author: { id: 3 } },
+      { created_at: '2026-11-13T07:32:00Z', system: false, author: { id: 3, name: 'Sam Wu' } },
     ],
   };
   const fetchJson = async (url) => {
@@ -79,6 +136,10 @@ test('collectGitlab: 401 on /user is refused; assigned, review and failing MRs a
     'g/p!401:review', 'g/p!405:failing', 'g/p#112:assigned',
   ]);
   assert.deepEqual(r.commentMarks, { 'gitlab:https://git.example.com:g/p!405': '2026-11-13T07:32:00Z' });
+  // A product label wins; without one the project is the repository's name.
+  assert.deepEqual(r.items.map((i) => `${i.ref}:${i.project}`).sort(), ['g/p!401:p', 'g/p!405:p', 'g/p#112:Billing']);
+  assert.deepEqual(r.items.map((i) => `${i.ref}:${i.person ?? ''}`).sort(), ['g/p!401:Alex Lee', 'g/p!405:', 'g/p#112:Jane Doe']);
+  assert.deepEqual(r.commentWho, { 'gitlab:https://git.example.com:g/p!405': 'Sam Wu' });
 });
 
 const item = (key, kind, signal = '') => ({ key, kind, signal, title: key, url: `https://x/${key}`, ref: key });
@@ -104,10 +165,14 @@ test('decide: first check of the day lists everything; later the same day only w
 
 test('decide: a new comment is flagged only after a baseline exists, and a new commit re-lists a failing PR', () => {
   const now = new Date('2026-11-13T09:00:00+08:00');
-  const r1 = decide({}, [{ host: 'github', status: 'ok', items: [], commentMarks: { 'github:e/w#5': 2 } }], now);
+  const r1 = decide({}, [{ host: 'github', status: 'ok', items: [], commentMarks: { 'github:e/w#5': '2026-11-13T08:00:00Z' } }], now);
   assert.equal(r1.fresh.length, 0);
-  const r2 = decide(r1.state, [{ host: 'github', status: 'ok', items: [], commentMarks: { 'github:e/w#5': 3 } }], new Date('2026-11-13T10:30:00+08:00'));
+  const r2 = decide(r1.state, [{ host: 'github', status: 'ok', items: [], commentMarks: { 'github:e/w#5': '2026-11-13T09:00:00Z' }, commentWho: { 'github:e/w#5': 'Alex Lee' }, authoredMeta: { 'github:e/w#5': { title: 'w', url: 'u', ref: 'e/w PR #5', project: 'w' } } }], new Date('2026-11-13T10:30:00+08:00'));
   assert.deepEqual(r2.fresh.map((i) => `${i.key}:${i.kind}`), ['github:e/w#5:comment']);
+  // The comment card sits in its project's group and dates from the comment.
+  assert.equal(r2.fresh[0].project, 'w');
+  assert.equal(r2.fresh[0].at, '2026-11-13T09:00:00Z');
+  assert.equal(r2.fresh[0].person, 'Alex Lee');
 
   const f1 = item('github:e/w#6', 'failing', 'sha1');
   const r3 = decide(r2.state, [{ host: 'github', status: 'ok', items: [f1], commentMarks: {} }], new Date('2026-11-13T11:00:00+08:00'));
@@ -186,7 +251,10 @@ test('readGitHosts: a missing or malformed file means no GitLab hosts', () => {
   fs.writeFileSync(f, '{not json');
   assert.deepEqual(readGitHosts(f), []);
   fs.writeFileSync(f, JSON.stringify({ gitlab: [{ url: 'https://git.example.com/', token: 't' }, { url: '', token: 'x' }] }));
-  assert.deepEqual(readGitHosts(f), [{ url: 'https://git.example.com', token: 't' }]);
+  assert.deepEqual(readGitHosts(f), [{ url: 'https://git.example.com', token: 't', projectLabels: {} }]);
+  // Only label -> name pairs of strings are kept from projectLabels.
+  fs.writeFileSync(f, JSON.stringify({ gitlab: [{ url: 'https://git.example.com', token: 't', projectLabels: { billing: 'Billing', bad: 3 } }] }));
+  assert.deepEqual(readGitHosts(f), [{ url: 'https://git.example.com', token: 't', projectLabels: { billing: 'Billing' } }]);
 });
 
 test('render: more than ten items show ten lines and a count of the rest', () => {

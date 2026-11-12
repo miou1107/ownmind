@@ -42,15 +42,15 @@ export function defaultHostsPath(home = os.homedir()) {
 const GH_QUERY = `query {
   viewer { login }
   assigned: search(query: "is:open is:issue assignee:@me archived:false", type: ISSUE, first: ${MAX_PER_SEARCH}) {
-    nodes { ... on Issue { number title url updatedAt repository { nameWithOwner } } }
+    nodes { ... on Issue { number title url updatedAt author { __typename login ... on User { name } } repository { nameWithOwner } } }
   }
   review: search(query: "is:open is:pr review-requested:@me archived:false", type: ISSUE, first: ${MAX_PER_SEARCH}) {
-    nodes { ... on PullRequest { number title url updatedAt author { login } repository { nameWithOwner } } }
+    nodes { ... on PullRequest { number title url updatedAt author { __typename login ... on User { name } } repository { nameWithOwner } } }
   }
   authored: search(query: "is:open is:pr author:@me archived:false", type: ISSUE, first: ${MAX_PER_SEARCH}) {
     nodes { ... on PullRequest { number title url updatedAt repository { nameWithOwner }
-      comments(last: 10) { nodes { createdAt author { login } } }
-      reviews(last: 10) { nodes { submittedAt author { login } } }
+      comments(last: 10) { nodes { createdAt author { __typename login ... on User { name } } } }
+      reviews(last: 10) { nodes { submittedAt author { __typename login ... on User { name } } } }
       commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } } } }
   }
 }`;
@@ -113,47 +113,84 @@ export async function collectGithub({ run = runGh, timeoutMs = HOST_TIMEOUT_MS }
 
   const items = [];
   const commentMarks = {};
+  const commentWho = {};
   const authoredMeta = {};
   const base = (n) => ({
     key: `github:${n.repository?.nameWithOwner}#${n.number}`,
     title: n.title,
     url: n.url,
     at: n.updatedAt,
+    // The side pane groups cards by project; on GitHub that is the repository's name.
+    project: String(n.repository?.nameWithOwner || '').split('/').pop() || '',
   });
   for (const n of data.assigned?.nodes || []) {
     if (!n?.number) continue;
-    items.push({ ...base(n), kind: 'assigned', signal: '', ref: `${n.repository?.nameWithOwner} issue #${n.number}` });
+    // The card shows who is waiting: whoever opened the issue, unless that was the user.
+    const opener = n.author?.login && n.author.login !== me ? personName(n.author) : '';
+    items.push({ ...base(n), kind: 'assigned', signal: '', ref: `${n.repository?.nameWithOwner} issue #${n.number}`, person: opener });
   }
   for (const n of data.review?.nodes || []) {
     if (!n?.number) continue;
-    items.push({ ...base(n), kind: 'review', signal: '', ref: `${n.repository?.nameWithOwner} PR #${n.number}`, who: n.author?.login || '' });
+    items.push({ ...base(n), kind: 'review', signal: '', ref: `${n.repository?.nameWithOwner} PR #${n.number}`, who: n.author?.login || '', person: personName(n.author) });
   }
   for (const n of data.authored?.nodes || []) {
     if (!n?.number) continue;
     const b = { ...base(n), ref: `${n.repository?.nameWithOwner} PR #${n.number}` };
-    commentMarks[b.key] = latestFromOthers([
-      ...(n.comments?.nodes || []).map((c) => ({ at: c?.createdAt, who: c?.author?.login })),
-      ...(n.reviews?.nodes || []).map((c) => ({ at: c?.submittedAt, who: c?.author?.login })),
+    const latest = latestOther([
+      ...(n.comments?.nodes || []).map((c) => ({ at: c?.createdAt, who: ghWho(c?.author), name: personName(c?.author) })),
+      ...(n.reviews?.nodes || []).map((c) => ({ at: c?.submittedAt, who: ghWho(c?.author), name: personName(c?.author) })),
     ], (who) => who === me);
-    authoredMeta[b.key] = { title: b.title, url: b.url, ref: b.ref };
+    commentMarks[b.key] = latest.at;
+    if (latest.name) commentWho[b.key] = latest.name;
+    authoredMeta[b.key] = { title: b.title, url: b.url, ref: b.ref, project: b.project };
     const commit = n.commits?.nodes?.[0]?.commit;
     const state = commit?.statusCheckRollup?.state;
     if (state === 'FAILURE' || state === 'ERROR') items.push({ ...b, kind: 'failing', signal: commit?.oid || '' });
   }
-  return { host, status: 'ok', items, commentMarks, authoredMeta };
+  return { host, status: 'ok', items, commentMarks, commentWho, authoredMeta };
 }
 
 /**
- * The time of the newest comment someone else wrote, or '' when there is none. The user's own
- * replies and bots do not count: a reply to the reviewer is not something waiting on the user.
+ * A person's display name, falling back to their login; '' for nobody and for bots. GitHub's
+ * GraphQL names a bot `dependabot`, not `dependabot[bot]`, so its __typename is what tells.
  */
-export function latestFromOthers(entries, isMe) {
-  let latest = '';
+export function personName(a) {
+  if (!a || a.__typename === 'Bot' || a.bot === true || isBotLogin(a.login || a.username || '')) return '';
+  for (const v of [a.name, a.login, a.username]) {
+    const t = typeof v === 'string' ? v.trim() : '';
+    if (t) return t;
+  }
+  return '';
+}
+
+// REST logins end in [bot]; GitLab's project and group access tokens are users named
+// project_42_bot_<hash> or group_7_bot_<hash>.
+function isBotLogin(login) {
+  return /\[bot\]$|-bot$|(^|_)bot(_|$)/i.test(String(login));
+}
+
+// Who wrote a GitHub comment, as latestOther expects it: a bot is marked so it is skipped.
+function ghWho(a) {
+  return a?.__typename === 'Bot' ? 'x-bot' : a?.login;
+}
+
+/**
+ * The newest comment someone else wrote: its time and its author's name, or '' for both. The
+ * user's own replies and bots do not count: a reply to the reviewer is not something waiting
+ * on the user.
+ */
+export function latestOther(entries, isMe) {
+  let latest = { at: '', name: '' };
   for (const e of entries) {
-    if (!e?.at || !e.who || isMe(e.who) || /\[bot\]$|-bot$/i.test(e.who)) continue;
-    if (e.at > latest) latest = e.at;
+    if (!e?.at || !e.who || isMe(e.who) || isBotLogin(e.who)) continue;
+    if (e.at > latest.at) latest = { at: e.at, name: e.name || '' };
   }
   return latest;
+}
+
+/** The time of the newest comment someone else wrote, or '' when there is none. */
+export function latestFromOthers(entries, isMe) {
+  return latestOther(entries, isMe).at;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -173,13 +210,28 @@ export function gitlabGet(url, token, timeoutMs = HOST_TIMEOUT_MS) {
   });
 }
 
+// { label: display name } pairs naming which labels stand for a product, for a repository that
+// holds several products. Anything that is not a string-to-string pair is dropped.
+function labelNames(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([k, n]) => k && typeof n === 'string' && n.trim()).map(([k, n]) => [k, n.trim()]));
+}
+
+// The project a GitLab issue or MR belongs to: a product label the host entry names, else the
+// repository's own name (the last part of `group/sub/repo#12`).
+function gitlabProject(x, projectLabels = {}) {
+  for (const l of Array.isArray(x.labels) ? x.labels : []) if (projectLabels[l]) return projectLabels[l];
+  const full = String(x.references?.full || '');
+  return full.replace(/[#!].*$/, '').split('/').pop() || '';
+}
+
 export function readGitHosts(file = defaultHostsPath()) {
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     const list = Array.isArray(raw?.gitlab) ? raw.gitlab : [];
     return list
       .filter((h) => h && typeof h.url === 'string' && h.url.trim() && typeof h.token === 'string' && h.token)
-      .map((h) => ({ url: h.url.trim().replace(/\/+$/, ''), token: h.token }));
+      .map((h) => ({ url: h.url.trim().replace(/\/+$/, ''), token: h.token, projectLabels: labelNames(h.projectLabels) }));
   } catch {
     return [];
   }
@@ -202,6 +254,7 @@ export async function collectGitlab({ host, fetchJson = gitlabGet, timeoutMs = H
     ]);
     const items = [];
     const commentMarks = {};
+    const commentWho = {};
     const authoredMeta = {};
     const base = (x) => ({
       key: `${id}:${x.references?.full || `${x.project_id}${x.iid}`}`,
@@ -209,9 +262,14 @@ export async function collectGitlab({ host, fetchJson = gitlabGet, timeoutMs = H
       url: x.web_url,
       at: x.updated_at,
       ref: x.references?.full || String(x.iid),
+      project: gitlabProject(x, host.projectLabels),
     });
-    for (const x of Array.isArray(assigned) ? assigned : []) items.push({ ...base(x), kind: 'assigned', signal: '' });
-    for (const x of Array.isArray(review) ? review : []) items.push({ ...base(x), kind: 'review', signal: '', who: x.author?.username || '' });
+    for (const x of Array.isArray(assigned) ? assigned : []) {
+      const opener = x.author && x.author.id !== me.id ? personName(x.author) : '';
+      items.push({ ...base(x), kind: 'assigned', signal: '', person: opener });
+    }
+    // GitLab lets the author list themself as a reviewer; their own MR names nobody.
+    for (const x of Array.isArray(review) ? review : []) items.push({ ...base(x), kind: 'review', signal: '', who: x.author?.username || '', person: x.author && x.author.id !== me.id ? personName(x.author) : '' });
     const mine = Array.isArray(authored) ? authored : [];
     // The list endpoint carries neither the pipeline nor who wrote the notes; ask for the first
     // few MRs one by one, both questions at once.
@@ -222,17 +280,19 @@ export async function collectGitlab({ host, fetchJson = gitlabGet, timeoutMs = H
     ]);
     looked.forEach((x, i) => {
       const b = base(x);
-      authoredMeta[b.key] = { title: b.title, url: b.url, ref: b.ref };
+      authoredMeta[b.key] = { title: b.title, url: b.url, ref: b.ref, project: b.project };
       if (Array.isArray(notes[i])) {
-        commentMarks[b.key] = latestFromOthers(
-          notes[i].filter((n) => !n?.system).map((n) => ({ at: n.created_at, who: n.author?.bot ? 'x-bot' : String(n.author?.id ?? '') })),
+        const latest = latestOther(
+          notes[i].filter((n) => !n?.system).map((n) => ({ at: n.created_at, who: n.author?.bot || isBotLogin(n.author?.username || '') ? 'x-bot' : String(n.author?.id ?? ''), name: personName(n.author) })),
           (who) => who === String(me.id),
         );
+        commentMarks[b.key] = latest.at;
+        if (latest.name) commentWho[b.key] = latest.name;
       }
       const p = detail[i]?.head_pipeline;
       if (p?.status === 'failed') items.push({ ...b, kind: 'failing', signal: p.sha || x.sha || '' });
     });
-    return { host: id, status: 'ok', items, commentMarks, authoredMeta };
+    return { host: id, status: 'ok', items, commentMarks, commentWho, authoredMeta };
   } catch (err) {
     return { host: id, status: err?.refused ? 'refused' : 'error', items: [] };
   }
@@ -245,7 +305,7 @@ const idOf = (i) => `${i.key}:${i.kind}:${i.signal || ''}`;
 
 /**
  * @param {object} state      previous state file contents ({} when none)
- * @param {Array}  results    collector answers: { host, status, items, commentMarks?, authoredMeta? }
+ * @param {Array}  results    collector answers: { host, status, items, commentMarks?, commentWho?, authoredMeta? }
  * @param {Date}   now
  * @returns {{ state, fresh, expired, firstToday }}
  */
@@ -272,7 +332,7 @@ export function decide(state, results, now) {
         const before = baseline[k];
         if (before !== undefined && mark && mark > before) {
           const meta = r.authoredMeta?.[k] || {};
-          current.push({ key: k, kind: 'comment', signal: String(mark), title: meta.title || k, url: meta.url || '', ref: meta.ref || k, host: r.host });
+          current.push({ key: k, kind: 'comment', signal: String(mark), title: meta.title || k, url: meta.url || '', ref: meta.ref || k, project: meta.project || '', at: String(mark), person: r.commentWho?.[k] || '', host: r.host });
         }
         baseline[k] = mark;
       }
@@ -363,10 +423,10 @@ function writeState(statePath, state) {
   }
 }
 
-export function defaultCollectors({ hostsPath = defaultHostsPath() } = {}) {
+export function defaultCollectors({ hostsPath = defaultHostsPath(), timeoutMs = HOST_TIMEOUT_MS } = {}) {
   return [
-    { host: 'github', run: () => collectGithub() },
-    ...readGitHosts(hostsPath).map((host) => ({ host: `gitlab:${host.url}`, run: () => collectGitlab({ host }) })),
+    { host: 'github', run: () => collectGithub({ timeoutMs }) },
+    ...readGitHosts(hostsPath).map((host) => ({ host: `gitlab:${host.url}`, run: () => collectGitlab({ host, timeoutMs }) })),
   ];
 }
 
