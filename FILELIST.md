@@ -4,17 +4,19 @@
 
 新增檔：
 ```
-hooks/lib/pending-items.js                              — collectGithub（gh api graphql 一次查三種：指派給我的 issue、請我審的 PR、我開的 PR 的測試結果與留言數）、collectGitlab（~/.ownmind/git-hosts.json 的每台 GitLab）、decide（當天第一次全列，之後只列新的；只看別人留的最新留言，自己的回覆與機器人不算；查不到的主機舊單只留在面板、標成過時；登入被拒且之前查得到才算過期）、render（最多 10 行）、checkPendingItems（所有主機一起查，總共最多等 2.5 秒）、recheckPendingItemsIfDue（超過 60 分鐘才再查）；清單存在 ~/.ownmind/state/pending-items.json；OWNMIND_PENDING_ITEMS=off 關閉
+hooks/lib/pending-items.js                              — collectGithub（gh api graphql 一次查三種：指派給我的 issue、請我審的 PR、我開的 PR 的測試結果與留言數）、collectGitlab（~/.ownmind/git-hosts.json 的每台 GitLab；projectLabels 指定哪些標籤代表產品）、每張單帶 project（GitHub 是 repo 名稱，GitLab 是產品標籤或 repo 名稱）、decide（當天第一次全列，之後只列新的；只看別人留的最新留言，自己的回覆與機器人不算；查不到的主機舊單只留在面板、標成過時；登入被拒且之前查得到才算過期）、render（最多 10 行）、checkPendingItems（所有主機一起查，總共最多等 2.5 秒）、recheckPendingItemsIfDue（超過 60 分鐘才再查）；清單存在 ~/.ownmind/state/pending-items.json；OWNMIND_PENDING_ITEMS=off 關閉
+hooks/pending-items-check.js                            — 面板的重新整理按鈕執行它：立刻查一次 GitHub、GitLab，改寫 ~/.ownmind/state/pending-items.json
 tests/pending-items.test.js                             — 三種查詢的對應、登入過期與逾時的分別、當天第一次與之後的差別、留言基準、10 行上限、每小時補查
 mods/pending-items/.claude-plugin/plugin.json           — Claude Code 外掛的名稱與版本
 mods/pending-items/hooks/hooks.json                     — 指向 register.tsx
-mods/pending-items/hooks/register.tsx                   — 「待處理單據」面板：每分鐘讀 ~/.ownmind/state/pending-items.json，一張單一列（狀態、可點的標題、單號），最下面寫最後檢查時間；有單時開對話自動打開，/pending-items 也能打開
-mods/pending-items/hooks/pane.test.tsx                  — 有單時面板自動打開並列出連結；沒有清單檔時不打開
+mods/pending-items/hooks/register.tsx                   — 「待處理單據」面板：每分鐘讀 ~/.ownmind/state/pending-items.json，依專案分組（色點、GitHub／GitLab 圖示、張數，點名稱收合並記住），專案選單篩選，重新整理按鈕跑 hooks/pending-items-check.js；卡片是標題連結、單號、幾天前（超過 14 天變橘色），只有待審核、測試未通過、待回覆加標籤；有單時開對話自動打開，/pending-items 也能打開
+mods/pending-items/hooks/pane.test.tsx                  — 分組、圖示、天數、標籤只在不同狀況出現；收合與專案選單；重新整理按鈕跑檢查程式；沒有清單檔時不打開
 mods/pending-items/types/index.d.ts                     — 面板讀的資料型別
 mods/pending-items/tsconfig.json
 scripts/privacy-scan.js                                 — 這個 repo 是公開的：檢查暫存區新增的每一行，對照 repo 外的 ~/.ownmind/privacy-terms.txt 與範例網域以外的信箱，只印檔名與行號；npm run privacy:scan
 tests/privacy-scan.test.js
 openspec/changes/v1.33.4-pending-items-reminder/        — proposal、spec、tasks
+openspec/changes/v1.33.5-pending-items-board/          — proposal、tasks
 ```
 
 修改檔：
