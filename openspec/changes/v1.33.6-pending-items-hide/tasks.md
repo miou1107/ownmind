@@ -1,0 +1,11 @@
+- [x] `hiddenPathFor`, `readHidden` in hooks/lib/pending-items.js
+- [x] `decide(state, results, now, hidden)` drops hidden keys from `fresh` and from the state's items
+- [x] `checkPendingItems` reads the hidden file beside its state file
+- [x] Pane: hide control (🔕, shown on hover at the end of the card's last row), confirmation through `$.ui.ask`, write the hidden file, redraw
+- [x] Pane: `refresh` filters hidden keys (the state file lists the item until the next check)
+- [x] Every item carries `person`, the user and bots included; `reporter_name` on bug report notifications
+- [x] Pane: avatar on every card with the full name as a tooltip; avatar, title and number on one row; no labels; a pull request shown as `!206`
+- [x] `describeOwnMindItem` and hooks/pending-items-show.js
+- [x] Pane: an OwnMind title fills the prompt box; the `prompt.submit` hook attaches the item in full
+- [x] MCP tool `ownmind_bug_report_status`
+- [x] Tests: tests/pending-items.test.js, mods/pending-items/hooks/pane.test.tsx

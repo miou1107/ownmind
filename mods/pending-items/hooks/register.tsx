@@ -6,7 +6,8 @@ import type { Item, View } from '../types'
 // The issues, PRs and MRs waiting on the user (issue #203), as a board: one group per project,
 // a card per item. The session-start and prompt hooks do the checking and keep the full list in
 // ~/.ownmind/state/pending-items.json; this pane reads that file, and its refresh button runs
-// the same check once more through hooks/pending-items-check.js.
+// the same check once more through hooks/pending-items-check.js. A card's hide button drops the
+// item for good: its key goes into pending-items-hidden.json, which the check reads as well.
 const PANE = 'pending-items'
 const TITLE = '待處理單據'
 const STALE_DAYS = 14
@@ -18,10 +19,6 @@ const filter = atom({ plugin: 'pending-items', key: 'filter' } as const, '', { s
 const collapsed = atom({ plugin: 'pending-items', key: 'collapsed' } as const, [] as string[], { shape: 'collapsed-1' })
 const busy = atom({ plugin: 'pending-items', key: 'busy' } as const, false, { shape: 'busy-1' })
 
-// Only the states that differ from a plain assignment get a label; every card in the pane is
-// already waiting on the user, so a "pending" label on each would say nothing.
-const LABEL: Partial<Record<Item['kind'], string>> = { review: '待審核', failing: '測試未通過', comment: '待回覆', resolved: '已解決' }
-const TONE: Partial<Record<Item['kind'], string>> = { review: 'warning', failing: 'error', comment: 'suggestion', resolved: 'success' }
 // Waiting first, then the newest change.
 const ORDER: Record<Item['kind'], number> = { review: 0, failing: 1, comment: 2, bug: 3, assigned: 4, task: 5, resolved: 6 }
 
@@ -50,8 +47,6 @@ const LANE_BG = 'rgba(127,127,127,0.10)'
 // dark cards in a dark one, each standing out from the grey group behind it.
 const CARD_BG = 'inverseText'
 const CARD_HOVER = 'rgba(127,127,127,0.08)'
-// Tinted pills, as on a kanban card: a faint fill in the label's own hue.
-const PILL: Partial<Record<Item['kind'], string>> = { review: 'rgba(234,179,8,0.18)', failing: 'rgba(239,68,68,0.16)', comment: 'rgba(59,130,246,0.16)', resolved: 'rgba(34,197,94,0.16)' }
 const COUNT_BG = 'rgba(99,102,241,0.14)'
 
 /** "Jane Doe" -> "JD", "member4" -> "M", a CJK name -> its first character; '' for nobody. */
@@ -69,8 +64,11 @@ export const initials = (name: string) => {
 // Hex is fine inside the Svg's own source; only Text colours have to come from the theme.
 const AVATAR_FILLS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
 const escapeXml = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
+// The <title> is the tooltip: the full name, shown while the pointer rests on the circle.
+// The circle stops half a unit short of the image's edge, so its rim is never cut where the
+// surface rounds the image's size.
 const avatarSvg = (text: string, name: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="${AVATAR_FILLS[hashOf(name) % AVATAR_FILLS.length]}"/>` +
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>${escapeXml(name)}</title><circle cx="10" cy="10" r="9.5" fill="${AVATAR_FILLS[hashOf(name) % AVATAR_FILLS.length]}"/>` +
   `<text x="10" y="10" dy="0.35em" text-anchor="middle" font-family="-apple-system,'Segoe UI',sans-serif" font-size="${[...text].length > 1 ? 8.5 : 10}" font-weight="600" fill="#fff">${escapeXml(text)}</text></svg>`
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -90,10 +88,10 @@ export const daysAgo = (iso: string, now = new Date()) => {
 }
 export const ageText = (d: number) => (d === 0 ? '今天' : d === 1 ? '昨天' : `${d} 天前`)
 
-/** `owner/repo issue #68` -> `#68`, `owner/repo PR #7` -> `PR #7`, `g/p#112` -> `#112`, `g/p!4` -> `!4`. */
+/** `owner/repo issue #68` -> `#68`, `owner/repo PR #7` -> `!7` (as GitLab writes a merge request), `g/p#112` -> `#112`, `g/p!4` -> `!4`. */
 export const shortRef = (ref: string) => {
   const gh = /\s(issue|PR)\s#(\d+)$/.exec(ref)
-  if (gh) return gh[1] === 'PR' ? `PR #${gh[2]}` : `#${gh[2]}`
+  if (gh) return gh[1] === 'PR' ? `!${gh[2]}` : `#${gh[2]}`
   const gl = /([#!]\d+)$/.exec(ref)
   return gl ? gl[1] : ref
 }
@@ -166,14 +164,91 @@ export const groupItems = (items: Item[]): Group[] => {
 }
 
 const statePath = async ($: any) => joinPath(await homeDir($), '.ownmind', 'state', 'pending-items.json')
+// The items the person hid from their cards. The pane writes this file; the check reads it too,
+// so a hidden item is not listed when a conversation starts either.
+const hiddenPath = async ($: any) => joinPath(await homeDir($), '.ownmind', 'state', 'pending-items-hidden.json')
+
+export type Hidden = { key: string; title: string; at: string }
+
+/** The hidden list in a file's text; null when the text is not such a file (half written, damaged). */
+export const parseHidden = (text: string): Hidden[] | null => {
+  try {
+    const list = JSON.parse(text)?.hidden
+    if (!Array.isArray(list)) return null
+    return list
+      .map((h: any) => (typeof h === 'string' ? { key: h } : h))
+      .filter((h: any) => h && typeof h.key === 'string' && h.key)
+      .map((h: any) => ({ key: h.key, title: String(h.title ?? ''), at: String(h.at ?? '') }))
+  } catch {
+    return null
+  }
+}
+
+// For drawing: whatever cannot be read hides nothing.
+const readHidden = async ($: any): Promise<Hidden[]> => {
+  try { return parseHidden(await $.fs.read(await hiddenPath($))) ?? [] } catch { return [] /* nothing hidden yet */ }
+}
+
+/**
+ * For writing: the list as it stands, or null when a file is there but cannot be read as one.
+ * Writing over such a file would bring every item hidden earlier back, so the caller must stop.
+ */
+const loadHidden = async ($: any, path: string): Promise<Hidden[] | null> => {
+  let text: string
+  try {
+    text = await $.fs.read(path)
+  } catch {
+    let isThere = false
+    try { isThere = await $.fs.exists(path) } catch { /* cannot tell: treated as not there */ }
+    return isThere ? null : []
+  }
+  return parseHidden(text)
+}
 
 const refresh = async ($: any) => {
   let next = EMPTY
   try {
     next = parseState(await $.fs.read(await statePath($)))
   } catch { /* no file yet: nothing has been checked on this machine */ }
+  // The state file still lists a hidden item until the next check rewrites it.
+  const hidden = new Set((await readHidden($)).map(h => h.key))
+  if (hidden.size > 0) next = { ...next, items: next.items.filter(i => !hidden.has(i.key)) }
   await update($, view, () => next)
   return next
+}
+
+// A long title is cut in the question; the card it came from is still on screen behind it.
+const ASK_TITLE_MAX = 30
+const HIDE = '隱藏'
+const HIDE_FAILED = 'OwnMind 沒有存下這次隱藏，請再按一次「隱藏」'
+// A bell with a slash, the emoji the product owner picked: hiding a card means never being
+// reminded of the item again. The pane's elements have no icon a Button may hold.
+export const HIDE_GLYPH = '\u{1F515}'
+// The width kept for the hide control at the end of a card's last row, in character cells:
+// room for one emoji.
+const HIDE_SLOT = 3
+
+/** Hides one item for good, after the person confirms: its card goes and it is never listed again. */
+const hideItem = async ($: any, i: Item) => {
+  const chars = [...i.title]
+  const title = chars.length > ASK_TITLE_MAX ? `${chars.slice(0, ASK_TITLE_MAX).join('')}…` : i.title
+  let answer = ''
+  try {
+    answer = await $.ui.ask(`注意！隱藏後不會再提醒。確定隱藏「${title}」？`, { options: [HIDE, '取消'], header: '隱藏單據' })
+  } catch { return /* dismissed: nothing is hidden */ }
+  if (answer !== HIDE) return
+  // Read again at the last moment: another window may have hidden something since this one drew.
+  const path = await hiddenPath($)
+  const list = await loadHidden($, path)
+  if (!list) { $.ui.toast(HIDE_FAILED); return }
+  if (!list.some(h => h.key === i.key)) list.push({ key: i.key, title: i.title, at: new Date().toISOString() })
+  try {
+    await $.fs.write(path, JSON.stringify({ hidden: list }, null, 2))
+  } catch {
+    $.ui.toast(HIDE_FAILED)
+    return
+  }
+  await refresh($)
 }
 
 // The refresh button: ask GitHub and GitLab again, then reread the file. Node may not be on
@@ -182,6 +257,22 @@ const NODES = ['node', '/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bi
 // $.process.run rejects both when the program cannot start and when it outlives its timeout.
 // Only the first means "try the next place"; a check that ran out of time is not retried.
 const isTimeout = (err: unknown) => /time(d)?\s*out|timeout/i.test(String((err as any)?.message ?? err))
+// Where OwnMind's own scripts are installed.
+const hooksDir = async ($: any) => joinPath(await homeDir($), '.ownmind', 'hooks')
+/** Runs one of OwnMind's scripts with node and resolves to what it printed; null when it could not run. */
+const runScript = async ($: any, name: string, args: string[], timeoutMs: number): Promise<string | null> => {
+  const script = joinPath(await hooksDir($), name)
+  for (const node of NODES) {
+    try {
+      const r = await $.process.run([node, script, ...args], { timeoutMs })
+      return String(r?.stdout ?? '')
+    } catch (err) {
+      if (isTimeout(err)) return null
+    }
+  }
+  return null
+}
+
 let running = false
 const checkNow = async ($: any) => {
   // A plain flag, set before any await, so two quick presses start one check.
@@ -189,20 +280,50 @@ const checkNow = async ($: any) => {
   running = true
   await update($, busy, () => true)
   try {
-    const script = joinPath(await homeDir($), '.ownmind', 'hooks', 'pending-items-check.js')
-    for (const node of NODES) {
-      try {
-        await $.process.run([node, script], { timeoutMs: 30000 })
-        break
-      } catch (err) {
-        if (isTimeout(err)) break
-      }
-    }
+    await runScript($, 'pending-items-check.js', [], 30000)
     await refresh($)
   } finally {
     running = false
     await update($, busy, () => false)
   }
+}
+
+// OwnMind's own items are handled in the conversation, not on a web page: pressing the title of a
+// task card or a bug report puts a one-line request in the prompt box for the person to send, and
+// when they send it the prompt hook below hands the model the item in full.
+const TASK_WORD = '任務卡'
+const BUG_WORD = '問題回報'
+const OWN_KEY = /^ownmind:(task|bug)#(\d+)$/
+/** The request for an OwnMind item, e.g. "查看 OwnMind 任務卡 #3"; '' for any other item. */
+export const requestFor = (key: string) => {
+  const m = OWN_KEY.exec(key)
+  return m ? `查看 OwnMind ${m[1] === 'task' ? TASK_WORD : BUG_WORD} #${m[2]}` : ''
+}
+/**
+ * Which OwnMind item a prompt asks to see, or null. Only a line that is exactly the request the
+ * pane writes counts: a mention of an item's number in the middle of other text does not.
+ */
+export const requestedIn = (text: string) => {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    const id = /#(\d{1,9})$/.exec(line)?.[1]
+    if (!id) continue
+    if (line === requestFor(`ownmind:task#${id}`)) return { kind: 'task', id }
+    if (line === requestFor(`ownmind:bug#${id}`)) return { kind: 'bug', id }
+  }
+  return null
+}
+
+// Into the prompt box, after whatever the person has already typed there.
+const toPromptBox = async ($: any, text: string) => {
+  let draft = ''
+  try { draft = String((await $.prompt.read())?.text ?? '') } catch { /* no box to read: fill says so below */ }
+  let filled = false
+  try {
+    const r = await $.prompt.fill(draft.trim() ? { text: `\n${text}`, mode: 'append' } : { text })
+    filled = r?.isFilled !== false
+  } catch { /* refused: say so */ }
+  if (!filled) $.ui.toast('OwnMind 沒有把這句話放進輸入框，請再點一次標題')
 }
 
 // A pane cannot navigate, so a card's title opens the item in the person's default browser.
@@ -243,6 +364,20 @@ export const register: Register = on => {
     return { text: '待處理單據面板已打開。' }
   })
 
+  // A prompt asking to see an OwnMind task card or bug report gets the item in full attached, so
+  // the model answers from the item itself. Only a prompt the person sent themself counts (from
+  // the prompt box, here or through a remote control): a background task's notice, another
+  // session's message or another plugin's prompt that happens to quote the request must not pull
+  // a colleague's report into the turn. A slash command and a meta prompt are left alone too.
+  on('prompt.submit', async ($, e: any, next) => {
+    const kind = e?.origin?.kind
+    if ((kind !== 'composer' && kind !== 'bridge') || e.command || e.isMeta) return next(e)
+    const asked = requestedIn(String(e.text ?? ''))
+    if (!asked) return next(e)
+    const text = (await runScript($, 'pending-items-show.js', [asked.kind, asked.id], 10000))?.trim()
+    return text ? next({ ...e, context: [...(e.context ?? []), text] }) : next(e)
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Select, Svg } = $.ui.resolve(e) as any
     const graphical = e.surface !== 'terminal'
@@ -273,39 +408,60 @@ export const register: Register = on => {
         : <Text dimColor>{LOGO[source].name}</Text>
     }
 
-    // Who is waiting, as initials. The terminal has no Svg: it draws the letters in the person's colour.
+    // Who the card names (its opener, author or last commenter; the user themself and bots
+    // included), as initials. `isInteractive` is what lets the Svg's <title> show as a tooltip.
+    // The terminal has no Svg: it draws the letters in the person's colour.
     const avatar = (name: string) => {
       const text = initials(name)
       if (!text) return null
       return graphical && Svg
-        ? <Svg source={avatarSvg(text, name)} alt={name} width={20} height={20} />
+        ? <Svg source={avatarSvg(text, name)} alt={name} width={20} height={20} isInteractive />
         : <Text color={dotOf(name)} weight="semibold">{text}</Text>
     }
 
+    // A card: who it names, the title and the number on one row; then the age, with the hide
+    // control at the row's end. No label says why the item waits (review, failing tests, a new
+    // reply): the product owner asked for the cards without them.
     const card = (i: Item) => {
       const d = daysAgo(i.at)
       const stale = d !== null && d > STALE_DAYS
-      const label = LABEL[i.kind]
+      // A Button holds only text, so the hide control is an emoji, at the footer's own text size
+      // so the row keeps its height when it appears. No `label`: the desktop draws a label in
+      // place of the children.
+      const hide = <Button key={`hide:${i.key}:${i.kind}`} plain onPress={() => hideItem($, i)}><Text size="footnote">{HIDE_GLYPH}</Text></Button>
+      // The control shows only while the pointer is on the card (the keyed Box that scopes the
+      // hover), in a slot kept for it at the end of the last row: the row never shifts when it
+      // appears, and it lies over nothing. The terminal has no such reveal and always draws it.
+      const slot = (
+        <Box width={HIDE_SLOT} flexShrink={0} flexDirection="row" justifyContent="flex-end">
+          {graphical ? <Box display="none" hover={{ display: 'flex' }}>{hide}</Box> : hide}
+        </Box>
+      )
+      const who = avatar(i.person)
+      // The title opens the item (a GitHub or GitLab item in the browser; an OwnMind one as a request
+      // in the prompt box), drawn as plain text: a Link is blue and underlined, and as an
+      // inline anchor it ran a title just over one line long past the card's edge. Only a Button
+      // can be pressed and it holds only text, so the card as a whole cannot open the item; the
+      // title alone does. The desktop cuts a long title to one line. Showing the whole of it on
+      // hover was tried and dropped: no element here takes a tooltip but Svg, a strip laid over
+      // the card hid what was above it, and one in the flow made the card jump under the pointer.
+      const request = requestFor(i.key)
+      const press = request ? () => toPromptBox($, request) : i.url ? () => openUrl($, i.url) : null
+      const title = press
+        ? <Button key={`card:${i.key}:${i.kind}`} plain onPress={press}><Text weight="semibold" wrap="wrap">{i.title}</Text></Button>
+        : <Text weight="semibold" wrap="wrap">{i.title}</Text>
       return (
         <Box key={`body:${i.key}:${i.kind}`} flexDirection="column" gap="xs" paddingX="sm" paddingY="xs" overflow="hidden" {...(graphical ? { backgroundColor: CARD_BG, hover: { backgroundColor: CARD_HOVER } } : { borderStyle: 'round', borderColor: 'subtle' })}>
-          {label && (
-            <Box flexDirection="row">
-              <Text size="caption" color={TONE[i.kind]} weight="medium" {...(graphical ? { backgroundColor: PILL[i.kind] } : {})}> {label} </Text>
-            </Box>
-          )}
-          {/* The title opens the item, drawn as plain text: a Link is blue and underlined, and as an
-              inline anchor it ran a title just over one line long past the card's edge. A Button
-              holds only text, so the title is the part of the card that can be pressed. */}
-          <Box width="100%" minWidth={0}>
-            {i.url
-              ? <Button key={`card:${i.key}:${i.kind}`} plain onPress={() => openUrl($, i.url)}><Text weight="semibold" wrap="wrap">{i.title}</Text></Button>
-              : <Text weight="semibold" wrap="wrap">{i.title}</Text>}
+          <Box flexDirection="row" alignItems="center" gap="sm" width="100%" minWidth={0}>
+            {/* Beside a long title the row is short of room: the circle must not be the part that gives way. */}
+            {who && <Box flexShrink={0}>{who}</Box>}
+            <Box flexGrow={1} flexShrink={1} minWidth={0}>{title}</Box>
+            <Box flexShrink={0}><Text size="footnote" mono dimColor>{shortRef(i.ref)}</Text></Box>
           </Box>
           <Box flexDirection="row" alignItems="center" gap="sm">
-            <Text size="footnote" mono dimColor>{shortRef(i.ref)}</Text>
-            <Box flexGrow={1} />
             {d !== null && <Text size="footnote" tabular color={stale ? 'warning' : undefined} dimColor={!stale} weight={stale ? 'medium' : undefined}>{ageText(d)}</Text>}
-            {avatar(i.person)}
+            <Box flexGrow={1} />
+            {slot}
           </Box>
         </Box>
       )

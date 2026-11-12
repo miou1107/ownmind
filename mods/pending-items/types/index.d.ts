@@ -11,7 +11,7 @@ export type Item = {
   source: 'github' | 'gitlab' | 'ownmind'
   /** When the item last changed (ISO time), for "N 天前" on the card; '' when unknown. */
   at: string
-  /** Who is waiting on the user (the issue's opener, the PR's author, the last commenter); '' for nobody. */
+  /** Who the card names: the issue's opener, the PR's author or the last commenter, the user themself and bots included; '' when unknown. */
   person: string
 }
 

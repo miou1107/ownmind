@@ -1,5 +1,24 @@
 # OwnMind 檔案結構
 
+## v1.33.6 修改（2026-11-12，「待處理單據」面板：卡片可以隱藏，OwnMind 的單改在對話裡處理）
+
+新增檔：
+```
+hooks/pending-items-show.js                             — 印出一張 OwnMind 任務卡或問題回報的完整內容；面板在使用者送出「查看 OwnMind 任務卡 #3」時執行，把內容交給 Claude
+openspec/changes/v1.33.6-pending-items-hide/            — proposal、tasks
+```
+
+修改檔：
+```
+hooks/lib/pending-items.js                              — hiddenPathFor、readHidden：讀狀態檔旁邊的 pending-items-hidden.json，decide 不把隱藏的單列進提醒與面板清單；每張單都帶 person（自己與機器人也算）；describeOwnMindItem：一張任務卡或問題回報的完整內容，別人寫的內文逐行加上引用記號
+mods/pending-items/hooks/register.tsx                   — 卡片：頭像、標題、單號一列，日期一列，滑鼠移上去右下角出現 🔕（先跳確認框再寫進隱藏清單）；頭像提示顯示全名；標籤移除；PR 單號顯示成 !206；OwnMind 卡片點標題把查看的句子放進輸入框，送出時附上完整內容
+mods/pending-items/hooks/pane.test.tsx                  — 隱藏要先問、選取消不動、選隱藏後卡片消失並寫檔；頭像提示與不被擠壓；沒有標籤；OwnMind 標題放進輸入框、送出時附上內容
+mods/pending-items/types/index.d.ts                     — person 改成每張卡片都有
+mcp/index.js                                            — ownmind_bug_report_status：管理員在對話裡記錄問題回報的處理結果
+src/routes/bug-reports.js                               — 問題回報通知帶回報人的名字（reporter_name）
+tests/pending-items.test.js                             — 隱藏的單不列進提醒與面板清單；每張單都帶人名；讀單張任務卡與問題回報；問題回報處理結果的工具
+```
+
 ## v1.33.4 修改（2026-11-12，開對話時列出 GitHub、GitLab 上等你處理的單，#203）
 
 新增檔：
