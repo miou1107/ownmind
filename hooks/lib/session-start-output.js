@@ -120,7 +120,7 @@ const missingSkills = missingSkillsFor(initData, {
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   claudeConfigDir: process.env.CLAUDE_CONFIG_DIR,
 });
-const systemMessage = missingSkillNotice(missingSkills, t);
+const skillNotice = missingSkillNotice(missingSkills, t);
 
 try {
   initData = mergeHandoffs(initData, await pendingHandoffs);
@@ -178,10 +178,11 @@ const marksAfterOutput = () => {
 // That last line is the 10.66s from the original paragraph, reproduced. 300ms buys the clean
 // exit and stays far inside the hook's 10s budget.
 const pendingText = (await pendingItems).text;
-const userMessage = [systemMessage, pendingText].filter(Boolean).join('\n\n');
+// What the person sees: the missing-skill notice, then the items waiting on them.
+const systemMessage = [skillNotice, pendingText].filter(Boolean).join('\n\n');
 
 process.stdout.write(JSON.stringify({
-  ...(userMessage && { systemMessage: userMessage }),
+  ...(systemMessage && { systemMessage }),
   hookSpecificOutput: {
     hookEventName: 'SessionStart',
     additionalContext: pendingText ? `${additionalContext}\n${contextNote(pendingText)}` : additionalContext

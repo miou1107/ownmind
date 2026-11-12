@@ -25,7 +25,7 @@ hooks/ownmind-prompt-inject.js                          — 每則訊息：距�
 hooks/locales/{zh,en,ja}.json、{en,ja}.override.json   — pendingItems.* 十條文案
 scripts/install-helpers/ensure-monitor-mod.cjs          — MODS 加上 pending-items（不要的話建立 ~/.ownmind/.no-pending-items-mod）
 package.json                                            — 加上 privacy:scan
-README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.4
 ```
 
 ## v1.33.3 修改（2026-10-24，零接觸安裝：同事貼上安裝文字，AI 自己裝完並檢查）

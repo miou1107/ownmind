@@ -451,7 +451,7 @@ async function main() {
     projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
     claudeConfigDir: process.env.CLAUDE_CONFIG_DIR,
   });
-  const systemMessage = missingSkillNotice(missingSkills, t);
+  const skillNotice = missingSkillNotice(missingSkills, t);
 
   try {
     initData = mergeHandoffs(initData, await pendingHandoffs);
@@ -489,10 +489,11 @@ async function main() {
 
   const pendingText = (await pendingItems).text;
   if (pendingText) lines.push(contextNote(pendingText));
-  const userMessage = [systemMessage, pendingText].filter(Boolean).join('\n\n');
+  // What the person sees: the missing-skill notice, then the items waiting on them.
+  const systemMessage = [skillNotice, pendingText].filter(Boolean).join('\n\n');
 
   console.log(JSON.stringify({
-    ...(userMessage && { systemMessage: userMessage }),
+    ...(systemMessage && { systemMessage }),
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
       additionalContext: lines.join('\n')
