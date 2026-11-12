@@ -253,11 +253,24 @@ async function main() {
     const { collectVerdict } = await import('./lib/verdict-collect.js');
     verdict = await collectVerdict({ sessionId });
   } catch { /* a verdict that cannot be collected must not cost this prompt its standards */ }
-  const forUser = verdict.action === 'notice' ? verdict.banner : '';
+  // v1.33.4 — an hour after the last look, check again for issues, PRs and MRs waiting on the
+  // user (issue #203). Only what is new since the last list is shown.
+  let pendingText = null;
+  try {
+    const [{ recheckPendingItemsIfDue, contextNote }, { t }] = await Promise.all([
+      import('./lib/pending-items.js'), import('./lib/i18n.js'),
+    ]);
+    pendingText = (await recheckPendingItemsIfDue({ t })).text;
+    if (pendingText) pendingText = { user: pendingText, assistant: contextNote(pendingText) };
+  } catch { pendingText = null; }
+
+  const forUser = [verdict.action === 'notice' ? verdict.banner : '', pendingText?.user || '']
+    .filter(Boolean).join('\n\n');
   const verdictContext = verdict.action === 'notice' ? verdict.forAssistant : '';
 
   const blocks = [];
   if (verdictContext) blocks.push(verdictContext);
+  if (pendingText?.assistant) blocks.push(pendingText.assistant);
 
   const bundle = readEnforcementBundle();
   if (!bundle.present) {

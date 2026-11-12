@@ -21,8 +21,13 @@ const { ensureMonitorMod, ensureMods, MODS } = createRequire(import.meta.url)(SC
 const NAMES = MODS.map((m) => m.name);
 const MONITOR = 'ownmind-monitor';
 const WRAPUP = 'wrapup-check';
+const PENDING = 'pending-items';
+// The cases below were written for the first two mods. Their sandboxes leave the third mod's
+// folder out, so it reports `missing` and every expectation about the first two stays exact;
+// the case after 'lists the mods it manages' installs all three.
+const FIRST_TWO = [MONITOR, WRAPUP];
 
-function sandbox(settings, { withMods = NAMES } = {}) {
+function sandbox(settings, { withMods = FIRST_TWO } = {}) {
   const home = tempDir('ownmind-mods-');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   const settingsPath = path.join(home, '.claude', 'settings.json');
@@ -47,12 +52,18 @@ function run(s, extra = []) {
 
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const sep = process.platform === 'win32' ? ';' : ':';
-const line = (monitor, wrapup) => `OK:mods:${MONITOR}=${monitor},${WRAPUP}=${wrapup}`;
+const line = (monitor, wrapup, pending = 'missing') => `OK:mods:${MONITOR}=${monitor},${WRAPUP}=${wrapup},${PENDING}=${pending}`;
 const both = (s) => [s.modDir, s.wrapDir].join(sep);
 
 describe('ensure-monitor-mod.cjs — executed as a process, against real files', () => {
-  it('lists the two mods it manages', () => {
-    assert.deepEqual(NAMES, [MONITOR, WRAPUP]);
+  it('lists the mods it manages', () => {
+    assert.deepEqual(NAMES, [MONITOR, WRAPUP, PENDING]);
+  });
+
+  it('installs all three mods in MODS order when all three folders are there', () => {
+    const s = sandbox(undefined, { withMods: NAMES });
+    assert.equal(run(s), line('installed', 'installed', 'installed'));
+    assert.equal(read(s.settingsPath).env.CLAUDE_CODE_PLUGIN_DIRS, [s.modDir, s.wrapDir, s.dir(PENDING)].join(sep));
   });
 
   it('creates settings.json when there is none, with both mods in MODS order', () => {
@@ -257,25 +268,28 @@ describe('ensure-monitor-mod.cjs — Windows, run from this machine with --platf
   };
   const MOD = 'C:\\Users\\amy\\.ownmind\\mods\\ownmind-monitor';
   const WRAP = 'C:\\Users\\amy\\.ownmind\\mods\\wrapup-check';
+  // On a path that is not on this disk the helper cannot see which folders exist, so all three
+  // mods count as present.
+  const PEND = 'C:\\Users\\amy\\.ownmind\\mods\\pending-items';
 
   it('uses Windows paths and joins folders with ;', () => {
     const { out, env } = win({ env: { CLAUDE_CODE_PLUGIN_DIRS: 'D:\\plugins\\mine' } });
-    assert.equal(out, line('installed', 'installed'));
-    assert.equal(env.CLAUDE_CODE_PLUGIN_DIRS, `D:\\plugins\\mine;${MOD};${WRAP}`,
+    assert.equal(out, line('installed', 'installed', 'installed'));
+    assert.equal(env.CLAUDE_CODE_PLUGIN_DIRS, `D:\\plugins\\mine;${MOD};${WRAP};${PEND}`,
       'the drive-letter colon must not be read as a separator');
     assert.equal(env.CLAUDE_CODE_ENABLE_FUNCTION_HOOKS, '1');
   });
 
   it('turns a Git Bash home (/c/Users/amy) into a native path', () => {
     const { env } = win({}, '/c/Users/amy/.ownmind');
-    assert.equal(env.CLAUDE_CODE_PLUGIN_DIRS, `${MOD};${WRAP}`);
+    assert.equal(env.CLAUDE_CODE_PLUGIN_DIRS, `${MOD};${WRAP};${PEND}`);
   });
 
   it('migrates the hand-installed copies, any slash direction or letter case', () => {
     const { env } = win({ env: {
       CLAUDE_CODE_PLUGIN_DIRS: 'd:\\x;~/.claude/mods/ownmind-monitor;c:/users/AMY/.claude/mods/wrapup-check\\',
     } });
-    assert.equal(env.CLAUDE_CODE_PLUGIN_DIRS, `d:\\x;${MOD};${WRAP}`);
+    assert.equal(env.CLAUDE_CODE_PLUGIN_DIRS, `d:\\x;${MOD};${WRAP};${PEND}`);
   });
 
   it('opt-out on Windows removes that mod\'s entries (checkout and hand-installed) and keeps the rest', () => {
@@ -288,7 +302,7 @@ describe('ensure-monitor-mod.cjs — Windows, run from this machine with --platf
       ownmindDir: 'C:\\Users\\amy\\.ownmind', home: 'C:\\Users\\amy', platform: 'win32', optOut: [MONITOR],
     });
     assert.equal(r.statuses[MONITOR], 'opted_out');
-    assert.equal(r.settings.env.CLAUDE_CODE_PLUGIN_DIRS, `D:\\x;${WRAP}`);
+    assert.equal(r.settings.env.CLAUDE_CODE_PLUGIN_DIRS, `D:\\x;${WRAP};${PEND}`);
   });
 
   it('the single-mod transform is still exported and leaves the other mod alone', () => {
@@ -312,7 +326,7 @@ describe('ensure-monitor-mod.cjs — Windows, run from this machine with --platf
       SCRIPT, '--settings', first.s.settingsPath, '--ownmind-dir', 'C:\\Users\\amy\\.ownmind',
       '--home', 'C:\\Users\\amy', '--platform', 'win32',
     ], { encoding: 'utf8' }).trim();
-    assert.equal(again, line('unchanged', 'unchanged'));
+    assert.equal(again, line('unchanged', 'unchanged', 'unchanged'));
   });
 });
 

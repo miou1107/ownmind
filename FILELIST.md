@@ -1,5 +1,33 @@
 # OwnMind 檔案結構
 
+## v1.33.4 修改（2026-11-12，開對話時列出 GitHub、GitLab 上等你處理的單，#203）
+
+新增檔：
+```
+hooks/lib/pending-items.js                              — collectGithub（gh api graphql 一次查三種：指派給我的 issue、請我審的 PR、我開的 PR 的測試結果與留言數）、collectGitlab（~/.ownmind/git-hosts.json 的每台 GitLab）、decide（當天第一次全列，之後只列新的；只看別人留的最新留言，自己的回覆與機器人不算；查不到的主機舊單只留在面板、標成過時；登入被拒且之前查得到才算過期）、render（最多 10 行）、checkPendingItems（所有主機一起查，總共最多等 2.5 秒）、recheckPendingItemsIfDue（超過 60 分鐘才再查）；清單存在 ~/.ownmind/state/pending-items.json；OWNMIND_PENDING_ITEMS=off 關閉
+tests/pending-items.test.js                             — 三種查詢的對應、登入過期與逾時的分別、當天第一次與之後的差別、留言基準、10 行上限、每小時補查
+mods/pending-items/.claude-plugin/plugin.json           — Claude Code 外掛的名稱與版本
+mods/pending-items/hooks/hooks.json                     — 指向 register.tsx
+mods/pending-items/hooks/register.tsx                   — 「待處理單據」面板：每分鐘讀 ~/.ownmind/state/pending-items.json，一張單一列（狀態、可點的標題、單號），最下面寫最後檢查時間；有單時開對話自動打開，/pending-items 也能打開
+mods/pending-items/hooks/pane.test.tsx                  — 有單時面板自動打開並列出連結；沒有清單檔時不打開
+mods/pending-items/types/index.d.ts                     — 面板讀的資料型別
+mods/pending-items/tsconfig.json
+scripts/privacy-scan.js                                 — 這個 repo 是公開的：檢查暫存區新增的每一行，對照 repo 外的 ~/.ownmind/privacy-terms.txt 與範例網域以外的信箱，只印檔名與行號；npm run privacy:scan
+tests/privacy-scan.test.js
+openspec/changes/v1.33.4-pending-items-reminder/        — proposal、spec、tasks
+```
+
+修改檔：
+```
+hooks/ownmind-session-start.js                          — Windows 開場：查單和其他請求一起跑，結果放進 systemMessage 給使用者看，也放進 additionalContext 給 AI
+hooks/lib/session-start-output.js                       — macOS、Linux 開場：同上
+hooks/ownmind-prompt-inject.js                          — 每則訊息：距離上次查超過一小時就再查，新增的單放進 systemMessage
+hooks/locales/{zh,en,ja}.json、{en,ja}.override.json   — pendingItems.* 十條文案
+scripts/install-helpers/ensure-monitor-mod.cjs          — MODS 加上 pending-items（不要的話建立 ~/.ownmind/.no-pending-items-mod）
+package.json                                            — 加上 privacy:scan
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條
+```
+
 ## v1.33.3 修改（2026-10-24，零接觸安裝：同事貼上安裝文字，AI 自己裝完並檢查）
 
 新增檔：

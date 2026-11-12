@@ -1,0 +1,1 @@
+{ "name": "pending-items", "version": "0.1.0", "description": "Pane listing the issues, PRs and MRs waiting on you on GitHub and GitLab, read from the list OwnMind keeps", "author": { "name": "Vin (miou1107)" }, "types": "./types/index.d.ts" }
