@@ -150,3 +150,28 @@ test('initials: two letters for a full name, one for a login or a CJK name', asy
   expect(initials('ßanna Straße')).toBe('SS')
   expect(initials('🇹🇼 Taiwan')).toBe('T')
 })
+
+test('OwnMind task cards and bug reports get their own groups with the OwnMind logo', async ($, on) => {
+  const o = on as any
+  const state = JSON.stringify({ lastCheckAt: now, items: [
+    { key: 'ownmind:task#3', kind: 'task', title: 'Write the guide', url: 'https://om.example.com/dashboard/inbox/tasks', ref: 'task #3', project: 'web', host: 'ownmind', at: now },
+    { key: 'ownmind:bug#32', kind: 'resolved', title: 'Login loop', url: 'https://om.example.com/dashboard/inbox/reports', ref: 'bug #32', project: '#reports', host: 'ownmind', at: now },
+  ] })
+  o('ui.open', () => ({ value: { isPlaced: true } }))
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui: any = await ($ as any).ui.mount({ ...PANE, surface })
+    expect(await ui.find({ key: 'fold:ownmind:web' })).toBeDefined()
+    expect(await ui.find({ key: 'fold:ownmind:#reports' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^問題回報$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /已解決/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^#32$/ })).toBeDefined()
+    if (surface === 'desktop') {
+      expect((await ui.findAll({ type: 'Svg' })).map((s: any) => s.props.alt)).toEqual(['OwnMind', 'OwnMind'])
+    } else {
+      expect((await ui.findAll({ type: 'Text', text: /^OwnMind$/ })).length).toBe(2)
+    }
+    await ui.unmount()
+  }
+})

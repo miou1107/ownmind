@@ -20,10 +20,10 @@ const busy = atom({ plugin: 'pending-items', key: 'busy' } as const, false, { sh
 
 // Only the states that differ from a plain assignment get a label; every card in the pane is
 // already waiting on the user, so a "pending" label on each would say nothing.
-const LABEL: Partial<Record<Item['kind'], string>> = { review: '待審核', failing: '測試未通過', comment: '待回覆' }
-const TONE: Partial<Record<Item['kind'], string>> = { review: 'warning', failing: 'error', comment: 'suggestion' }
+const LABEL: Partial<Record<Item['kind'], string>> = { review: '待審核', failing: '測試未通過', comment: '待回覆', resolved: '已解決' }
+const TONE: Partial<Record<Item['kind'], string>> = { review: 'warning', failing: 'error', comment: 'suggestion', resolved: 'success' }
 // Waiting first, then the newest change.
-const ORDER: Record<Item['kind'], number> = { review: 0, failing: 1, comment: 2, assigned: 3 }
+const ORDER: Record<Item['kind'], number> = { review: 0, failing: 1, comment: 2, bug: 3, assigned: 4, task: 5, resolved: 6 }
 
 // A dot per project, picked from the name so a project keeps its colour between sessions.
 // Theme colours: the desktop draws a Text's colour from the theme, not from a hex value.
@@ -33,7 +33,14 @@ const dotOf = (name: string) => DOTS[hashOf(name) % DOTS.length]
 
 // Simple Icons' marks (CC0). GitHub's in a grey that reads on light and dark panes alike.
 const GITHUB_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#8b949e" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>'
+// OwnMind's own mark, as on its website: task cards and bug reports live in OwnMind.
+const OWNMIND_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#4a8a62"/><path d="M64 24c-19 0-34 14-34 32 0 9 4 17 10 23v15h30v-8h8c4 0 8-4 8-8V66l8-2-8-14c-2-15-10-26-22-26z" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/><path d="M50 58l9 9 18-18" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 const GITLAB_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#FC6D26" d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/></svg>'
+const LOGO: Record<Item['source'], { svg: string; name: string }> = {
+  github: { svg: GITHUB_SVG, name: 'GitHub' },
+  gitlab: { svg: GITLAB_SVG, name: 'GitLab' },
+  ownmind: { svg: OWNMIND_SVG, name: 'OwnMind' },
+}
 
 // The pane cannot tell a light app from a dark one, so the fills are a translucent grey that
 // reads on both: a faint one for the project group, a firmer one for each card on top of it.
@@ -44,7 +51,7 @@ const LANE_BG = 'rgba(127,127,127,0.10)'
 const CARD_BG = 'inverseText'
 const CARD_HOVER = 'rgba(127,127,127,0.08)'
 // Tinted pills, as on a kanban card: a faint fill in the label's own hue.
-const PILL: Partial<Record<Item['kind'], string>> = { review: 'rgba(234,179,8,0.18)', failing: 'rgba(239,68,68,0.16)', comment: 'rgba(59,130,246,0.16)' }
+const PILL: Partial<Record<Item['kind'], string>> = { review: 'rgba(234,179,8,0.18)', failing: 'rgba(239,68,68,0.16)', comment: 'rgba(59,130,246,0.16)', resolved: 'rgba(34,197,94,0.16)' }
 const COUNT_BG = 'rgba(99,102,241,0.14)'
 
 /** "Jane Doe" -> "JD", "member4" -> "M", a CJK name -> its first character; '' for nobody. */
@@ -107,7 +114,16 @@ const joinPath = (base: string, ...parts: string[]) => {
   return [base.replace(/[\\/]+$/, ''), ...parts].join(sep)
 }
 
-const KINDS = new Set(['assigned', 'review', 'failing', 'comment'])
+const KINDS = new Set(['assigned', 'review', 'failing', 'comment', 'task', 'bug', 'resolved'])
+
+const sourceOf = (host: string): Item['source'] =>
+  host.startsWith('github') ? 'github' : host.startsWith('ownmind') ? 'ownmind' : 'gitlab'
+
+// OwnMind's bug reports arrive under one fixed project key; the pane names the group.
+const BUG_PROJECT = '#reports'
+/** The name drawn for a group. */
+export const groupName = (g: { source: Item['source']; project: string }) =>
+  g.source === 'ownmind' && g.project === BUG_PROJECT ? '問題回報' : g.project
 
 export const parseState = (text: string): View => {
   try {
@@ -123,7 +139,7 @@ export const parseState = (text: string): View => {
           url: String(i.url ?? ''),
           ref,
           project: String(i.project || '') || projectFromRef(ref),
-          source: String(i.host || i.key).startsWith('github') ? 'github' : 'gitlab',
+          source: sourceOf(String(i.host || i.key)),
           at: String(i.at ?? ''),
           person: String(i.person ?? ''),
         }
@@ -251,10 +267,11 @@ export const register: Register = on => {
     }
 
     // The terminal has no Svg element: it draws the name instead.
-    const logo = (source: Item['source']) =>
-      graphical && Svg
-        ? <Svg source={source === 'github' ? GITHUB_SVG : GITLAB_SVG} alt={source === 'github' ? 'GitHub' : 'GitLab'} width={14} height={14} />
-        : <Text dimColor>{source === 'github' ? 'GitHub' : 'GitLab'}</Text>
+    const logo = (source: Item['source']) => {
+      return graphical && Svg
+        ? <Svg source={LOGO[source].svg} alt={LOGO[source].name} width={14} height={14} />
+        : <Text dimColor>{LOGO[source].name}</Text>
+    }
 
     // Who is waiting, as initials. The terminal has no Svg: it draws the letters in the person's colour.
     const avatar = (name: string) => {
@@ -300,7 +317,7 @@ export const register: Register = on => {
         <Box key={`lane:${g.key}`} flexDirection="column" gap="xs" padding="sm" {...(graphical ? { backgroundColor: LANE_BG } : {})}>
           <Box flexDirection="row" alignItems="center" gap="xs">
             <Button key={`fold:${g.key}`} plain onPress={() => toggle(g.key)}>
-              <Text dimColor>{open ? '▾' : '▸'}</Text> <Text color={dotOf(g.project)}>●</Text> <Text weight="semibold">{g.project}</Text>
+              <Text dimColor>{open ? '▾' : '▸'}</Text> <Text color={dotOf(g.project)}>●</Text> <Text weight="semibold">{groupName(g)}</Text>
             </Button>
             {logo(g.source)}
             <Box flexGrow={1} />
@@ -313,7 +330,7 @@ export const register: Register = on => {
 
     const options = [
       { value: '', label: `全部（${v.items.length}）` },
-      ...groups.map(g => ({ value: g.key, label: `${g.project}（${g.items.length}）` })),
+      ...groups.map(g => ({ value: g.key, label: `${groupName(g)}（${g.items.length}）` })),
     ]
 
     return (

@@ -30,6 +30,12 @@ after each project's name.
    character; letters only on the terminal). Items carry that person as `person`: an issue's
    opener when it is not the user, a PR's author, or the last commenter who is not the user.
 
+4. **OwnMind's own items.** With OwnMind credentials on the machine, the check also asks the
+   server for the user's open task cards and bug reports (an admin's unhandled ones, the user's
+   own resolved in the last week). They are pane-only: grouped under the OwnMind logo (task cards by their
+   project, reports in one 「問題回報」 group), linked to the console's inbox pages, and never
+   listed as new in the conversation, which already reports them at session start.
+
 ## Not changed
 
 When the reminder appears in the conversation, what it lists, the state file's other fields.

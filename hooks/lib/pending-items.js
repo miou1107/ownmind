@@ -17,6 +17,7 @@ import https from 'node:https';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { localDateOnly, localIsoTimestamp } from '../../shared/local-date.js';
+import { readCredentials } from '../../shared/helpers.js';
 
 export const HOST_TIMEOUT_MS = 2500;
 export const MAX_LINES = 10;
@@ -299,6 +300,95 @@ export async function collectGitlab({ host, fetchJson = gitlabGet, timeoutMs = H
 }
 
 // ---------------------------------------------------------------------------------------------
+// OwnMind itself: the user's task cards and bug reports. These go to the side pane only and are
+// never listed as new in the conversation: the session start already speaks about bug reports and
+// this project's task cards, and a card in another project is something to look at, not news.
+
+// A task project can be any name; this one cannot be, since project names never start with '#'.
+export const OWNMIND_BUG_PROJECT = '#reports';
+// A report the user has not opened stays "resolved" on the server until they mark it read, which
+// nothing on the console does yet; the pane shows it for a week, then lets it go.
+const RESOLVED_SHOWN_DAYS = 7;
+
+/** GET with a Bearer key and a hard timeout. */
+function ownmindGet(url, apiKey, timeoutMs = HOST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: timeoutMs }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+/**
+ * The user's open task cards (every project; not one someone else has taken) and bug reports:
+ * the unhandled ones for an admin, and the user's own reports resolved in the last week. A card
+ * opens the console page that lists it. If any request fails the whole host is an error, so the
+ * cards from the last check stay in the pane, marked stale, rather than half of them vanishing.
+ */
+export async function collectOwnMind({ apiUrl, apiKey, fetchJson = ownmindGet, timeoutMs = HOST_TIMEOUT_MS, now = new Date() }) {
+  const host = 'ownmind';
+  if (!apiUrl || !apiKey) return { host, status: 'absent', items: [] };
+  const base = String(apiUrl).replace(/\/+$/, '');
+  const consoleUrl = `${base}/dashboard`;
+  const getJson = async (p) => {
+    const r = await fetchJson(`${base}${p}`, apiKey, timeoutMs);
+    return { status: r.status, data: r.status === 200 ? JSON.parse(r.body) : null };
+  };
+  try {
+    // Only an admin may ask for both halves (a member gets 403), so both questions go out at
+    // once rather than one after the other inside the session start's short budget.
+    const [tasks, both, mine] = await Promise.all([
+      getJson('/api/tasks?mine=true'),
+      getJson('/api/bug-reports/notifications?role=both'),
+      getJson('/api/bug-reports/notifications?role=reporter'),
+    ]);
+    const notif = both.status === 200 ? both : mine;
+    if (tasks.status !== 200 || notif.status !== 200) return { host, status: 'error', items: [] };
+    const items = [];
+    for (const t of Array.isArray(tasks.data) ? tasks.data : []) {
+      if (t?.id == null) continue;
+      // A card the user opened but someone else took is waiting on them, not on the user.
+      if (t.claimed_by && t.held_by_me !== true) continue;
+      items.push({
+        key: `ownmind:task#${t.id}`, kind: 'task', signal: '', paneOnly: true,
+        title: String(t.title || ''), url: `${consoleUrl}/inbox/tasks`, ref: `task #${t.id}`,
+        project: String(t.project || '').trim() || 'OwnMind', at: String(t.updated_at || t.created_at || ''),
+      });
+    }
+    const unhandled = new Set();
+    for (const b of Array.isArray(notif.data?.admin?.recent_unhandled) ? notif.data.admin.recent_unhandled : []) {
+      if (b?.id == null) continue;
+      unhandled.add(String(b.id));
+      items.push({
+        key: `ownmind:bug#${b.id}`, kind: 'bug', signal: '', paneOnly: true,
+        title: String(b.title || ''), url: `${consoleUrl}/inbox/bugs`, ref: `bug #${b.id}`,
+        project: OWNMIND_BUG_PROJECT, at: String(b.created_at || ''),
+      });
+    }
+    const since = now.getTime() - RESOLVED_SHOWN_DAYS * 24 * 60 * 60 * 1000;
+    for (const b of Array.isArray(notif.data?.reporter?.recent_resolved) ? notif.data.reporter.recent_resolved : []) {
+      // A report reopened after it was resolved shows once, as waiting.
+      if (b?.id == null || unhandled.has(String(b.id))) continue;
+      const at = Date.parse(b.resolved_at || '');
+      if (!Number.isFinite(at) || at < since) continue;
+      items.push({
+        key: `ownmind:bug#${b.id}`, kind: 'resolved', signal: '', paneOnly: true,
+        title: String(b.title || ''), url: `${consoleUrl}/inbox/reports`, ref: `bug #${b.id}`,
+        project: OWNMIND_BUG_PROJECT, at: String(b.resolved_at),
+      });
+    }
+    return { host, status: 'ok', items };
+  } catch {
+    return { host, status: 'error', items: [] };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // What is new, and what the user sees
 
 const idOf = (i) => `${i.key}:${i.kind}:${i.signal || ''}`;
@@ -355,7 +445,8 @@ export function decide(state, results, now) {
     }
   }
 
-  const fresh = current.filter((i) => !shown.has(idOf(i)));
+  // Pane-only items (OwnMind's own task cards and bug reports) are never listed as new.
+  const fresh = current.filter((i) => !i.paneOnly && !shown.has(idOf(i)));
   for (const i of fresh) shown.add(idOf(i));
 
   return {
@@ -423,11 +514,17 @@ function writeState(statePath, state) {
   }
 }
 
-export function defaultCollectors({ hostsPath = defaultHostsPath(), timeoutMs = HOST_TIMEOUT_MS } = {}) {
+export function defaultCollectors({ hostsPath = defaultHostsPath(), timeoutMs = HOST_TIMEOUT_MS, credentials = readOwnMindCredentials } = {}) {
+  const { apiUrl, apiKey } = credentials();
   return [
     { host: 'github', run: () => collectGithub({ timeoutMs }) },
     ...readGitHosts(hostsPath).map((host) => ({ host: `gitlab:${host.url}`, run: () => collectGitlab({ host, timeoutMs }) })),
+    ...(apiUrl && apiKey ? [{ host: 'ownmind', run: () => collectOwnMind({ apiUrl, apiKey, timeoutMs }) }] : []),
   ];
+}
+
+function readOwnMindCredentials() {
+  try { return readCredentials(); } catch { return { apiUrl: '', apiKey: '' }; }
 }
 
 /**

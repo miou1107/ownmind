@@ -5,4 +5,5 @@
 - [x] `hooks/pending-items-check.js` for the refresh button
 - [x] Pane: groups, fold, select, refresh, logos, days-ago, labels only where they differ
 - [x] Pane: select and refresh button share the first row; initials circle for `person` on each card
+- [x] OwnMind task cards (`/api/tasks?mine=true`) and bug reports (`/api/bug-reports/notifications`) as pane-only cards under the OwnMind logo
 - [x] Tests: tests/pending-items.test.js, mods/pending-items/hooks/pane.test.tsx

@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { tempDir } from './helpers/temp-dir.js';
 import {
-  collectGithub, collectGitlab, decide, render, isDue, checkPendingItems, readGitHosts, recheckPendingItemsIfDue,
+  collectGithub, collectGitlab, decide, render, isDue, checkPendingItems, readGitHosts, recheckPendingItemsIfDue, collectOwnMind,
 } from '../hooks/lib/pending-items.js';
 
 const T = (key, p = {}) => `${key}${JSON.stringify(p)}`;
@@ -314,4 +314,62 @@ test('checkPendingItems: a host slower than the budget counts as unreachable, an
   const r = await checkPendingItems({ statePath, collectors: [fast, slow], now: new Date('2026-11-13T09:00:00+08:00'), t: T, budgetMs: 150 });
   assert.ok(Date.now() - t0 < 1000);
   assert.equal(r.fresh.length, 1);
+});
+
+test('collectOwnMind: open task cards and bug reports become pane-only cards linking to the console', async () => {
+  const calls = [];
+  const routes = {
+    '/api/tasks?mine=true': { status: 200, body: [
+      { id: 3, title: 'Write the guide', project: 'web', updated_at: '2026-11-10T01:00:00Z' },
+      { id: 4, title: 'No project', project: null, created_at: '2026-11-09T01:00:00Z' },
+      // Opened by the user, taken by someone else: waiting on them, not on the user.
+      { id: 5, title: 'Taken', project: 'web', claimed_by: 9, held_by_me: false },
+    ] },
+    // Not an admin: asking for both halves is refused, so the collector asks for the reporter half.
+    '/api/bug-reports/notifications?role=both': { status: 403, body: { error: 'Admin permission required' } },
+    '/api/bug-reports/notifications?role=reporter': { status: 200, body: { reporter: { unread_resolved_count: 2, recent_resolved: [
+      { id: 32, title: 'Login loop', resolved_at: '2026-11-11T02:00:00Z' },
+      // Resolved more than a week ago: the user has had a week to see it.
+      { id: 20, title: 'Old one', resolved_at: '2026-10-01T02:00:00Z' },
+    ] } } },
+  };
+  const fetchJson = async (url, key) => {
+    calls.push(url);
+    assert.equal(key, 'k');
+    const r = routes[url.replace('https://om.example.com', '')];
+    return r ? { status: r.status, body: JSON.stringify(r.body) } : { status: 404, body: '{}' };
+  };
+  const now = new Date('2026-11-13T09:00:00+08:00');
+  const r = await collectOwnMind({ apiUrl: 'https://om.example.com/', apiKey: 'k', fetchJson, now });
+  assert.equal(r.status, 'ok');
+  assert.deepEqual(r.items.map((i) => `${i.key}:${i.kind}:${i.project}`), [
+    'ownmind:task#3:task:web', 'ownmind:task#4:task:OwnMind', 'ownmind:bug#32:resolved:#reports',
+  ]);
+  assert.ok(r.items.every((i) => i.paneOnly === true));
+  assert.equal(r.items[0].url, 'https://om.example.com/dashboard/inbox/tasks');
+  assert.equal(r.items[2].url, 'https://om.example.com/dashboard/inbox/reports');
+  assert.equal(r.items[2].at, '2026-11-11T02:00:00Z');
+  assert.ok(calls.includes('https://om.example.com/api/bug-reports/notifications?role=reporter'));
+
+  // An admin gets the unhandled reports too, linking to the reports waiting on them.
+  // A report reopened after it was resolved is both unhandled and resolved-unread: it shows once.
+  const admin = await collectOwnMind({ apiUrl: 'https://om.example.com', apiKey: 'k', now, fetchJson: async (url) => {
+    if (url.endsWith('role=both')) return { status: 200, body: JSON.stringify({ admin: { unhandled_count: 1, recent_unhandled: [{ id: 40, title: 'Pane is empty', created_at: '2026-11-12T01:00:00Z' }] }, reporter: { recent_resolved: [{ id: 40, title: 'Pane is empty', resolved_at: '2026-11-12T00:00:00Z' }] } }) };
+    return { status: 200, body: '[]' };
+  } });
+  assert.deepEqual(admin.items.map((i) => `${i.kind}:${i.url}`), ['bug:https://om.example.com/dashboard/inbox/bugs']);
+
+  // No credentials: nothing to ask. Both requests failing: an error, so the pane keeps the old cards.
+  assert.equal((await collectOwnMind({ apiUrl: '', apiKey: '' })).status, 'absent');
+  assert.equal((await collectOwnMind({ apiUrl: 'https://om.example.com', apiKey: 'k', fetchJson: async () => ({ status: 500, body: '' }) })).status, 'error');
+  // One half failing is an error too, so the last check's cards stay rather than half vanishing.
+  const half = await collectOwnMind({ apiUrl: 'https://om.example.com', apiKey: 'k', now, fetchJson: async (url) => (
+    url.includes('/api/tasks') ? { status: 200, body: '[]' } : { status: 500, body: '' }) });
+  assert.equal(half.status, 'error');
+});
+
+test('decide: pane-only cards stay in the state file but are never listed as new', () => {
+  const r = decide({}, [{ host: 'ownmind', status: 'ok', items: [{ key: 'ownmind:task#3', kind: 'task', signal: '', paneOnly: true, title: 't', url: 'u', ref: 'task #3' }] }], new Date('2026-11-13T09:00:00+08:00'));
+  assert.equal(r.fresh.length, 0);
+  assert.equal(r.state.items.length, 1);
 });
