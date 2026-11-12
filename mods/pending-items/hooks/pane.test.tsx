@@ -15,6 +15,8 @@ const STATE = JSON.stringify({
   ],
 })
 
+const cards = async (ui: any) => (await ui.findAll({ type: 'Button' })).filter((b: any) => String(b.key ?? b.props?.key ?? '').startsWith('card:'))
+
 const PANE = { plugin: 'pending-items', component: 'Pane', requestId: 'pending-items', props: { bodyColumns: 60 } } as const
 
 const stub = (o: any, fsRead: (path: string) => any) => {
@@ -42,7 +44,7 @@ test('the pane groups cards by project, with the place logo, the age and a label
     expect(await ui.find({ key: 'fold:github:api' })).toBeDefined()
     expect(await ui.find({ key: 'fold:gitlab:Billing' })).toBeDefined()
     expect(await ui.find({ key: 'fold:github:web' })).toBeDefined()
-    expect((await ui.findAll({ type: 'Link' })).length).toBe(4)
+    expect((await cards(ui)).length).toBe(4)
     expect(await ui.find({ type: 'Text', text: /測試未通過/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /待審核/ })).toBeDefined()
     // A plain assignment carries no label.
@@ -70,14 +72,14 @@ test('a project folds and unfolds from its header, and the select shows one proj
   await start($, on)
   const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'fold:github:api' })
-  expect((await ui.findAll({ type: 'Link' })).length).toBe(2)
+  expect((await cards(ui)).length).toBe(2)
   await ui.press({ key: 'fold:github:api' })
-  expect((await ui.findAll({ type: 'Link' })).length).toBe(4)
+  expect((await cards(ui)).length).toBe(4)
   await ui.select({ key: 'project', value: 'gitlab:Billing' })
-  expect((await ui.findAll({ type: 'Link' })).length).toBe(1)
+  expect((await cards(ui)).length).toBe(1)
   expect(await ui.find({ key: 'fold:github:api' })).toBeUndefined()
   await ui.select({ key: 'project', value: '' })
-  expect((await ui.findAll({ type: 'Link' })).length).toBe(4)
+  expect((await cards(ui)).length).toBe(4)
   await ui.unmount()
 })
 
@@ -103,14 +105,26 @@ test('a chosen project whose items are all done falls back to every project', as
   await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
   const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
   await ui.select({ key: 'project', value: 'gitlab:Billing' })
-  expect((await ui.findAll({ type: 'Link' })).length).toBe(1)
+  expect((await cards(ui)).length).toBe(1)
   // The Billing item is done: the next check no longer lists it.
   const s = JSON.parse(STATE)
   s.items = s.items.filter((i: any) => i.project !== 'Billing')
   state = JSON.stringify(s)
   await ui.press({ key: 'refresh' })
-  expect((await ui.findAll({ type: 'Link' })).length).toBe(3)
+  expect((await cards(ui)).length).toBe(3)
   expect(await ui.find({ key: 'fold:github:api' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('pressing a card title opens the item in the browser', async ($, on) => {
+  const o = on as any
+  const runs: string[][] = []
+  o('process.run', (_: any, e: any) => { runs.push([...e.argv]); return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } })
+  await start($, o)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  await ui.press({ key: 'card:github:example/api#401:review' })
+  expect(runs).toEqual([['open', 'https://github.com/example/api/pull/401']])
   await ui.unmount()
 })
 

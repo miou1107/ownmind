@@ -189,6 +189,17 @@ const checkNow = async ($: any) => {
   }
 }
 
+// A pane cannot navigate, so a card's title opens the item in the person's default browser.
+// URLs come from GitHub and GitLab; only http(s) is passed on, as one argument, never through a shell string.
+const openUrl = async ($: any, url: string) => {
+  if (!/^https?:\/\//.test(url)) return
+  const windows = /\\/.test(await homeDir($))
+  const tries = windows ? [['rundll32', 'url.dll,FileProtocolHandler', url]] : [['open', url], ['/usr/bin/open', url], ['xdg-open', url]]
+  for (const argv of tries) {
+    try { await $.process.run(argv, { timeoutMs: 10000 }); return } catch { /* try the next opener */ }
+  }
+}
+
 const saveFolds = async ($: any, keys: string[]) => {
   try { await $.store.set('collapsed', keys) } catch { /* the fold is a convenience; losing it is fine */ }
 }
@@ -217,7 +228,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Link, Button, Select, Svg } = $.ui.resolve(e) as any
+    const { Box, Text, Button, Select, Svg } = $.ui.resolve(e) as any
     const graphical = e.surface !== 'terminal'
     const v = await read($, view)
     const chosen = await read($, filter)
@@ -259,13 +270,20 @@ export const register: Register = on => {
       const stale = d !== null && d > STALE_DAYS
       const label = LABEL[i.kind]
       return (
-        <Box key={`card:${i.key}:${i.kind}`} flexDirection="column" gap="xs" paddingX="sm" paddingY="xs" {...(graphical ? { backgroundColor: CARD_BG, hover: { backgroundColor: CARD_HOVER } } : { borderStyle: 'round', borderColor: 'subtle' })}>
+        <Box key={`body:${i.key}:${i.kind}`} flexDirection="column" gap="xs" paddingX="sm" paddingY="xs" overflow="hidden" {...(graphical ? { backgroundColor: CARD_BG, hover: { backgroundColor: CARD_HOVER } } : { borderStyle: 'round', borderColor: 'subtle' })}>
           {label && (
             <Box flexDirection="row">
               <Text size="caption" color={TONE[i.kind]} weight="medium" {...(graphical ? { backgroundColor: PILL[i.kind] } : {})}> {label} </Text>
             </Box>
           )}
-          {i.url ? <Link href={i.url}><Text weight="semibold">{i.title}</Text></Link> : <Text weight="semibold">{i.title}</Text>}
+          {/* The title opens the item, drawn as plain text: a Link is blue and underlined, and as an
+              inline anchor it ran a title just over one line long past the card's edge. A Button
+              holds only text, so the title is the part of the card that can be pressed. */}
+          <Box width="100%" minWidth={0}>
+            {i.url
+              ? <Button key={`card:${i.key}:${i.kind}`} plain onPress={() => openUrl($, i.url)}><Text weight="semibold" wrap="wrap">{i.title}</Text></Button>
+              : <Text weight="semibold" wrap="wrap">{i.title}</Text>}
+          </Box>
           <Box flexDirection="row" alignItems="center" gap="sm">
             <Text size="footnote" mono dimColor>{shortRef(i.ref)}</Text>
             <Box flexGrow={1} />
