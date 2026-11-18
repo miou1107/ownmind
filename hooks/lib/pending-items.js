@@ -777,6 +777,6 @@ export function contextNote(text, items = []) {
     text,
     ...(lines.length ? ['The items it is about (the user saw no links):', ...lines] : []),
     ...(items.length > MAX_LINES ? [`- and ${items.length - MAX_LINES} more`] : []),
-    'You do not need to repeat the reminder. If the user asks to handle an item, open its link; the 待處理單據 side pane (/pending-items) has the whole list.',
+    'You do not need to repeat the reminder. If the user asks to handle an item, open its link; the OwnMind 待辦事項 side pane (/pending-items) has the whole list.',
   ].join('\n');
 }

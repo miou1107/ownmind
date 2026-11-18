@@ -1,0 +1,6 @@
+- [x] Pane title `OwnMind 待辦事項`; command description and reply
+- [x] Header switch 自動提醒 drawn from text; toasts
+- [x] `pane` tool description: show only when the side pane is named
+- [x] Model note in hooks/lib/pending-items.js uses the new title
+- [x] Tests: mods/pending-items/hooks/pane.test.tsx
+- [x] README (three languages), CHANGELOG, FILELIST, version 1.33.8

@@ -12,7 +12,7 @@ import type { Item, View } from '../types'
 // header's button, or the model through the pane tool, switches that off for this machine. The
 // one-line reminder in the conversation is the check's own and stays either way.
 const PANE = 'pending-items'
-const TITLE = '待處理單據'
+const TITLE = 'OwnMind 待辦事項'
 const COMMAND = 'pending-items'
 const PANE_TOOL = 'mcp__pending-items__pane'
 const STALE_DAYS = 14
@@ -408,10 +408,16 @@ const openIfNew = async ($: any, v: View) => {
 // The session start's own check may still be writing the list when the mod first reads it.
 const LATE_LOOK_MS = 10000
 
-const AUTO_OFF = '關閉自動跳出'
-const AUTO_ON = '開啟自動跳出'
-const AUTO_OFF_DONE = '已關閉自動跳出，對話開頭的提醒不變'
-const AUTO_ON_DONE = '已開啟自動跳出，有新單時面板會自己打開'
+const AUTO_LABEL = '自動提醒'
+const AUTO_OFF_DONE = '已關閉自動提醒'
+const AUTO_ON_DONE = '已開啟自動提醒'
+// A switch drawn from text, since a Button holds strings and Text only and no surface has a
+// switch element: the knob sits at the right of a green track while on, at the left of a grey
+// one while off. The spaces are no-break spaces, which a surface does not collapse.
+const SWITCH_ON = '\u00a0\u00a0\u00a0\u25cf\u00a0'
+const SWITCH_OFF = '\u00a0\u25cf\u00a0\u00a0\u00a0'
+const SWITCH_ON_BG = '#34c759'
+const SWITCH_OFF_BG = 'rgba(127,127,127,0.55)'
 const AUTO_FAILED = 'OwnMind 沒有存下這個設定，請再按一次'
 
 /** Switches the pane opening by itself on or off for this machine; false when it could not be kept. */
@@ -432,15 +438,16 @@ const toggleAuto = async ($: any) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'pending-items', description: '打開待處理單據面板' })
+    await $.command.register({ name: 'pending-items', description: '打開 OwnMind 待辦事項' })
     // In the prompt's tool list from the start: the model has to know the tool is there to
     // reach for it when the person asks, in whatever words, to stop the pane popping up.
     await $.tool.register({
       name: 'pane',
-      description: 'OwnMind\'s 待處理單據 (pending items) side pane lists the issues, PRs/MRs, task cards and bug reports waiting on the user, and opens by itself when a conversation starts with new ones. '
-        + 'action "off": the user asks to stop it popping up (關掉待處理單據, 不要再跳 issue 提醒, 待辦事項的面板先關掉). '
-        + 'action "on": the user wants it to open by itself again (打開待處理單據, 恢復 issue 提醒). '
-        + 'action "show": open it once now, changing nothing (看一下我有哪些 issue 要處理). '
+      description: 'The OwnMind 待辦事項 side pane (pending items; it used to be called 待處理單據) lists the issues, PRs/MRs, task cards and bug reports waiting on the user, and opens by itself when a conversation starts with new ones; the switch at its top that turns that on and off is labelled 自動提醒. '
+        + 'action "off": the user asks to stop it popping up (關掉自動提醒, 關掉 OwnMind 待辦事項, 關掉待處理單據, 不要再跳 issue 提醒, 待辦事項的面板先關掉). '
+        + 'action "on": the user wants it to open by itself again (打開自動提醒, 打開 OwnMind 待辦事項, 打開待處理單據, 恢復 issue 提醒). '
+        + 'action "show": open it once now, changing nothing, and only when the user names the side pane itself, by sidebar, 側邊欄 or 面板 (用 sidebar 看我有哪些待辦事項, 打開 OwnMind 待辦事項的 sidebar). '
+        + 'A request to see or handle the items that does not name the side pane (我有哪些待辦事項, 看一下我有哪些 issue 要處理) is not for this tool: answer it in the conversation. '
         + '"off" only stops the pane opening by itself, on this computer: the one-line reminder at the start of a conversation stays, and the user can still open the pane. '
         + 'If the user says only 關掉 issue or 把待辦關掉, with no mention of the pane, the reminder or popping up, ask first: they may mean closing the item itself. '
         + 'Afterwards tell the user the result in one short sentence in their language.',
@@ -469,7 +476,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'pending-items' }, async $ => {
     await showPane($, (await refresh($)).items)
-    return { text: '待處理單據面板已打開。' }
+    return { text: 'OwnMind 待辦事項已打開。' }
   })
 
   // The person asked the model, in their own words, to stop the pane popping up, to bring that
@@ -635,7 +642,11 @@ export const register: Register = on => {
           {groups.length > 1
             ? <Box flexGrow={1}><Select key="project" value={pick} options={options} onSelect={(value: string) => update($, filter, () => value)} /></Box>
             : <Box flexGrow={1} />}
-          <Button key="auto" onPress={() => toggleAuto($)}>{isAuto ? AUTO_OFF : AUTO_ON}</Button>
+          <Button key="auto" plain onPress={() => toggleAuto($)}>
+            <Text>{AUTO_LABEL}</Text> {graphical
+              ? <Text color="#ffffff" backgroundColor={isAuto ? SWITCH_ON_BG : SWITCH_OFF_BG}>{isAuto ? SWITCH_ON : SWITCH_OFF}</Text>
+              : <Text inverse={isAuto} dimColor={!isAuto}>{isAuto ? SWITCH_ON : SWITCH_OFF}</Text>}
+          </Button>
           <Button key="refresh" onPress={() => checkNow($)}>{isBusy ? '更新中…' : '更新'}</Button>
         </Box>
         {v.items.length === 0 && (

@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## v1.33.8 修改（2026-11-18，sidebar 改名為「OwnMind 待辦事項」，最上方改成「自動提醒」開關；講到 sidebar 才打開）
+
+新增檔：
+```
+openspec/changes/v1.33.8-pending-items-rename/          — proposal、tasks
+```
+
+修改檔：
+```
+mods/pending-items/hooks/register.tsx                   — sidebar 標題改成「OwnMind 待辦事項」；最上方的按鈕改成「自動提醒」開關（用文字加底色畫出軌道與圓點）；切換後的提示改成「已開啟自動提醒」「已關閉自動提醒」；pane 工具的說明改成講到 sidebar 才打開，兩個名稱都認得
+mods/pending-items/hooks/pane.test.tsx                  — 開關開與關各長什麼樣、切換後的提示、工具說明裡「講到 sidebar 才打開」的規則
+hooks/lib/pending-items.js                              — 交給 AI 的提醒附註改用新名稱
+package.json、package-lock.json                         — 版號 1.33.8
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.8
+CHANGELOG.md                                            — v1.33.8
+```
+
 ## v1.33.7 修改（2026-11-18，「待處理單據」面板有新單才自己打開，可以關閉自動跳出；對話提醒縮成一句話）
 
 新增檔：
