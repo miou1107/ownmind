@@ -177,7 +177,7 @@ const marksAfterOutput = () => {
 //
 // That last line is the 10.66s from the original paragraph, reproduced. 300ms buys the clean
 // exit and stays far inside the hook's 10s budget.
-const pendingText = (await pendingItems).text;
+const { text: pendingText, context: pendingContext } = await pendingItems;
 // What the person sees: the missing-skill notice, then the items waiting on them.
 const systemMessage = [skillNotice, pendingText].filter(Boolean).join('\n\n');
 
@@ -185,7 +185,7 @@ process.stdout.write(JSON.stringify({
   ...(systemMessage && { systemMessage }),
   hookSpecificOutput: {
     hookEventName: 'SessionStart',
-    additionalContext: pendingText ? `${additionalContext}\n${contextNote(pendingText)}` : additionalContext
+    additionalContext: pendingText ? `${additionalContext}\n${pendingContext || contextNote(pendingText)}` : additionalContext
   }
 }), () => {
   marksAfterOutput().then(() => {

@@ -19,11 +19,13 @@ const cards = async (ui: any) => (await ui.findAll({ type: 'Button' })).filter((
 
 const PANE = { plugin: 'pending-items', component: 'Pane', requestId: 'pending-items', props: { bodyColumns: 60 } } as const
 
-const stub = (o: any, fsRead: (path: string) => any) => {
+const stub = (o: any, fsRead: (path: string) => any, hasTools = false) => {
   const v = (x: any) => () => ({ value: x })
   o('session.start', () => ({ cwd: '/tmp' }))
   o('command.register', v({ command: 'x' }))
   o('clock.every', v({}))
+  o('clock.after', v({}))
+  if (!hasTools) o('tool.register', v({ tool: 'mcp__pending-items__pane' }))
   o('env.get', v('/home/test'))
   o('fs.read', (_: any, e: any) => fsRead(String(e.path ?? '')))
 }
@@ -133,7 +135,7 @@ test('pressing a card title opens the item in the browser', async ($, on) => {
   await ui.press({ key: 'card:github:example/api#401:review' })
   expect(runs).toEqual([['open', 'https://github.com/example/api/pull/401']])
   // The title is the card's only link: one such button per card, the number and the age plain text.
-  const opened = (await ui.findAll({ type: 'Button' })).filter((b: any) => !/^(hide|fold):|^(refresh)$/.test(String(b.key ?? b.props?.key ?? '')))
+  const opened = (await ui.findAll({ type: 'Button' })).filter((b: any) => !/^(hide|fold):|^(refresh|auto)$/.test(String(b.key ?? b.props?.key ?? '')))
   expect(opened.length).toBe(4)
   await ui.unmount()
 })
@@ -343,4 +345,168 @@ test('a hidden list written as bare keys still hides, and keeps those keys when 
   expect(JSON.parse(Object.values(written)[0]!).hidden.map((h: any) => h.key)).toEqual(['github:example/web#50', 'github:example/api#401'])
   expect((await cards(ui)).length).toBe(2)
   await ui.unmount()
+})
+
+// What the engine keeps for the mod between conversations, and what the pane was asked to do.
+const world = (o: any, kept: Record<string, unknown>, read: (path: string) => any = p => (p.endsWith('pending-items.json') ? { value: STATE } : { deny: 'missing' })) => {
+  const seenBy = { opened: [] as any[], toasts: [] as string[], tools: [] as any[], placed: { isPlaced: true } as any }
+  o('ui.open', (_: any, e: any) => { seenBy.opened.push(e); return { value: seenBy.placed } })
+  o('tool.register', (_: any, e: any) => { seenBy.tools.push(e); return { value: { tool: `mcp__pending-items__${e.name}` } } })
+  o('ui.toast', (_: any, e: any) => { seenBy.toasts.push(String(e.text ?? '')); return { value: undefined } })
+  o('store.get', (_: any, e: any) => ({ value: kept[e.key] }))
+  o('store.set', (_: any, e: any) => { kept[e.key] = e.value; return { value: undefined } })
+  stub(o, read, true)
+  return seenBy
+}
+// The pane is opened without the session start waiting on it: give it a moment.
+const begin = async ($: any) => {
+  await $.session.start({ source: 'startup', cwd: '/tmp' })
+  await new Promise(resolve => setTimeout(resolve, 20))
+}
+
+test('the pane opens by itself only when it lists an item it has not shown before', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  let state = STATE
+  const w = world(on as any, kept, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  expect(w.opened.length).toBe(1)
+  expect((kept.seen as string[]).length).toBe(4)
+  // The next conversation lists the same four: nothing opens.
+  await begin($)
+  expect(w.opened.length).toBe(1)
+  // A fifth item came in: the pane opens for it, once.
+  const more = JSON.parse(STATE)
+  more.items.push({ key: 'github:example/api#77', kind: 'assigned', title: 'New one', url: 'https://github.com/example/api/issues/77', ref: 'example/api issue #77', project: 'api', host: 'github', at: now, person: 'Sam Wu' })
+  state = JSON.stringify(more)
+  await begin($)
+  expect(w.opened.length).toBe(2)
+  await begin($)
+  expect(w.opened.length).toBe(2)
+})
+
+test('a broken PR that breaks again on a new commit counts as new', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  const one = (signal: string) => JSON.stringify({ lastCheckAt: now, items: [{ key: 'github:example/api#9', kind: 'failing', signal, title: 'Fix', url: '', ref: 'example/api PR #9', host: 'github', at: now, person: 'Me Myself' }] })
+  let state = one('aaa')
+  const w = world(on as any, kept, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  await begin($)
+  expect(w.opened.length).toBe(1)
+  state = one('bbb')
+  await begin($)
+  expect(w.opened.length).toBe(2)
+})
+
+test('switched off, the pane stays closed on new items; the command still opens it', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: false }
+  const w = world(on as any, kept)
+  await begin($)
+  expect(w.opened.length).toBe(0)
+  expect(kept.seen).toBeUndefined()
+  await ($ as any).command.run({ command: 'pending-items', args: '' })
+  expect(w.opened.length).toBe(1)
+  // Seen now: switching it back on does not open the pane for these four again.
+  kept.autoOpen = true
+  await begin($)
+  expect(w.opened.length).toBe(1)
+})
+
+test('the header button switches the pane opening by itself off and on, and says what stays', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  const w = world(on as any, kept)
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ key: 'auto', text: /^關閉自動跳出$/ })).toBeDefined()
+  await ui.press({ key: 'auto' })
+  expect(kept.autoOpen).toBe(false)
+  expect(w.toasts).toEqual(['已關閉自動跳出，對話開頭的提醒不變'])
+  expect(await ui.find({ key: 'auto', text: /^開啟自動跳出$/ })).toBeDefined()
+  await ui.press({ key: 'auto' })
+  expect(kept.autoOpen).toBe(true)
+  expect(w.toasts[1]).toBe('已開啟自動跳出，有新單時面板會自己打開')
+  await ui.unmount()
+})
+
+test('the model can switch it off, on, or show the pane once, through the pane tool', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: true, seen: [] }
+  const w = world(on as any, kept, () => ({ deny: 'missing' }))
+  await begin($)
+  expect(w.opened.length).toBe(0)
+  // In the prompt's tool list from the start, or the model never learns it can do this.
+  expect(w.tools.map((t: any) => [t.name, t.isDeferred])).toEqual([['pane', false]])
+  const call = (action: string) => ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action })
+  const off = await call('off')
+  expect(kept.autoOpen).toBe(false)
+  expect(String(off.result)).toContain('no longer opens by itself')
+  expect(String(off.result)).toContain('reminder')
+  // The person sees it happen, in their own language.
+  expect(w.toasts).toEqual(['已關閉自動跳出，對話開頭的提醒不變'])
+  const back = await call('on')
+  expect(kept.autoOpen).toBe(true)
+  expect(String(back.result)).toContain('opens by itself again')
+  expect(w.toasts.length).toBe(2)
+  await call('show')
+  expect(w.opened.length).toBe(1)
+  expect(kept.autoOpen).toBe(true)
+  expect((await call('sideways')).deny).toBeDefined()
+})
+
+test('showing the pane through the tool counts its items as shown; a pane no window drew does not', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: false }
+  const w = world(on as any, kept)
+  await begin($)
+  const call = (action: string) => ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action })
+  // Nobody is looking at this conversation: the pane waits undrawn, and the model is told why.
+  w.placed = { isPlaced: false, reason: 'no-surface' }
+  const waiting = await call('show')
+  expect(String(waiting.result)).toContain('not drawn yet (no-surface)')
+  expect(kept.seen).toBeUndefined()
+  w.placed = { isPlaced: true }
+  const shown = await call('show')
+  expect(String(shown.result)).toContain('lists 4 items')
+  expect((kept.seen as string[]).length).toBe(4)
+})
+
+test('an item that comes in while the pane stands open does not open it again next time', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  let state = STATE
+  const o = on as any
+  const w = world(o, kept, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  o('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  const more = JSON.parse(STATE)
+  more.items.push({ key: 'github:example/api#77', kind: 'assigned', title: 'New one', url: 'https://github.com/example/api/issues/77', ref: 'example/api issue #77', project: 'api', host: 'github', at: now, person: 'Sam Wu' })
+  state = JSON.stringify(more)
+  // The hourly check brought a fifth item; the open pane draws it.
+  await ui.press({ key: 'refresh' })
+  expect((await cards(ui)).length).toBe(5)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(kept.seen as string[]).toContain('github:example/api#77:assigned:')
+  await ui.unmount()
+  await begin($)
+  expect(w.opened.length).toBe(1)
+})
+
+test('a switch made in another conversation reaches this pane\'s button', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  const o = on as any
+  world(o, kept)
+  o('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ key: 'auto', text: /^關閉自動跳出$/ })).toBeDefined()
+  kept.autoOpen = false
+  await ui.press({ key: 'refresh' })
+  expect(await ui.find({ key: 'auto', text: /^開啟自動跳出$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a list written just after the conversation starts still opens the pane', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  let reads = 0
+  // The session start's own check has not written the list when the mod first looks.
+  const w = world(on as any, kept, p => (p.endsWith('pending-items.json') && reads++ > 0 ? { value: STATE } : { deny: 'missing' }))
+  await begin($)
+  expect(w.opened.length).toBe(1)
 })
