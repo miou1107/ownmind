@@ -1,0 +1,10 @@
+- [x] `res.setEncoding('utf8')` wherever a response is read in pieces, with tests
+- [x] `decide` returns `added` and `total`; state keeps `known` per host; legacy state file
+- [x] `render` as one sentence; `contextNote` with the new items and their links
+- [x] Locale keys in zh, en, ja and the two override files
+- [x] Collectors mark an item the user opened themself (`own`)
+- [x] Pane: `seen` in `$.store`; open at `session.start` only for unseen items; late second look
+- [x] Pane: header button for opening by itself, with toasts
+- [x] Pane: `pane` tool (`off`, `on`, `show`)
+- [x] Tests: tests/pending-items.test.js, mods/pending-items/hooks/pane.test.tsx
+- [x] README (three languages), CHANGELOG, FILELIST, version 1.33.7

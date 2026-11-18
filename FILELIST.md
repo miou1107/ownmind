@@ -1,5 +1,27 @@
 # OwnMind 檔案結構
 
+## v1.33.7 修改（2026-11-18，「待處理單據」面板有新單才自己打開，可以關閉自動跳出；對話提醒縮成一句話）
+
+新增檔：
+```
+openspec/changes/v1.33.7-pending-items-auto-open/       — proposal、tasks
+```
+
+修改檔：
+```
+hooks/lib/pending-items.js                              — decide 多回傳 added（上次查過之後才出現的單）與 total，狀態檔多記 known（每台主機上次查到的單）；render 改成一句話，最多點名兩張；contextNote 把新進的單與連結交給 AI；自己開的單標 own；讀回應時指定 utf8，中文不會斷在半個字
+hooks/ownmind-session-start.js、hooks/lib/session-start-output.js、hooks/ownmind-prompt-inject.js — 改用 checkPendingItems 回傳的 context
+hooks/lib/fetch-project-tasks.js、hooks/lib/release-check.js、hooks/lib/hook-context-fetch.js、hooks/ownmind-touch-report.js — 讀回應時指定 utf8
+hooks/locales/{zh,en,ja}.json、{en,ja}.override.json   — pendingItems.* 改成一句話用的十二條文案（new、allWithNew、all、rest、pair、name.*、expired.*）
+mods/pending-items/hooks/register.tsx                   — 只有出現還沒在面板上看過的單才自己打開（看過的單記在 $.store 的 seen）；最上方多一個「關閉自動跳出／開啟自動跳出」按鈕（$.store 的 autoOpen，只存在這台電腦）；註冊給 Claude 用的 pane 工具（off、on、show）
+mods/pending-items/hooks/pane.test.tsx                  — 只為沒看過的單打開、新提交測試沒過算新單、關閉後不打開但指令照開、按鈕切換與提示、pane 工具三種動作、面板開著時進來的單算看過
+mods/pending-items/types/index.d.ts                     — Item.mark、auto
+tests/pending-items.test.js                             — 一句話提醒的各種情況、added 與 total、主機一次沒回應不會把舊單當新單、舊版狀態檔
+package.json、package-lock.json                         — 版號 1.33.7
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.7
+CHANGELOG.md                                            — v1.33.7
+```
+
 ## v1.33.6 修改（2026-11-12，「待處理單據」面板：卡片可以隱藏，OwnMind 的單改在對話裡處理）
 
 新增檔：

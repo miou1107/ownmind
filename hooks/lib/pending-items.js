@@ -91,6 +91,9 @@ function runGhAt(bin, args, timeoutMs) {
       try { child.kill(); } catch { /* already gone */ }
       finish({ code: -1, error: 'timeout', stdout, stderr });
     }, timeoutMs);
+    // Same here: a title can be cut in the middle of a character between two pieces of output.
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', (c) => { stdout += c; });
     child.stderr.on('data', (c) => { stderr += c; });
     child.on('error', (err) => finish({ code: -1, error: err?.code || 'spawn', stdout, stderr }));
@@ -133,7 +136,7 @@ export async function collectGithub({ run = runGh, timeoutMs = HOST_TIMEOUT_MS }
   for (const n of data.assigned?.nodes || []) {
     if (!n?.number) continue;
     // Every card names someone: here whoever opened the issue, the user themself included.
-    items.push({ ...base(n), kind: 'assigned', signal: '', ref: `${n.repository?.nameWithOwner} issue #${n.number}`, person: personName(n.author) });
+    items.push({ ...base(n), kind: 'assigned', signal: '', ref: `${n.repository?.nameWithOwner} issue #${n.number}`, person: personName(n.author), ...(me && n.author?.login === me && { own: true }) });
   }
   for (const n of data.review?.nodes || []) {
     if (!n?.number) continue;
@@ -209,6 +212,8 @@ export function gitlabGet(url, token, timeoutMs = HOST_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { headers: { 'PRIVATE-TOKEN': token }, timeout: timeoutMs }, (res) => {
+      // Decode as one stream: a piece of the response can end in the middle of a character.
+      res.setEncoding('utf8');
       let body = '';
       res.on('data', (c) => { body += c; });
       res.on('end', () => resolve({ status: res.statusCode, body }));
@@ -273,7 +278,7 @@ export async function collectGitlab({ host, fetchJson = gitlabGet, timeoutMs = H
       project: gitlabProject(x, host.projectLabels),
     });
     // Every card names someone: the issue's opener or the MR's author, the user themself included.
-    for (const x of Array.isArray(assigned) ? assigned : []) items.push({ ...base(x), kind: 'assigned', signal: '', person: personName(x.author) });
+    for (const x of Array.isArray(assigned) ? assigned : []) items.push({ ...base(x), kind: 'assigned', signal: '', person: personName(x.author), ...(x.author?.id != null && x.author.id === me.id && { own: true }) });
     for (const x of Array.isArray(review) ? review : []) items.push({ ...base(x), kind: 'review', signal: '', who: x.author?.username || '', person: personName(x.author) });
     const mine = Array.isArray(authored) ? authored : [];
     // The list endpoint carries neither the pipeline nor who wrote the notes; ask for the first
@@ -320,6 +325,8 @@ function ownmindGet(url, apiKey, timeoutMs = HOST_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: timeoutMs }, (res) => {
+      // Decode as one stream: a piece of the response can end in the middle of a character.
+      res.setEncoding('utf8');
       let body = '';
       res.on('data', (c) => { body += c; });
       res.on('end', () => resolve({ status: res.statusCode, body }));
@@ -495,7 +502,9 @@ const idOf = (i) => `${i.key}:${i.kind}:${i.signal || ''}`;
  * @param {Array}  results    collector answers: { host, status, items, commentMarks?, commentWho?, authoredMeta? }
  * @param {Date}   now
  * @param {Iterable<string>} hidden  keys of the items the user hid: never listed, never in the pane
- * @returns {{ state, fresh, expired, firstToday }}
+ * @returns {{ state, fresh, added, total, expired, firstToday }}
+ *   fresh: what this check lists (everything on the day's first check, later only what is new);
+ *   added: the part of fresh that was not there at the last check; total: every item listed.
  */
 export function decide(state, results, now, hidden = []) {
   const hiddenKeys = new Set(hidden);
@@ -507,6 +516,10 @@ export function decide(state, results, now, hidden = []) {
   const hosts = { ...(prev.hosts || {}) };
   const baseline = { ...(prev.commentBaseline || {}) };
   const prevItems = Array.isArray(prev.items) ? prev.items : [];
+  // What each host listed the last time it answered. It outlives a check the host sat out
+  // (signed out, unreachable), so the items it comes back with are not taken for new ones.
+  const known = knownBefore(prev, prevItems);
+  const answered = new Set();
   const expired = [];
   const current = [];
   // Items of a host that did not answer this time: kept for the pane, marked stale, never listed
@@ -517,6 +530,7 @@ export function decide(state, results, now, hidden = []) {
     if (!r || !r.host) continue;
     if (r.status === 'ok') {
       hosts[r.host] = 'ok';
+      answered.add(r.host);
       for (const i of r.items || []) current.push({ ...i, host: r.host });
       for (const [k, mark] of Object.entries(r.commentMarks || {})) {
         const before = baseline[k];
@@ -546,12 +560,23 @@ export function decide(state, results, now, hidden = []) {
   }
 
   // Pane-only items (OwnMind's own task cards and bug reports) are never listed as new.
-  const fresh = current.filter((i) => visible(i) && !i.paneOnly && !shown.has(idOf(i)));
+  const listed = current.filter((i) => visible(i) && !i.paneOnly);
+  const fresh = listed.filter((i) => !shown.has(idOf(i)));
   for (const i of fresh) shown.add(idOf(i));
+  // The day's first check lists everything again, so "new" is told from what the item's host
+  // listed before. A host answering for the first time has no such list: its items are where
+  // the telling starts, and none of them is called new.
+  const added = fresh.filter((i) => known[i.host] && !known[i.host].includes(idOf(i)));
+  const nextKnown = { ...known };
+  for (const host of answered) nextKnown[host] = current.filter((i) => i.host === host).map(idOf);
+  // What the pane lists, the items of a host that sat this check out included.
+  const kept = [...current, ...carried].filter(visible);
 
   return {
     firstToday,
     fresh,
+    added,
+    total: kept.filter((i) => !i.paneOnly).length,
     expired,
     state: {
       day,
@@ -559,30 +584,78 @@ export function decide(state, results, now, hidden = []) {
       shownToday: [...shown],
       commentBaseline: baseline,
       hosts,
-      items: [...current, ...carried].filter(visible),
+      known: nextKnown,
+      items: kept,
     },
   };
+}
+
+/**
+ * Each host's ids at its last answer. A state file from before these were kept has only the
+ * items of the last check: those stand in, for the hosts that had answered by then.
+ */
+function knownBefore(prev, prevItems) {
+  const kept = prev.known && typeof prev.known === 'object' ? prev.known : null;
+  const out = {};
+  if (kept) {
+    for (const [host, ids] of Object.entries(kept)) if (Array.isArray(ids)) out[host] = ids.filter((k) => typeof k === 'string');
+    return out;
+  }
+  for (const host of Object.keys(prev.hosts || {})) out[host] = prevItems.filter((p) => p.host === host).map(idOf);
+  return out;
 }
 
 function hostName(h) {
   try { return new URL(h.replace(/^gitlab:/, '')).host; } catch { return h; }
 }
 
-/** The user-facing text, or null when there is nothing to say. `t` is hooks/lib/i18n.js's t. */
-export function render({ fresh, expired, firstToday }, t) {
+// How many items the reminder names before it counts the rest, and how much of a title it keeps.
+const NAMED = 2;
+const TITLE_MAX = 24;
+const cut = (text, max) => {
+  const chars = [...String(text || '')];
+  return chars.length > max ? `${chars.slice(0, max).join('')}\u2026` : chars.join('');
+};
+// Someone waiting on the user comes first: a review request, then the user's own PR that broke
+// or got an answer, then the issues assigned to them.
+const URGENCY = { review: 0, failing: 1, comment: 2, assigned: 3 };
+const byUrgency = (items) => [...items].sort((a, b) => (URGENCY[a.kind] ?? 9) - (URGENCY[b.kind] ?? 9));
+
+// A space belongs between a Latin word and a Chinese or Japanese one, not between two of the
+// latter. The templates put one around every name; the ones that end up between two wide
+// characters go ("包括 王小明 的" reads "包括王小明的", "包括 Jane Doe 的" stays).
+const WIDE = '\\u3000-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef';
+const STRAY_GAP = new RegExp(`(?<=[${WIDE}]) +(?=[${WIDE}])`, 'g');
+
+function nameOf(i, t, title) {
+  if (i.kind === 'failing') return t('pendingItems.name.failing', { title });
+  if (i.kind === 'comment') {
+    return i.person ? t('pendingItems.name.reply', { person: i.person, title }) : t('pendingItems.name.replied', { title });
+  }
+  // An item the user opened themself is theirs already: its title says enough.
+  return i.person && !i.own ? t('pendingItems.name.by', { person: i.person, title }) : t('pendingItems.name.plain', { title });
+}
+
+/**
+ * The user-facing text, or null when there is nothing to say: one sentence about the items (how
+ * many, and who the first two are from), then a line per expired sign-in. `t` is
+ * hooks/lib/i18n.js's t. Links are left to the pane and to the model's note.
+ */
+export function render({ fresh, added = fresh, total = fresh.length, expired, firstToday }, t) {
   const lines = [];
   if (fresh.length) {
-    lines.push(t(firstToday ? 'pendingItems.header.all' : 'pendingItems.header.new', { count: fresh.length }));
-    // Someone waiting on the user comes first: a review request, then the user's own PR that
-    // broke or got an answer, then the issues assigned to them.
-    const order = { review: 0, failing: 1, comment: 2, assigned: 3 };
-    const sorted = [...fresh].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
-    for (const i of sorted.slice(0, MAX_LINES)) {
-      lines.push(t('pendingItems.item', {
-        label: t(`pendingItems.kind.${i.kind}`), title: i.title, ref: i.ref, url: i.url,
-      }));
-    }
-    if (fresh.length > MAX_LINES) lines.push(t('pendingItems.more', { count: fresh.length - MAX_LINES }));
+    // A title's own spacing is its author's: a mark stands in for each title while the
+    // sentence's spacing is tidied, and the title goes back in afterwards.
+    const titles = [];
+    const mark = (title) => `\u27e6${titles.push(cut(title, TITLE_MAX)) - 1}\u27e7`;
+    const [first, second] = byUrgency(added).slice(0, NAMED).map((i) => nameOf(i, t, mark(i.title)));
+    const names = second ? t('pendingItems.pair', { first, second }) : first;
+    const rest = added.length > NAMED ? t('pendingItems.rest', { count: added.length - NAMED }) : '';
+    let sentence;
+    if (!added.length) sentence = t('pendingItems.all', { total });
+    else if (!firstToday || added.length === total) sentence = t('pendingItems.new', { count: added.length, names }) + rest;
+    else sentence = t('pendingItems.allWithNew', { total, count: added.length, names }) + rest;
+    lines.push(sentence.replace(STRAY_GAP, '').replace(/\u27e6(\d+)\u27e7/g, (m, n) => titles[Number(n)] ?? m));
   }
   for (const h of expired) {
     lines.push(h === 'github'
@@ -661,8 +734,9 @@ export async function runCollectors(collectors, budgetMs = TOTAL_BUDGET_MS) {
 }
 
 /**
- * Run every collector in parallel, update the state file, and say what the user should see.
- * @returns {Promise<{ text: string|null, fresh: Array, expired: Array }>}
+ * Run every collector in parallel, update the state file, and say what the user should see
+ * (`text`) and what the model should know (`context`, '' when there is no text).
+ * @returns {Promise<{ text: string|null, context: string, fresh: Array, expired: Array }>}
  */
 export async function checkPendingItems({
   statePath = defaultStatePath(),
@@ -671,30 +745,38 @@ export async function checkPendingItems({
   t,
   budgetMs = TOTAL_BUDGET_MS,
 } = {}) {
-  if (process.env.OWNMIND_PENDING_ITEMS === 'off') return { text: null, fresh: [], expired: [] };
+  if (process.env.OWNMIND_PENDING_ITEMS === 'off') return { text: null, context: '', fresh: [], expired: [] };
   try {
     const results = await runCollectors(collectors, budgetMs);
     const verdict = decide(readState(statePath), results.filter(Boolean), now, readHidden(hiddenPathFor(statePath)));
     writeState(statePath, verdict.state);
-    return { text: render(verdict, t), fresh: verdict.fresh, expired: verdict.expired };
+    const text = render(verdict, t);
+    return { text, context: contextNote(text, verdict.added.length ? verdict.added : verdict.fresh), fresh: verdict.fresh, expired: verdict.expired };
   } catch {
-    return { text: null, fresh: [], expired: [] };
+    return { text: null, context: '', fresh: [], expired: [] };
   }
 }
 
 /** The per-prompt entry point: check only when the last check is an hour old. */
 export async function recheckPendingItemsIfDue({ statePath = defaultStatePath(), now = new Date(), t, collectors } = {}) {
-  if (process.env.OWNMIND_PENDING_ITEMS === 'off') return { text: null, fresh: [], expired: [] };
-  if (!isDue(readState(statePath), now)) return { text: null, fresh: [], expired: [] };
+  if (process.env.OWNMIND_PENDING_ITEMS === 'off') return { text: null, context: '', fresh: [], expired: [] };
+  if (!isDue(readState(statePath), now)) return { text: null, context: '', fresh: [], expired: [] };
   return checkPendingItems({ statePath, now, t, ...(collectors && { collectors }) });
 }
 
-/** The model-facing note that rides along with the user-facing text. English by policy. */
-export function contextNote(text) {
+/**
+ * The model-facing note that rides along with the user-facing text. English by policy. The
+ * person's sentence names two items and carries no link, so the items come here in full.
+ */
+export function contextNote(text, items = []) {
   if (!text) return '';
+  const lines = byUrgency(items).slice(0, MAX_LINES).map((i) =>
+    `- [${i.kind}] ${i.title} (${i.ref})${i.person ? `, from ${i.person}` : ''} ${i.url}`.trimEnd());
   return [
-    '[OwnMind] The user was just shown these items waiting on them on GitHub / GitLab:',
+    '[OwnMind] The user was just shown this reminder about the items waiting on them on GitHub / GitLab:',
     text,
-    'You do not need to repeat the list. If the user asks to handle one, open its link.',
+    ...(lines.length ? ['The items it is about (the user saw no links):', ...lines] : []),
+    ...(items.length > MAX_LINES ? [`- and ${items.length - MAX_LINES} more`] : []),
+    'You do not need to repeat the reminder. If the user asks to handle an item, open its link; the 待處理單據 side pane (/pending-items) has the whole list.',
   ].join('\n');
 }

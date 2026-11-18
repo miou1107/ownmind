@@ -260,8 +260,8 @@ async function main() {
     const [{ recheckPendingItemsIfDue, contextNote }, { t }] = await Promise.all([
       import('./lib/pending-items.js'), import('./lib/i18n.js'),
     ]);
-    pendingText = (await recheckPendingItemsIfDue({ t })).text;
-    if (pendingText) pendingText = { user: pendingText, assistant: contextNote(pendingText) };
+    const pending = await recheckPendingItemsIfDue({ t });
+    pendingText = pending.text ? { user: pending.text, assistant: pending.context || contextNote(pending.text) } : null;
   } catch { pendingText = null; }
 
   const forUser = [verdict.action === 'notice' ? verdict.banner : '', pendingText?.user || '']

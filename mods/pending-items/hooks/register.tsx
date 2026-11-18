@@ -8,8 +8,13 @@ import type { Item, View } from '../types'
 // ~/.ownmind/state/pending-items.json; this pane reads that file, and its refresh button runs
 // the same check once more through hooks/pending-items-check.js. A card's hide button drops the
 // item for good: its key goes into pending-items-hidden.json, which the check reads as well.
+// The pane opens by itself when a conversation starts with an item it has not shown before; the
+// header's button, or the model through the pane tool, switches that off for this machine. The
+// one-line reminder in the conversation is the check's own and stays either way.
 const PANE = 'pending-items'
 const TITLE = '待處理單據'
+const COMMAND = 'pending-items'
+const PANE_TOOL = 'mcp__pending-items__pane'
 const STALE_DAYS = 14
 
 const EMPTY: View = { items: [], checkedAt: '', isLoaded: false }
@@ -18,6 +23,9 @@ const view = atom({ plugin: 'pending-items', key: 'view' } as const, EMPTY, { sh
 const filter = atom({ plugin: 'pending-items', key: 'filter' } as const, '', { shape: 'filter-1' })
 const collapsed = atom({ plugin: 'pending-items', key: 'collapsed' } as const, [] as string[], { shape: 'collapsed-1' })
 const busy = atom({ plugin: 'pending-items', key: 'busy' } as const, false, { shape: 'busy-1' })
+// Whether the pane opens by itself. The store keeps it between conversations; this copy is what
+// the header's button is drawn from.
+const auto = atom({ plugin: 'pending-items', key: 'auto' } as const, true, { shape: 'auto-1' })
 
 // Waiting first, then the newest change.
 const ORDER: Record<Item['kind'], number> = { review: 0, failing: 1, comment: 2, bug: 3, assigned: 4, task: 5, resolved: 6 }
@@ -140,6 +148,7 @@ export const parseState = (text: string): View => {
           source: sourceOf(String(i.host || i.key)),
           at: String(i.at ?? ''),
           person: String(i.person ?? ''),
+          mark: String(i.signal ?? ''),
         }
       })
     return { items, checkedAt: String(s?.lastCheckAt ?? ''), isLoaded: true }
@@ -205,6 +214,11 @@ const loadHidden = async ($: any, path: string): Promise<Hidden[] | null> => {
   return parseHidden(text)
 }
 
+// Whether the pane opens by itself, as kept for this machine. Never switched off, or unreadable: it does.
+const readAuto = async ($: any) => {
+  try { return (await $.store.get('autoOpen')) !== false } catch { return true }
+}
+
 const refresh = async ($: any) => {
   let next = EMPTY
   try {
@@ -214,6 +228,9 @@ const refresh = async ($: any) => {
   const hidden = new Set((await readHidden($)).map(h => h.key))
   if (hidden.size > 0) next = { ...next, items: next.items.filter(i => !hidden.has(i.key)) }
   await update($, view, () => next)
+  // Another conversation may have switched the pane's self-opening since this one last looked.
+  const isAuto = await readAuto($)
+  if (isAuto !== (await read($, auto))) await update($, auto, () => isAuto)
   return next
 }
 
@@ -272,6 +289,9 @@ const runScript = async ($: any, name: string, args: string[], timeoutMs: number
   }
   return null
 }
+
+// The list as last noted from a drawing; a reload starts over, which costs one harmless write.
+let noted = ''
 
 let running = false
 const checkNow = async ($: any) => {
@@ -343,25 +363,139 @@ const saveFolds = async ($: any, keys: string[]) => {
 
 const openPane = ($: any) => $.ui.open({ id: PANE, title: TITLE, closeOnEscape: true })
 
+// An item as the pane has shown it: a PR that breaks again on a new commit, or an item with a
+// newer reply, is a new one.
+const seenId = (i: Item) => `${i.key}:${i.kind}:${i.mark}`
+const readSeen = async ($: any): Promise<string[]> => {
+  try {
+    const kept = await $.store.get('seen')
+    return Array.isArray(kept) ? kept.filter((k: unknown): k is string => typeof k === 'string') : []
+  } catch { return [] /* nothing shown yet */ }
+}
+
+// How many shown items are remembered: far more than a list holds, so two conversations noting
+// their lists at once lose nothing, yet the record cannot grow without end.
+const SEEN_MAX = 500
+/** Notes the items as shown to the person, on top of what was noted before: none of them opens the pane again. */
+const noteSeen = async ($: any, items: Item[]) => {
+  try {
+    const before = await readSeen($)
+    const had = new Set(before)
+    const fresh = items.map(seenId).filter(id => !had.has(id))
+    if (fresh.length > 0) await $.store.set('seen', [...before, ...fresh].slice(-SEEN_MAX))
+  } catch { /* these open the pane once more next time */ }
+}
+
+/** Opens the pane; `reason` is the engine's own word for why no surface drew it. */
+const showPane = async ($: any, items: Item[]): Promise<{ isPlaced: boolean; reason: string }> => {
+  let placed: any
+  try { placed = await openPane($) } catch (err) { return { isPlaced: false, reason: String((err as any)?.message ?? err) } }
+  // Not drawn (no window attached, or too narrow for a pane nobody asked for): the person saw
+  // nothing, so nothing counts as shown. Drawing it later notes the items (the Pane hook below).
+  if (placed?.isPlaced === false) return { isPlaced: false, reason: String(placed.reason ?? '') }
+  await noteSeen($, items)
+  return { isPlaced: true, reason: '' }
+}
+
+/** At a conversation's start: opens the pane when it lists an item it has not shown before, unless switched off. */
+const openIfNew = async ($: any, v: View) => {
+  try {
+    if (!(await read($, auto))) return
+    const seen = new Set(await readSeen($))
+    if (v.items.some(i => !seen.has(seenId(i)))) await showPane($, v.items)
+  } catch { /* the pane stays closed; /pending-items still opens it */ }
+}
+// The session start's own check may still be writing the list when the mod first reads it.
+const LATE_LOOK_MS = 10000
+
+const AUTO_OFF = '關閉自動跳出'
+const AUTO_ON = '開啟自動跳出'
+const AUTO_OFF_DONE = '已關閉自動跳出，對話開頭的提醒不變'
+const AUTO_ON_DONE = '已開啟自動跳出，有新單時面板會自己打開'
+const AUTO_FAILED = 'OwnMind 沒有存下這個設定，請再按一次'
+
+/** Switches the pane opening by itself on or off for this machine; false when it could not be kept. */
+const setAuto = async ($: any, isOn: boolean) => {
+  try { await $.store.set('autoOpen', isOn) } catch { return false }
+  await update($, auto, () => isOn)
+  return true
+}
+
+// The header's button does what its label says, and the label is drawn from this conversation's
+// copy: a switch made in another conversation reaches the label within a minute (refresh), and
+// until then a press sets what the label promised. Read at press time, so two quick presses end
+// where they started.
+const toggleAuto = async ($: any) => {
+  const isOn = !(await read($, auto))
+  $.ui.toast((await setAuto($, isOn)) ? (isOn ? AUTO_ON_DONE : AUTO_OFF_DONE) : AUTO_FAILED)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'pending-items', description: '打開待處理單據面板' })
+    // In the prompt's tool list from the start: the model has to know the tool is there to
+    // reach for it when the person asks, in whatever words, to stop the pane popping up.
+    await $.tool.register({
+      name: 'pane',
+      description: 'OwnMind\'s 待處理單據 (pending items) side pane lists the issues, PRs/MRs, task cards and bug reports waiting on the user, and opens by itself when a conversation starts with new ones. '
+        + 'action "off": the user asks to stop it popping up (關掉待處理單據, 不要再跳 issue 提醒, 待辦事項的面板先關掉). '
+        + 'action "on": the user wants it to open by itself again (打開待處理單據, 恢復 issue 提醒). '
+        + 'action "show": open it once now, changing nothing (看一下我有哪些 issue 要處理). '
+        + '"off" only stops the pane opening by itself, on this computer: the one-line reminder at the start of a conversation stays, and the user can still open the pane. '
+        + 'If the user says only 關掉 issue or 把待辦關掉, with no mention of the pane, the reminder or popping up, ask first: they may mean closing the item itself. '
+        + 'Afterwards tell the user the result in one short sentence in their language.',
+      inputSchema: {
+        type: 'object',
+        properties: { action: { type: 'string', enum: ['off', 'on', 'show'] } },
+        required: ['action'],
+      },
+      isDeferred: false,
+    })
     try {
       const saved = await $.store.get('collapsed')
       if (Array.isArray(saved)) await update($, collapsed, () => saved.filter((k: unknown): k is string => typeof k === 'string'))
     } catch { /* nothing folded yet */ }
     // A reload mid-check leaves no check running, whatever the session's value says.
     await update($, busy, () => false)
-    const first = await refresh($)
-    if (first.items.length > 0) void openPane($)
+    const isAuto = await readAuto($)
+    await update($, auto, () => isAuto)
+    // Not awaited: a session start must not wait on the pane. The second look finds nothing new
+    // when the first one already opened it.
+    void openIfNew($, await refresh($))
+    $.clock.after(LATE_LOOK_MS, async () => { await openIfNew($, await refresh($)) })
     $.clock.every(60000, () => refresh($))
     return next(e)
   })
 
   on('command.run', { command: 'pending-items' }, async $ => {
-    await refresh($)
-    await openPane($)
+    await showPane($, (await refresh($)).items)
     return { text: '待處理單據面板已打開。' }
+  })
+
+  // The person asked the model, in their own words, to stop the pane popping up, to bring that
+  // back, or to see the pane now. Answered here, ahead of the permission check: it changes one
+  // setting of this mod and opens its own pane.
+  on('tool.call', { tool: PANE_TOOL }, async ($, e) => {
+    const action = String((e as any).action ?? '')
+    if (action === 'show') {
+      const v = await refresh($)
+      const shown = await showPane($, v.items)
+      return {
+        result: shown.isPlaced
+          ? `The pane is open and lists ${v.items.length} items.`
+          : `The pane is open but not drawn yet (${shown.reason || 'no window shows it now'}). It appears when this conversation is on screen; the user can also enter /${COMMAND}.`,
+      } as any
+    }
+    if (action !== 'off' && action !== 'on') return { deny: 'action must be "off", "on" or "show"' }
+    const isOn = action === 'on'
+    if (!(await setAuto($, isOn))) return { deny: 'The setting could not be saved. Try once more.' }
+    // The person sees it happen, whatever the model goes on to say.
+    $.ui.toast(isOn ? AUTO_ON_DONE : AUTO_OFF_DONE)
+    return {
+      result: isOn
+        ? 'Done: from the next conversation on, the pane opens by itself again when new items have come in. This setting is for this computer only.'
+        : `Done: the pane no longer opens by itself. The one-line reminder at the start of a conversation stays as it is, and /${COMMAND} still opens the pane. This setting is for this computer only.`,
+    } as any
   })
 
   // A prompt asking to see an OwnMind task card or bug report gets the item in full attached, so
@@ -385,6 +519,11 @@ export const register: Register = on => {
     const chosen = await read($, filter)
     const folded = new Set(await read($, collapsed))
     const isBusy = await read($, busy)
+    const isAuto = await read($, auto)
+    // Drawn is shown: an item that came in while the pane stood open must not open it again in
+    // the next conversation. Written only when the list has changed since the last drawing.
+    const drawn = v.items.map(seenId).join('\n')
+    if (drawn !== noted) { noted = drawn; void noteSeen($, v.items) }
     const groups = groupItems(v.items)
     // A project whose items are all done leaves the list; the select then falls back to every
     // project instead of keeping an empty pane with no way out.
@@ -491,11 +630,12 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" gap="sm">
-        {/* The pane's own title bar already names it, so the first row is the select and the button. */}
+        {/* The pane's own title bar already names it, so the first row is the select and the buttons. */}
         <Box flexDirection="row" alignItems="center" gap="sm">
           {groups.length > 1
             ? <Box flexGrow={1}><Select key="project" value={pick} options={options} onSelect={(value: string) => update($, filter, () => value)} /></Box>
             : <Box flexGrow={1} />}
+          <Button key="auto" onPress={() => toggleAuto($)}>{isAuto ? AUTO_OFF : AUTO_ON}</Button>
           <Button key="refresh" onPress={() => checkNow($)}>{isBusy ? '更新中…' : '更新'}</Button>
         </Box>
         {v.items.length === 0 && (

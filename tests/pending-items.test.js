@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { tempDir } from './helpers/temp-dir.js';
 import {
-  collectGithub, collectGitlab, decide, render, isDue, checkPendingItems, readGitHosts, recheckPendingItemsIfDue, collectOwnMind, readHidden, hiddenPathFor, describeOwnMindItem,
+  collectGithub, collectGitlab, decide, render, contextNote, isDue, checkPendingItems, readGitHosts, recheckPendingItemsIfDue, collectOwnMind, readHidden, hiddenPathFor, describeOwnMindItem, gitlabGet,
 } from '../hooks/lib/pending-items.js';
 
 const T = (key, p = {}) => `${key}${JSON.stringify(p)}`;
@@ -166,6 +167,76 @@ test('decide: first check of the day lists everything; later the same day only w
   assert.equal(nextDay.fresh.length, 3);
 });
 
+test('decide: says how many items wait in all, and which of them were not there at the last check', () => {
+  const a = item('github:e/a#1', 'assigned');
+  const b = item('github:e/b#2', 'review');
+  const c = item('github:e/c#3', 'assigned');
+  const card = { ...item('ownmind:task#3', 'task'), paneOnly: true };
+  const ok = (items) => [{ host: 'github', status: 'ok', items, commentMarks: {} }];
+  // The very first check on a machine: nothing to compare with, so nothing is called new.
+  const first = decide({}, ok([a, b, card]), new Date('2026-11-13T09:05:00+08:00'));
+  assert.deepEqual(first.added, []);
+  assert.equal(first.total, 2, 'a card shown only in the pane is not counted');
+  // Later the same day: what is new is what is listed.
+  const second = decide(first.state, ok([a, b, c]), new Date('2026-11-13T14:20:00+08:00'));
+  assert.deepEqual(second.added.map((i) => i.key), ['github:e/c#3']);
+  // The next morning everything is listed again, but only the overnight arrival is new.
+  const d = item('github:e/d#4', 'assigned');
+  const nextDay = decide(second.state, ok([a, b, c, d]), new Date('2026-11-14T09:00:00+08:00'));
+  assert.equal(nextDay.fresh.length, 4);
+  assert.deepEqual(nextDay.added.map((i) => i.key), ['github:e/d#4']);
+  assert.equal(nextDay.total, 4);
+});
+
+test('decide: a host that gave no answer once does not make its old items new again', () => {
+  const eight = Array.from({ length: 8 }, (_, n) => item(`github:e/a#${n}`, 'assigned'));
+  const ok = (items) => [{ host: 'github', status: 'ok', items, commentMarks: {} }];
+  const day1 = decide({}, ok(eight), new Date('2026-11-13T09:00:00+08:00'));
+  // Signed out for one check: the items leave the pane.
+  const gone = decide(day1.state, [{ host: 'github', status: 'absent', items: [] }], new Date('2026-11-13T15:00:00+08:00'));
+  assert.equal(gone.state.items.length, 0);
+  const back = decide(gone.state, ok(eight), new Date('2026-11-14T09:00:00+08:00'));
+  assert.equal(back.fresh.length, 8);
+  assert.deepEqual(back.added, [], 'the same eight are listed again, none of them as new');
+  // A ninth is still told apart.
+  const nine = [...eight, item('github:e/z#9', 'review')];
+  assert.deepEqual(decide(back.state, ok(nine), new Date('2026-11-14T15:00:00+08:00')).added.map((i) => i.key), ['github:e/z#9']);
+});
+
+test('decide: the first answer from a host just added is a starting point, not news', () => {
+  const a = item('github:e/a#1', 'assigned');
+  const day1 = decide({}, [{ host: 'github', status: 'ok', items: [a], commentMarks: {} }], new Date('2026-11-13T09:00:00+08:00'));
+  const lab = item('gitlab:https://git.example.com:g/p#5', 'assigned');
+  const both = decide(day1.state, [
+    { host: 'github', status: 'ok', items: [a], commentMarks: {} },
+    { host: 'gitlab:https://git.example.com', status: 'ok', items: [lab], commentMarks: {} },
+  ], new Date('2026-11-13T15:00:00+08:00'));
+  assert.deepEqual(both.fresh.map((i) => i.key), [lab.key]);
+  assert.deepEqual(both.added, []);
+  assert.equal(both.total, 2);
+});
+
+test('decide: the total counts what the pane lists, a silent host\'s items included', () => {
+  const a = item('github:e/a#1', 'assigned');
+  const lab = item('gitlab:https://git.example.com:g/p#5', 'assigned');
+  const results = (labStatus) => [
+    { host: 'github', status: 'ok', items: [a], commentMarks: {} },
+    { host: 'gitlab:https://git.example.com', status: labStatus, items: labStatus === 'ok' ? [lab] : [], commentMarks: {} },
+  ];
+  const day1 = decide({}, results('ok'), new Date('2026-11-13T09:00:00+08:00'));
+  const day2 = decide(day1.state, results('error'), new Date('2026-11-14T09:00:00+08:00'));
+  assert.equal(day2.state.items.length, 2);
+  assert.equal(day2.total, 2);
+});
+
+test('decide: a state file written before each host\'s known items were kept still tells old from new', () => {
+  const a = item('github:e/a#1', 'assigned');
+  const b = item('github:e/b#2', 'assigned');
+  const old = { day: '2026-11-13', lastCheckAt: '2026-11-13T09:00:00+08:00', shownToday: [], commentBaseline: {}, hosts: { github: 'ok' }, items: [{ ...a, host: 'github' }] };
+  const next = decide(old, [{ host: 'github', status: 'ok', items: [a, b], commentMarks: {} }], new Date('2026-11-14T09:00:00+08:00'));
+  assert.deepEqual(next.added.map((i) => i.key), ['github:e/b#2']);
+});
+
 test('decide: a new comment is flagged only after a baseline exists, and a new commit re-lists a failing PR', () => {
   const now = new Date('2026-11-13T09:00:00+08:00');
   const r1 = decide({}, [{ host: 'github', status: 'ok', items: [], commentMarks: { 'github:e/w#5': '2026-11-13T08:00:00Z' } }], now);
@@ -216,15 +287,72 @@ test('decide: an unreachable host keeps its items in the pane, stale, and never 
   assert.equal(r4.state.items.length, 0);
 });
 
-test('render: nothing to say is null; otherwise a header, one line per item, and expired lines', () => {
+// A person with a title, as the reminder names an item.
+const named = (key, kind, person, title = key) => ({ ...item(key, kind), person, title });
+
+test('render: nothing to say is null; otherwise one sentence, then a line per expired sign-in', () => {
   assert.equal(render({ fresh: [], expired: [], firstToday: true }, T), null);
-  const text = render({ fresh: [item('github:e/a#1', 'assigned')], expired: ['github', 'gitlab:https://git.example.com'], firstToday: true }, T);
+  const a = named('github:e/a#1', 'assigned', 'Jane Doe', 'Monthly cap');
+  const text = render({ fresh: [a], added: [a], total: 1, expired: ['github', 'gitlab:https://git.example.com'], firstToday: false }, T);
   const lines = text.split('\n');
-  assert.match(lines[0], /^pendingItems\.header\.all/);
-  assert.match(lines[1], /^pendingItems\.item\{.*"label":"pendingItems\.kind\.assigned/);
-  assert.match(lines[2], /^pendingItems\.expired\.github/);
-  assert.match(lines[3], /^pendingItems\.expired\.gitlab\{"host":"git\.example\.com"\}/);
-  assert.match(render({ fresh: [item('k', 'review')], expired: [], firstToday: false }, T), /^pendingItems\.header\.new/);
+  assert.equal(lines.length, 3);
+  assert.match(lines[0], /^pendingItems\.new\{"count":1,/);
+  assert.ok(lines[0].includes('pendingItems.name.by{\\"person\\":\\"Jane Doe\\",\\"title\\":\\"Monthly cap\\"}'), lines[0]);
+  assert.ok(!lines[0].includes('https://'), 'the sentence carries no link');
+  assert.match(lines[1], /^pendingItems\.expired\.github/);
+  assert.match(lines[2], /^pendingItems\.expired\.gitlab\{"host":"git\.example\.com"\}/);
+});
+
+test('render: the day\'s first reminder gives the total, and names only what came in since yesterday', () => {
+  const old = Array.from({ length: 6 }, (_, n) => named(`github:e/o#${n}`, 'assigned', 'Sam Wu'));
+  const a = named('github:e/a#1', 'assigned', 'Jane Doe');
+  const b = named('github:e/b#2', 'review', 'Alex Lee');
+  const text = render({ fresh: [...old, a, b], added: [a, b], total: 8, expired: [], firstToday: true }, T);
+  assert.equal(text.split('\n').length, 1);
+  assert.match(text, /^pendingItems\.allWithNew\{"total":8,"count":2,/);
+  assert.ok(text.includes('Jane Doe') && text.includes('Alex Lee'));
+  assert.ok(!text.includes('Sam Wu'), 'an item already there yesterday is not named');
+  // Nothing new overnight: the total alone.
+  assert.match(render({ fresh: old, added: [], total: 6, expired: [], firstToday: true }, T), /^pendingItems\.all\{"total":6\}$/);
+  // Everything is new (nothing was waiting yesterday): said as new, not as "N of N".
+  assert.match(render({ fresh: [a, b], added: [a, b], total: 2, expired: [], firstToday: true }, T), /^pendingItems\.new\{"count":2,/);
+});
+
+test('render: a long title is cut, and each kind of item is named in its own words', () => {
+  const long = named('github:e/a#1', 'assigned', '', 'x'.repeat(40));
+  assert.ok(render({ fresh: [long], added: [long], total: 1, expired: [], firstToday: false }, T).includes(`pendingItems.name.plain{\\"title\\":\\"${'x'.repeat(24)}\u2026\\"}`));
+  const one = (i) => render({ fresh: [i], added: [i], total: 1, expired: [], firstToday: false }, T);
+  assert.ok(one(named('k', 'failing', 'Me Myself')).includes('pendingItems.name.failing{'));
+  assert.ok(one(named('k', 'comment', 'Sam Wu')).includes('pendingItems.name.reply{\\"person\\":\\"Sam Wu\\"'));
+  assert.ok(one(named('k', 'comment', '')).includes('pendingItems.name.replied{'));
+});
+
+test('render: in Chinese the sentence reads as one, with no gap between two Chinese words', () => {
+  const zh = JSON.parse(fs.readFileSync(new URL('../hooks/locales/zh.json', import.meta.url), 'utf8'));
+  const t = (key, p = {}) => String(zh[key]).replace(/\{(\w+)\}/g, (m, n) => (n in p ? String(p[n]) : m));
+  const a = named('k1', 'review', '\u738b\u5c0f\u660e', '\u6708\u984d\u5ea6 \u4e0a\u9650');
+  const b = named('k2', 'assigned', 'Sam Wu', 'Price warning');
+  const c = named('k3', 'failing', 'Me Myself', 'Skip button');
+  // "… , including <CJK name>'s 「<title with its own space>」 and Sam Wu's 「Price warning」"
+  assert.equal(render({ fresh: [a, b], added: [a, b], total: 2, expired: [], firstToday: false }, t),
+    'OwnMind\uff1a\u6709\u65b0\u9032 2 \u5f35 issue\uff0c\u5305\u62ec\u738b\u5c0f\u660e\u7684\u300c\u6708\u984d\u5ea6 \u4e0a\u9650\u300d\u548c Sam Wu \u7684\u300cPrice warning\u300d');
+  const third = render({ fresh: [a, b, c], added: [c], total: 3, expired: [], firstToday: true }, t);
+  assert.ok(!/[\u3400-\u9fff] [\u3400-\u9fff\u300c]/.test(third.replace('\u6708\u984d\u5ea6 \u4e0a\u9650', '')), third);
+  assert.ok(third.startsWith('OwnMind\uff1a') && third.includes(' 3 ') && third.includes(' 1 ') && third.endsWith('\u300cSkip button\u300d'), third);
+});
+
+test('render: an item the user opened themself is named by its title alone', () => {
+  const own = { ...named('k', 'assigned', 'Me Myself', 'Own one'), own: true };
+  const text = render({ fresh: [own], added: [own], total: 1, expired: [], firstToday: false }, T);
+  assert.ok(text.includes('pendingItems.name.plain{') && !text.includes('Me Myself'), text);
+});
+
+test('contextNote: the model gets every new item with its link, which the sentence leaves out', () => {
+  const a = named('github:e/a#1', 'assigned', 'Jane Doe', 'Monthly cap');
+  const note = contextNote('the sentence', [a]);
+  assert.ok(note.includes('the sentence'));
+  assert.ok(note.includes('Monthly cap') && note.includes('https://x/github:e/a#1') && note.includes('Jane Doe'));
+  assert.equal(contextNote('', [a]), '');
 });
 
 test('isDue: an hour after the last check, or never checked', () => {
@@ -260,11 +388,25 @@ test('readGitHosts: a missing or malformed file means no GitLab hosts', () => {
   assert.deepEqual(readGitHosts(f), [{ url: 'https://git.example.com', token: 't', projectLabels: { billing: 'Billing' } }]);
 });
 
-test('render: more than ten items show ten lines and a count of the rest', () => {
-  const many = Array.from({ length: 13 }, (_, n) => item(`github:e/a#${n}`, 'assigned'));
-  const lines = render({ fresh: many, expired: [], firstToday: true }, T).split('\n');
-  assert.equal(lines.length, 12);
-  assert.match(lines[11], /^pendingItems\.more\{"count":3\}/);
+test('render: two items are named and the rest are counted, still in one sentence', () => {
+  const many = Array.from({ length: 5 }, (_, n) => named(`github:e/a#${n}`, 'assigned', 'Jane Doe'));
+  const text = render({ fresh: many, added: many, total: 5, expired: [], firstToday: false }, T);
+  assert.equal(text.split('\n').length, 1);
+  assert.equal((text.match(/pendingItems\.name\.by/g) || []).length, 2);
+  assert.ok(text.endsWith('pendingItems.rest{"count":3}'), text);
+});
+
+test('checkPendingItems: hands back the model\'s note beside the sentence, links included', async () => {
+  const dir = tempDir('pending-context-');
+  const statePath = path.join(dir, 'pending-items.json');
+  const a = named('github:e/a#1', 'assigned', 'Jane Doe', 'Monthly cap');
+  const collectors = [async () => ({ host: 'github', status: 'ok', items: [a], commentMarks: {} })];
+  const first = await checkPendingItems({ statePath, collectors, t: T, now: new Date('2026-11-13T09:00:00+08:00') });
+  assert.ok(first.text);
+  assert.ok(first.context.includes(first.text) && first.context.includes('https://x/github:e/a#1'), first.context);
+  const quiet = await checkPendingItems({ statePath, collectors, t: T, now: new Date('2026-11-13T09:30:00+08:00') });
+  assert.equal(quiet.text, null);
+  assert.equal(quiet.context, '');
 });
 
 test('recheckPendingItemsIfDue: skips within the hour, checks after it', async () => {
@@ -289,15 +431,15 @@ test('OWNMIND_PENDING_ITEMS=off turns the check off', async () => {
   } finally { delete process.env.OWNMIND_PENDING_ITEMS; }
 });
 
-test('render: review requests and broken PRs come before assigned issues', () => {
+test('render: a review request and a broken PR are named before an assigned issue', () => {
   const many = [
-    ...Array.from({ length: 11 }, (_, n) => item(`github:e/a#${n}`, 'assigned')),
-    item('github:e/r#1', 'review'),
-    item('github:e/f#1', 'failing'),
+    ...Array.from({ length: 11 }, (_, n) => named(`github:e/a#${n}`, 'assigned', 'Jane Doe')),
+    named('github:e/r#1', 'review', 'Alex Lee'),
+    named('github:e/f#1', 'failing', 'Me Myself'),
   ];
-  const lines = render({ fresh: many, expired: [], firstToday: true }, T).split('\n');
-  assert.match(lines[1], /pendingItems\.kind\.review/);
-  assert.match(lines[2], /pendingItems\.kind\.failing/);
+  const text = render({ fresh: many, added: many, total: 13, expired: [], firstToday: false }, T);
+  assert.ok(text.indexOf('Alex Lee') > 0 && text.indexOf('pendingItems.name.failing') > text.indexOf('Alex Lee'));
+  assert.ok(!text.includes('Jane Doe'));
 });
 
 test('collectGithub: a reply with data is used even when gh exits non-zero (an organisation needing SSO)', async () => {
@@ -505,4 +647,53 @@ test('the MCP server has a tool to record what was decided about a bug report', 
   const handler = src.slice(src.indexOf('case "ownmind_bug_report_status"'), src.indexOf('case "ownmind_get_secret"'));
   assert.match(handler, /callApi\("PATCH", `\/api\/bug-reports\/\$\{encodeURIComponent\(String\(args\.id\)\)\}\/status`/);
   assert.match(handler, /status: args\.status, status_reason: args\.status_reason, status_reason_note: args\.status_reason_note/);
+});
+
+// A response arrives in pieces, and a piece can end in the middle of a character. Read piece by
+// piece as text, the two halves each turn into replacement characters and the card shows garbage.
+async function serveInTwoPieces(body, run) {
+  const bytes = Buffer.from(body, 'utf8');
+  const cut = bytes.indexOf(0xe4) + 1; // one byte into the three-byte character
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.write(bytes.subarray(0, cut));
+    setTimeout(() => res.end(bytes.subarray(cut)), 40);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    return await run(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+test('a character split across two pieces of a response reaches the task card whole', async () => {
+  const cards = JSON.stringify([{ id: 7, title: 'Card', project: 'Demo', status: 'open', owner_name: 'Jane Doe', body: 'before 中 after' }]);
+  const text = await serveInTwoPieces(cards, (apiUrl) =>
+    describeOwnMindItem({ kind: 'task', id: 7, credentials: () => ({ apiUrl, apiKey: 'k' }) }));
+  assert.ok(text.includes('before 中 after'), text);
+  assert.ok(!text.includes('�'), 'no replacement character in the card');
+});
+
+test('a character split across two pieces of a GitLab response is read whole', async () => {
+  const payload = JSON.stringify([{ title: 'before 中 after' }]);
+  const r = await serveInTwoPieces(payload, (base) => gitlabGet(`${base}/api/v4/issues`, 't'));
+  assert.equal(r.status, 200);
+  assert.equal(r.body, payload);
+});
+
+test('every hook that reads a response piece by piece decodes it as one stream', () => {
+  const root = path.resolve(import.meta.dirname, '..', 'hooks');
+  const files = [...fs.readdirSync(root), ...fs.readdirSync(path.join(root, 'lib')).map((f) => path.join('lib', f))].filter((f) => f.endsWith('.js'));
+  const offenders = [];
+  for (const f of files) {
+    const lines = fs.readFileSync(path.join(root, f), 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      const m = line.match(/\b(res|child\.stdout|process\.stdin)\.on\('data', \(\w+\) => \{ \w+ \+= \w+; \}\)/);
+      if (!m) return;
+      const before = lines.slice(Math.max(0, i - 6), i).join('\n');
+      if (!before.includes(`${m[1]}.setEncoding('utf8')`)) offenders.push(`${f}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, []);
 });

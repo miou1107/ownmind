@@ -13,6 +13,8 @@ export type Item = {
   at: string
   /** Who the card names: the issue's opener, the PR's author or the last commenter, the user themself and bots included; '' when unknown. */
   person: string
+  /** What tells one occurrence of the item from the next: the failing commit, or the time of the reply; '' for the rest. */
+  mark: string
 }
 
 export type View = { items: Item[]; checkedAt: string; isLoaded: boolean }
@@ -27,6 +29,8 @@ declare module 'claude-code' {
       collapsed: string[]
       /** True while the refresh button's check runs. */
       busy: boolean
+      /** Whether the pane opens by itself when a conversation starts with an item it has not shown before. */
+      auto: boolean
     }
   }
 }

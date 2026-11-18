@@ -26,6 +26,7 @@ function httpGetWithStatus(url, headers, timeout) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { headers, timeout }, (res) => {
+      res.setEncoding('utf8'); // a piece can end in the middle of a character
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => resolve({ status: res.statusCode, body: data }));
