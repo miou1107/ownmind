@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## v1.33.9 修改（2026-11-18，「自動提醒」開關在 Claude 桌面版分得出開和關；問「我有哪些待辦事項」Claude 會在對話裡列出清單）
+
+新增檔：
+```
+openspec/changes/v1.33.9-pending-items-switch-colour/   — proposal、tasks
+```
+
+修改檔：
+```
+mods/pending-items/hooks/register.tsx                   — 開關改成有底色的方塊加白色圓點（綠底、圓點在右是開，灰底、圓點在左是關），「自動提醒」四個字和開關都可以按；有專案選單時開關自己一列；pane 工具多一個 list 動作，把清單用文字交給 AI；「打開 OwnMind 待辦事項」改成打開 sidebar
+mods/pending-items/hooks/pane.test.tsx                  — 開與關的底色和圓點位置、終端機上的畫法、開關自己一列、list 動作回傳的清單
+hooks/lib/pending-items.js                              — 交給 AI 的提醒附註寫明完整清單用 list 動作取得
+tests/pending-items.test.js                             — 提醒附註最後一句的檢查
+package.json、package-lock.json                         — 版號 1.33.9
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.9
+CHANGELOG.md                                            — v1.33.9
+```
+
 ## v1.33.8 修改（2026-11-18，sidebar 改名為「OwnMind 待辦事項」，最上方改成「自動提醒」開關；講到 sidebar 才打開）
 
 新增檔：
