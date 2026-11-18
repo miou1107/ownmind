@@ -408,16 +408,45 @@ const openIfNew = async ($: any, v: View) => {
 // The session start's own check may still be writing the list when the mod first reads it.
 const LATE_LOOK_MS = 10000
 
+// What the model answers "what is waiting on me" from, in the conversation: the pane's own list,
+// most urgent first, as text. Long lists are cut; the pane has the rest.
+const LIST_MAX = 40
+export const listText = (v: View) => {
+  if (!v.isLoaded) return 'Nothing has been checked on this computer yet: OwnMind fills the list when the next conversation starts.'
+  if (v.items.length === 0) return 'No item is waiting on the user.'
+  const items = [...v.items].sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || b.at.localeCompare(a.at))
+  // A title is someone else's text: kept on one line. OwnMind's own items have no page of their
+  // own to open, only the console's inbox, so they are listed without a link.
+  const one = (s: string) => s.replace(/\s+/g, ' ').trim()
+  const lines = items.slice(0, LIST_MAX).map(i =>
+    `- [${i.kind}] ${groupName(i)}: ${one(i.title)} (${i.ref})${i.person ? `, from ${i.person}` : ''}${i.at ? `, last changed ${i.at.slice(0, 10)}` : ''}${i.source === 'ownmind' ? '' : ` ${i.url}`}`.trimEnd())
+  return [
+    `Items in the user's list: ${v.items.length}${v.checkedAt ? `, as of the check at ${v.checkedAt}` : ''}. This call did not open the pane.`,
+    ...(items.some(i => i.source === 'ownmind')
+      ? ['The kinds task, bug and resolved are OwnMind\'s own (a task card, a bug report waiting on an admin, the user\'s own report now resolved): read and handle them in the conversation with the OwnMind tools, not through a link.']
+      : []),
+    ...lines,
+    ...(items.length > LIST_MAX ? [`- and ${items.length - LIST_MAX} more, in the OwnMind 待辦事項 side pane (/${COMMAND})`] : []),
+  ].join('\n')
+}
+
 const AUTO_LABEL = '自動提醒'
 const AUTO_OFF_DONE = '已關閉自動提醒'
 const AUTO_ON_DONE = '已開啟自動提醒'
-// A switch drawn from text, since a Button holds strings and Text only and no surface has a
-// switch element: the knob sits at the right of a green track while on, at the left of a grey
-// one while off. The spaces are no-break spaces, which a surface does not collapse.
+// No surface has a switch element, so the switch is drawn from what each one does paint.
+// A desktop Button draws its label alone and drops the colours of any Text inside it, so on a
+// graphical surface the track is a Box, whose background is painted, around a plain Button
+// whose label is the knob: a white-circle emoji, which keeps its own colour, at the right of a
+// green track while on and at the left of a grey one while off. The gap beside the knob is an
+// em space, which a surface does not collapse.
+const KNOB_ON = '\u2003\u26aa\ufe0f'
+const KNOB_OFF = '\u26aa\ufe0f\u2003'
+const TRACK_ON = '#34c759'
+const TRACK_OFF = '#8e8e93'
+// The terminal draws the Text inside a Button as written: the knob on an inverse run while on,
+// on a dim one while off. The spaces are no-break spaces.
 const SWITCH_ON = '\u00a0\u00a0\u00a0\u25cf\u00a0'
 const SWITCH_OFF = '\u00a0\u25cf\u00a0\u00a0\u00a0'
-const SWITCH_ON_BG = '#34c759'
-const SWITCH_OFF_BG = 'rgba(127,127,127,0.55)'
 const AUTO_FAILED = 'OwnMind 沒有存下這個設定，請再按一次'
 
 /** Switches the pane opening by itself on or off for this machine; false when it could not be kept. */
@@ -445,15 +474,15 @@ export const register: Register = on => {
       name: 'pane',
       description: 'The OwnMind 待辦事項 side pane (pending items; it used to be called 待處理單據) lists the issues, PRs/MRs, task cards and bug reports waiting on the user, and opens by itself when a conversation starts with new ones; the switch at its top that turns that on and off is labelled 自動提醒. '
         + 'action "off": the user asks to stop it popping up (關掉自動提醒, 關掉 OwnMind 待辦事項, 關掉待處理單據, 不要再跳 issue 提醒, 待辦事項的面板先關掉). '
-        + 'action "on": the user wants it to open by itself again (打開自動提醒, 打開 OwnMind 待辦事項, 打開待處理單據, 恢復 issue 提醒). '
-        + 'action "show": open it once now, changing nothing, and only when the user names the side pane itself, by sidebar, 側邊欄 or 面板 (用 sidebar 看我有哪些待辦事項, 打開 OwnMind 待辦事項的 sidebar). '
-        + 'A request to see or handle the items that does not name the side pane (我有哪些待辦事項, 看一下我有哪些 issue 要處理) is not for this tool: answer it in the conversation. '
+        + 'action "on": the user wants it to open by itself again (打開自動提醒, 恢復自動提醒, 恢復 issue 提醒). '
+        + 'action "show": open it once now, changing nothing, and only when the user names the side pane itself: by its title, or by sidebar, 側邊欄 or 面板 (打開 OwnMind 待辦事項, 打開待處理單據, 用 sidebar 看我有哪些待辦事項). '
+        + 'action "list": the user asks what is waiting on them, or to handle the items, without naming the side pane (我有哪些待辦事項, 看一下我有哪些 issue 要處理). It returns the list as text and leaves the pane closed: answer in the conversation from what it returns. '
         + '"off" only stops the pane opening by itself, on this computer: the one-line reminder at the start of a conversation stays, and the user can still open the pane. '
         + 'If the user says only 關掉 issue or 把待辦關掉, with no mention of the pane, the reminder or popping up, ask first: they may mean closing the item itself. '
-        + 'Afterwards tell the user the result in one short sentence in their language.',
+        + 'After "off", "on" or "show", tell the user the result in one short sentence in their language.',
       inputSchema: {
         type: 'object',
-        properties: { action: { type: 'string', enum: ['off', 'on', 'show'] } },
+        properties: { action: { type: 'string', enum: ['off', 'on', 'show', 'list'] } },
         required: ['action'],
       },
       isDeferred: false,
@@ -480,20 +509,23 @@ export const register: Register = on => {
   })
 
   // The person asked the model, in their own words, to stop the pane popping up, to bring that
-  // back, or to see the pane now. Answered here, ahead of the permission check: it changes one
+  // back, to see the pane now, or what is waiting on them. Answered here, ahead of the permission check: it changes one
   // setting of this mod and opens its own pane.
   on('tool.call', { tool: PANE_TOOL }, async ($, e) => {
     const action = String((e as any).action ?? '')
     if (action === 'show') {
       const v = await refresh($)
       const shown = await showPane($, v.items)
+      // 打開 with the pane's name shows it once; the person may take it for switching the reminder back on.
+      const offNote = (await read($, auto)) ? '' : ' The 自動提醒 switch is still off: the pane will not open by itself until the user switches it on.'
       return {
         result: shown.isPlaced
-          ? `The pane is open and lists ${v.items.length} items.`
-          : `The pane is open but not drawn yet (${shown.reason || 'no window shows it now'}). It appears when this conversation is on screen; the user can also enter /${COMMAND}.`,
+          ? `The pane is open and lists ${v.items.length} items.${offNote}`
+          : `The pane is open but not drawn yet (${shown.reason || 'no window shows it now'}). It appears when this conversation is on screen; the user can also enter /${COMMAND}.${offNote}`,
       } as any
     }
-    if (action !== 'off' && action !== 'on') return { deny: 'action must be "off", "on" or "show"' }
+    if (action === 'list') return { result: listText(await refresh($)) } as any
+    if (action !== 'off' && action !== 'on') return { deny: 'action must be "off", "on", "show" or "list"' }
     const isOn = action === 'on'
     if (!(await setAuto($, isOn))) return { deny: 'The setting could not be saved. Try once more.' }
     // The person sees it happen, whatever the model goes on to say.
@@ -635,18 +667,33 @@ export const register: Register = on => {
       ...groups.map(g => ({ value: g.key, label: `${groupName(g)}（${g.items.length}）` })),
     ]
 
+    // Both halves of the switch are pressable: the label, and the track with its knob.
+    const track = isAuto ? TRACK_ON : TRACK_OFF
+    const autoSwitch = graphical
+      ? (
+        <Box flexDirection="row" alignItems="center" gap="xs" flexShrink={0}>
+          <Button key="auto" plain onPress={() => toggleAuto($)}>{AUTO_LABEL}</Button>
+          <Box flexShrink={0} borderStyle="round" borderColor={track} backgroundColor={track} padding={0}>
+            <Button key="auto-knob" plain onPress={() => toggleAuto($)}>{isAuto ? KNOB_ON : KNOB_OFF}</Button>
+          </Box>
+        </Box>
+      )
+      : (
+        <Button key="auto" plain onPress={() => toggleAuto($)}>
+          <Text>{AUTO_LABEL}</Text> <Text inverse={isAuto} dimColor={!isAuto}>{isAuto ? SWITCH_ON : SWITCH_OFF}</Text>
+        </Button>
+      )
+
     return (
       <Box flexDirection="column" gap="sm">
-        {/* The pane's own title bar already names it, so the first row is the select and the buttons. */}
+        {/* The pane's own title bar already names it, so it starts with the controls. Beside the
+            select, the switch and the refresh button do not fit a narrow pane (the last one was
+            cut off), so with a select the switch has a row of its own. */}
+        {groups.length > 1 && <Box flexDirection="row" alignItems="center"><Box flexGrow={1} />{autoSwitch}</Box>}
         <Box flexDirection="row" alignItems="center" gap="sm">
-          {groups.length > 1
-            ? <Box flexGrow={1}><Select key="project" value={pick} options={options} onSelect={(value: string) => update($, filter, () => value)} /></Box>
-            : <Box flexGrow={1} />}
-          <Button key="auto" plain onPress={() => toggleAuto($)}>
-            <Text>{AUTO_LABEL}</Text> {graphical
-              ? <Text color="#ffffff" backgroundColor={isAuto ? SWITCH_ON_BG : SWITCH_OFF_BG}>{isAuto ? SWITCH_ON : SWITCH_OFF}</Text>
-              : <Text inverse={isAuto} dimColor={!isAuto}>{isAuto ? SWITCH_ON : SWITCH_OFF}</Text>}
-          </Button>
+          {groups.length > 1 && <Box flexGrow={1}><Select key="project" value={pick} options={options} onSelect={(value: string) => update($, filter, () => value)} /></Box>}
+          {groups.length <= 1 && <Box flexGrow={1} />}
+          {groups.length <= 1 && autoSwitch}
           <Button key="refresh" onPress={() => checkNow($)}>{isBusy ? '更新中…' : '更新'}</Button>
         </Box>
         {v.items.length === 0 && (

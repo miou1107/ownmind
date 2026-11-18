@@ -135,7 +135,7 @@ test('pressing a card title opens the item in the browser', async ($, on) => {
   await ui.press({ key: 'card:github:example/api#401:review' })
   expect(runs).toEqual([['open', 'https://github.com/example/api/pull/401']])
   // The title is the card's only link: one such button per card, the number and the age plain text.
-  const opened = (await ui.findAll({ type: 'Button' })).filter((b: any) => !/^(hide|fold):|^(refresh|auto)$/.test(String(b.key ?? b.props?.key ?? '')))
+  const opened = (await ui.findAll({ type: 'Button' })).filter((b: any) => !/^(hide|fold):|^(refresh|auto|auto-knob)$/.test(String(b.key ?? b.props?.key ?? '')))
   expect(opened.length).toBe(4)
   await ui.unmount()
 })
@@ -411,23 +411,69 @@ test('switched off, the pane stays closed on new items; the command still opens 
   expect(w.opened.length).toBe(1)
 })
 
-// The switch is the label and a knob on a track: at the right while on, at the left while off.
-const SWITCH_ON = /^自動提醒\s+\u25cf\u00a0$/
-const SWITCH_OFF = /^自動提醒\s+\u25cf\u00a0\u00a0\u00a0$/
+// On a graphical surface the switch is the label and, beside it, a coloured track around the
+// knob: green with the knob at the right while on, grey with the knob at the left while off.
+// A desktop Button draws its label alone, so the colour has to be the Box's, not a Text's.
+const KNOB_ON = '\u2003\u26aa\ufe0f'
+const KNOB_OFF = '\u26aa\ufe0f\u2003'
+const textOf = (n: any): string => (typeof n === 'string' ? n : (n?.children?.length ? n.children.map(textOf).join('') : String(n?.props?.label ?? n?.text ?? '')))
+const keyOf = (n: any) => String(n?.key ?? n?.props?.key ?? '')
+const switchOf = async (ui: any) => {
+  const track = (await ui.findAll({ type: 'Box' })).find((b: any) => (b.children ?? []).some((c: any) => keyOf(c) === 'auto-knob'))
+  const knob = (track?.children ?? []).find((c: any) => keyOf(c) === 'auto-knob')
+  return { background: track?.props?.backgroundColor, border: track?.props?.borderColor, knob: textOf(knob) }
+}
+const SHOWN_ON = { background: '#34c759', border: '#34c759', knob: KNOB_ON }
+const SHOWN_OFF = { background: '#8e8e93', border: '#8e8e93', knob: KNOB_OFF }
 
 test('the header switch turns the pane opening by itself off and on', async ($, on) => {
   const kept: Record<string, unknown> = {}
   const w = world(on as any, kept)
   await begin($)
   const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ key: 'auto', text: SWITCH_ON })).toBeDefined()
+  // The label is a Button of its own, with no Text inside for a desktop to drop the colour of.
+  const label = (await ui.findAll({ type: 'Button' })).find((b: any) => keyOf(b) === 'auto')
+  expect(textOf(label)).toBe('自動提醒')
+  expect((label.children ?? []).every((c: any) => typeof c === 'string')).toBe(true)
+  expect(await switchOf(ui)).toEqual(SHOWN_ON)
   await ui.press({ key: 'auto' })
   expect(kept.autoOpen).toBe(false)
   expect(w.toasts).toEqual(['已關閉自動提醒'])
-  expect(await ui.find({ key: 'auto', text: SWITCH_OFF })).toBeDefined()
-  await ui.press({ key: 'auto' })
+  expect(await switchOf(ui)).toEqual(SHOWN_OFF)
+  // The track with its knob is pressable too.
+  await ui.press({ key: 'auto-knob' })
   expect(kept.autoOpen).toBe(true)
   expect(w.toasts[1]).toBe('已開啟自動提醒')
+  expect(await switchOf(ui)).toEqual(SHOWN_ON)
+  await ui.unmount()
+})
+
+test('with a project select the switch has a row of its own, so the refresh button is not cut off', async ($, on) => {
+  world(on as any, {})
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  const rows = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props?.flexDirection === 'row')
+  const has = (row: any, key: string): boolean => (row.children ?? []).some((c: any) => typeof c !== 'string' && (keyOf(c) === key || has(c, key)))
+  const withRefresh = rows.filter((r: any) => has(r, 'refresh'))
+  expect(withRefresh.length).toBeGreaterThan(0)
+  expect(withRefresh.some((r: any) => has(r, 'project'))).toBe(true)
+  expect(withRefresh.some((r: any) => has(r, 'auto'))).toBe(false)
+  await ui.unmount()
+})
+
+test('the terminal draws the switch as text: the knob on an inverse run while on, a dim one while off', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  world(on as any, kept)
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'terminal' })
+  const run = async () => {
+    const button = (await ui.findAll({ type: 'Button' })).find((b: any) => keyOf(b) === 'auto')
+    const last = (button.children ?? []).filter((c: any) => typeof c !== 'string').at(-1)
+    return { text: textOf(last), inverse: last?.props?.inverse === true, dim: last?.props?.dimColor === true }
+  }
+  expect(await run()).toEqual({ text: '\u00a0\u00a0\u00a0\u25cf\u00a0', inverse: true, dim: false })
+  await ui.press({ key: 'auto' })
+  expect(await run()).toEqual({ text: '\u00a0\u25cf\u00a0\u00a0\u00a0', inverse: false, dim: true })
   await ui.unmount()
 })
 
@@ -440,8 +486,15 @@ test('the model can switch it off, on, or show the pane once, through the pane t
   expect(w.tools.map((t: any) => [t.name, t.isDeferred])).toEqual([['pane', false]])
   // A plain "what is waiting on me" is the person's usual way to ask Claude to list and handle
   // the items in the conversation, so only a request that names the side pane opens it.
-  expect(String(w.tools[0].description)).toContain('only when the user names the side pane itself')
-  expect(String(w.tools[0].description)).toContain('is not for this tool: answer it in the conversation')
+  const described = String(w.tools[0].description)
+  expect(described).toContain('only when the user names the side pane itself')
+  expect(described).toContain('leaves the pane closed: answer in the conversation')
+  // The pane's title after 打開 means "show it now", never "switch the reminder back on".
+  expect(described.slice(described.indexOf('action "on"'), described.indexOf('action "show"'))).not.toContain('OwnMind 待辦事項')
+  expect(described.slice(described.indexOf('action "show"'), described.indexOf('action "list"'))).toContain('打開 OwnMind 待辦事項')
+  // One short sentence is for the three that change or open something, never for the list.
+  expect(described).toContain('After "off", "on" or "show", tell the user the result in one short sentence')
+  expect(w.tools[0].inputSchema.properties.action.enum).toEqual(['off', 'on', 'show', 'list'])
   const call = (action: string) => ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action })
   const off = await call('off')
   expect(kept.autoOpen).toBe(false)
@@ -459,6 +512,55 @@ test('the model can switch it off, on, or show the pane once, through the pane t
   expect((await call('sideways')).deny).toBeDefined()
 })
 
+test('asked what is waiting, the tool hands the model the list as text and leaves the pane closed', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: false }
+  const w = world(on as any, kept)
+  await begin($)
+  const listed = String((await ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action: 'list' })).result)
+  expect(w.opened.length).toBe(0)
+  expect(kept.seen).toBeUndefined()
+  const lines = listed.split('\n')
+  expect(lines[0]).toContain("Items in the user's list: 4")
+  expect(lines[0]).toContain('did not open the pane')
+  expect(lines.length).toBe(5)
+  for (const line of lines.slice(1)) expect(line).toMatch(/^- \[(assigned|review|failing|comment|task|bug|resolved)\] .+ https?:\/\/\S+$/)
+})
+
+const TWO = [
+  { key: 'github:example/api#1', kind: 'assigned', title: 'Later\none', url: 'https://github.com/example/api/issues/1', ref: 'example/api issue #1', project: 'api', host: 'github', at: now, person: 'Sam Wu' },
+  { key: 'github:example/api#2', kind: 'review', title: 'Review first', url: 'https://github.com/example/api/pull/2', ref: 'example/api PR #2', project: 'api', host: 'github', at: now, person: 'Jane Doe' },
+]
+
+test('the list is read afresh, most urgent first, and says so when nothing was ever checked', async ($, on) => {
+  let state = ''
+  world(on as any, {}, p => (p.endsWith('pending-items.json') && state ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  const list = async () => String((await ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action: 'list' })).result)
+  expect(await list()).toContain('Nothing has been checked')
+  // Written after the conversation started: the tool reads the file, not what the pane last drew.
+  state = JSON.stringify({ ...JSON.parse(STATE), items: TWO })
+  const lines = (await list()).split('\n')
+  expect(lines.length).toBe(3)
+  expect(lines[1]).toContain('[review] ')
+  expect(lines[1]).toContain('Review first')
+  expect(lines[1]).toContain('from Jane Doe')
+  expect(lines[1]).toContain(`last changed ${now.slice(0, 10)}`)
+  // A title with a line break stays on its own line of the list.
+  expect(lines[2]).toContain('[assigned] api: Later one (')
+})
+
+test('with one project there is no select, and the switch shares the refresh button\'s row', async ($, on) => {
+  const state = JSON.stringify({ ...JSON.parse(STATE), items: TWO })
+  world(on as any, {}, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.findAll({ type: 'Select' })).length).toBe(0)
+  const has = (row: any, key: string): boolean => (row.children ?? []).some((c: any) => typeof c !== 'string' && (keyOf(c) === key || has(c, key)))
+  const rows = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props?.flexDirection === 'row' && has(b, 'refresh'))
+  expect(rows.some((r: any) => has(r, 'auto') && has(r, 'auto-knob'))).toBe(true)
+  await ui.unmount()
+})
+
 test('showing the pane through the tool counts its items as shown; a pane no window drew does not', async ($, on) => {
   const kept: Record<string, unknown> = { autoOpen: false }
   const w = world(on as any, kept)
@@ -472,6 +574,8 @@ test('showing the pane through the tool counts its items as shown; a pane no win
   w.placed = { isPlaced: true }
   const shown = await call('show')
   expect(String(shown.result)).toContain('lists 4 items')
+  // Shown once while the switch is off: the model is told the reminder itself is still off.
+  expect(String(shown.result)).toContain('switch is still off')
   expect((kept.seen as string[]).length).toBe(4)
 })
 
@@ -503,10 +607,10 @@ test('a switch made in another conversation reaches this pane\'s button', async 
   o('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   await begin($)
   const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ key: 'auto', text: SWITCH_ON })).toBeDefined()
+  expect(await switchOf(ui)).toEqual(SHOWN_ON)
   kept.autoOpen = false
   await ui.press({ key: 'refresh' })
-  expect(await ui.find({ key: 'auto', text: SWITCH_OFF })).toBeDefined()
+  expect(await switchOf(ui)).toEqual(SHOWN_OFF)
   await ui.unmount()
 })
 

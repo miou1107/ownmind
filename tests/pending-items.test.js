@@ -352,6 +352,8 @@ test('contextNote: the model gets every new item with its link, which the senten
   const note = contextNote('the sentence', [a]);
   assert.ok(note.includes('the sentence'));
   assert.ok(note.includes('Monthly cap') && note.includes('https://x/github:e/a#1') && note.includes('Jane Doe'));
+  // The note carries the new items only: it has to say where the model reads the whole list.
+  assert.ok(note.includes('action "list"') && note.includes('/pending-items'), note);
   assert.equal(contextNote('', [a]), '');
 });
 
