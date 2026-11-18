@@ -411,19 +411,23 @@ test('switched off, the pane stays closed on new items; the command still opens 
   expect(w.opened.length).toBe(1)
 })
 
-test('the header button switches the pane opening by itself off and on, and says what stays', async ($, on) => {
+// The switch is the label and a knob on a track: at the right while on, at the left while off.
+const SWITCH_ON = /^自動提醒\s+\u25cf\u00a0$/
+const SWITCH_OFF = /^自動提醒\s+\u25cf\u00a0\u00a0\u00a0$/
+
+test('the header switch turns the pane opening by itself off and on', async ($, on) => {
   const kept: Record<string, unknown> = {}
   const w = world(on as any, kept)
   await begin($)
   const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ key: 'auto', text: /^關閉自動跳出$/ })).toBeDefined()
+  expect(await ui.find({ key: 'auto', text: SWITCH_ON })).toBeDefined()
   await ui.press({ key: 'auto' })
   expect(kept.autoOpen).toBe(false)
-  expect(w.toasts).toEqual(['已關閉自動跳出，對話開頭的提醒不變'])
-  expect(await ui.find({ key: 'auto', text: /^開啟自動跳出$/ })).toBeDefined()
+  expect(w.toasts).toEqual(['已關閉自動提醒'])
+  expect(await ui.find({ key: 'auto', text: SWITCH_OFF })).toBeDefined()
   await ui.press({ key: 'auto' })
   expect(kept.autoOpen).toBe(true)
-  expect(w.toasts[1]).toBe('已開啟自動跳出，有新單時面板會自己打開')
+  expect(w.toasts[1]).toBe('已開啟自動提醒')
   await ui.unmount()
 })
 
@@ -434,13 +438,17 @@ test('the model can switch it off, on, or show the pane once, through the pane t
   expect(w.opened.length).toBe(0)
   // In the prompt's tool list from the start, or the model never learns it can do this.
   expect(w.tools.map((t: any) => [t.name, t.isDeferred])).toEqual([['pane', false]])
+  // A plain "what is waiting on me" is the person's usual way to ask Claude to list and handle
+  // the items in the conversation, so only a request that names the side pane opens it.
+  expect(String(w.tools[0].description)).toContain('only when the user names the side pane itself')
+  expect(String(w.tools[0].description)).toContain('is not for this tool: answer it in the conversation')
   const call = (action: string) => ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action })
   const off = await call('off')
   expect(kept.autoOpen).toBe(false)
   expect(String(off.result)).toContain('no longer opens by itself')
   expect(String(off.result)).toContain('reminder')
   // The person sees it happen, in their own language.
-  expect(w.toasts).toEqual(['已關閉自動跳出，對話開頭的提醒不變'])
+  expect(w.toasts).toEqual(['已關閉自動提醒'])
   const back = await call('on')
   expect(kept.autoOpen).toBe(true)
   expect(String(back.result)).toContain('opens by itself again')
@@ -495,10 +503,10 @@ test('a switch made in another conversation reaches this pane\'s button', async 
   o('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   await begin($)
   const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ key: 'auto', text: /^關閉自動跳出$/ })).toBeDefined()
+  expect(await ui.find({ key: 'auto', text: SWITCH_ON })).toBeDefined()
   kept.autoOpen = false
   await ui.press({ key: 'refresh' })
-  expect(await ui.find({ key: 'auto', text: /^開啟自動跳出$/ })).toBeDefined()
+  expect(await ui.find({ key: 'auto', text: SWITCH_OFF })).toBeDefined()
   await ui.unmount()
 })
 
