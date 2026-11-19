@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## 測試工具修改（2026-11-19，開發者的終端機設了 OwnMind 鑰匙，跑測試也不會連到自己的帳號）
+
+沒有版號：只動測試工具，使用者看到的東西一個字都沒有變。
+
+新增檔：
+```
+tests/helpers/isolate-env.js                            — npm test 用 --import 在每個測試檔開頭載入；清掉 OWNMIND_ 開頭的環境變數，只留 OWNMIND_TEST_、OWNMIND_ACCEPTANCE_ 兩類測試工具自己的開關；Windows 的環境變數不分大小寫，所以小寫的名稱也一起清；GIT_CONFIG_GLOBAL 指到每個測試檔自己的一份空設定，測試結束時刪掉，開發者 ~/.gitconfig 裡的 OwnMind commit 檢查不會在暫存 repo 裡跑起來；測試被中斷而留下的設定檔，下一次載入時會清掉；有測試寫進這份共用設定時，結束時在終端機印出警告
+tests/test-env-isolation.test.js                        — 三條：照 package.json 的 npm test 參數跑一個測試檔，測試啟動的子程式不得讀到終端機的鑰匙，也不得讀到開發者全域 git 設定的 core.hooksPath；產品程式不得讀取保留下來的兩類開關（名稱從程式碼掃出來）；清除時大小寫都處理、其他變數不動
+```
+
+修改檔：
+```
+package.json                                            — test、test:watch 兩個指令加上 --import ./tests/helpers/isolate-env.js
+CHANGELOG.md
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條
+```
+
 ## v1.33.10 修改（2026-11-19，開關改名為「有新待辦時自動打開」；在 Claude 桌面版，Claude 會在對話開頭講出待辦提醒）
 
 新增檔：
