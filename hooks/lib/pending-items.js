@@ -765,18 +765,31 @@ export async function recheckPendingItemsIfDue({ statePath = defaultStatePath(),
 }
 
 /**
+ * Whether the person sees a hook's systemMessage. The Claude desktop app does not draw the
+ * SessionStart or UserPromptSubmit systemMessage anywhere (2026-11-19: Vin had never once seen
+ * the reminder, though it was sent at the start of his conversations), so there the reminder
+ * reaches the person only if Claude says it.
+ */
+export function userSeesHookMessages(env = process.env) {
+  return env.CLAUDE_CODE_ENTRYPOINT !== 'claude-desktop';
+}
+
+/**
  * The model-facing note that rides along with the user-facing text. English by policy. The
  * person's sentence names two items and carries no link, so the items come here in full.
  */
-export function contextNote(text, items = []) {
+export function contextNote(text, items = [], { userSees = userSeesHookMessages() } = {}) {
   if (!text) return '';
   const lines = byUrgency(items).slice(0, MAX_LINES).map((i) =>
     `- [${i.kind}] ${i.title} (${i.ref})${i.person ? `, from ${i.person}` : ''} ${i.url}`.trimEnd());
   return [
-    '[OwnMind] The user was just shown this reminder about the items waiting on them on GitHub / GitLab:',
+    userSees
+      ? '[OwnMind] The user was just shown this reminder about the items waiting on them on GitHub / GitLab:'
+      : '[OwnMind] A reminder about the items waiting on the user on GitHub / GitLab. The Claude desktop app does not show it to them, so put it, exactly as written and with every line, at the top of your next reply; then answer what they asked. You are told this once: do not repeat it in later replies:',
     text,
     ...(lines.length ? ['The items it is about (the user saw no links):', ...lines] : []),
     ...(items.length > MAX_LINES ? [`- and ${items.length - MAX_LINES} more`] : []),
-    'You do not need to repeat the reminder. If the user asks to handle an item, open its link. For the whole list, call the pending-items pane tool with action "list" when it is among your tools; the OwnMind 待辦事項 side pane (/pending-items) shows the same list.',
+    ...(userSees ? ['You do not need to repeat the reminder.'] : []),
+    'If the user asks to handle an item, open its link. For the whole list, call the pending-items pane tool with action "list" when it is among your tools; the OwnMind 待辦事項 side pane (/pending-items) shows the same list.',
   ].join('\n');
 }
