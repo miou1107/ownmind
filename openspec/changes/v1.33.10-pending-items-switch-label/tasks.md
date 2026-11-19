@@ -1,0 +1,7 @@
+- [x] Switch label and toasts: 有新待辦時自動打開 / 會自動打開 / 不會自動打開
+- [x] Switch on a row of its own whatever the number of projects
+- [x] `pane` tool description: new label, old phrases kept
+- [x] `contextNote`: on the Claude desktop app, ask the model to relay the reminder once
+- [x] Tests: mods/pending-items/hooks/pane.test.tsx, tests/pending-items.test.js
+- [x] README (three languages), CHANGELOG, FILELIST, version 1.33.10
+- [ ] Seen on the desktop surface (label, and the relayed reminder in a new conversation)
