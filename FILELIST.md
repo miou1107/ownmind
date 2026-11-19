@@ -17,7 +17,7 @@ CHANGELOG.md
 README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條
 ```
 
-## 未發版修改（2026-11-19，零接觸安裝的後續修正，issue #200）
+## v1.33.12 修改（2026-11-19，零接觸安裝的後續修正，issue #200）
 
 新增檔：
 ```
@@ -49,6 +49,8 @@ tests/team-last-load-state.test.js, tests/admin-users-last-load.test.js, tests/a
 tests/install-mcp-entry-path.test.js                    — the non-Windows MCP entry block takes the Node to launch with as its second argument
 tests/admin-api-key-reveal.test.js, tests/team-users-select-shape.test.js — the user list query window widened to 3000 characters for the longer statement
 CHANGELOG.md, FILELIST.md                               — this change
+package.json, package-lock.json                         — version 1.33.12
+README.md, docs/README.zh-TW.md, docs/README.ja.md      — current version v1.33.12 and a latest-changes entry
 ```
 
 ## v1.33.11 修改（2026-11-19，剛裝好 OwnMind 就升級，不會再被「有別的更新正在進行」擋下；8 個套件安全更新）

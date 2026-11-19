@@ -11,9 +11,9 @@ v1.30 以前的版本收在 docs/changelog 資料夾：[v1.26](docs/changelog/v1
 - **現在**：`npm test` 跑每個測試檔之前，會先清掉終端機裡 OWNMIND_ 開頭的環境變數，只留下測試工具自己用的 OWNMIND_TEST_ 與 OWNMIND_ACCEPTANCE_ 兩類；git 也改讀一份空的全域設定，跟 GitHub 上自動跑測試的電腦一樣。測試需要 OwnMind 或 git 的設定時，會在測試裡自己設假的值。設了鑰匙、裝了 OwnMind 的 Mac 跑整套測試，不會再因為開發者的帳號而失敗。新的 tests/test-env-isolation.test.js 會照 `npm test` 的方式跑一個測試檔，測試啟動的程式如果讀得到終端機的鑰匙，或讀得到開發者全域 git 設定裡的 OwnMind 檢查，這個測試就會失敗。
 - **只跑一個測試檔**：直接打 `node --test tests/某個檔.test.js` 不會清掉這些環境變數，也不會換掉全域 git 設定。要跟整套測試一樣，改用 `npm test -- tests/某個檔.test.js`，或在指令裡加上 `--import ./tests/helpers/isolate-env.js`。
 
-## 未發版 — 零接觸安裝的後續修正：Cursor 載入記憶、公司網路擋 GitHub、之後才裝 git、關掉用量收集、團隊頁紅燈、開新對話的等待時間
+## v1.33.12 — 零接觸安裝的後續修正：Cursor 載入記憶、公司網路擋 GitHub、之後才裝 git、關掉用量收集、團隊頁紅燈、開新對話的等待時間
 
-電腦端會自動更新；團隊頁的燈號要等伺服器部署之後才會改變。這一節的修改還沒發版。
+電腦端會自動更新；團隊頁的燈號要等伺服器部署之後才會改變。
 
 - **原本**：
   - 電腦本來沒有 Node.js 的 Mac 裝完 OwnMind，Cursor 裡看不到記憶。
