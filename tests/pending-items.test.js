@@ -8,7 +8,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { tempDir } from './helpers/temp-dir.js';
 import {
-  collectGithub, collectGitlab, decide, render, contextNote, isDue, checkPendingItems, readGitHosts, recheckPendingItemsIfDue, collectOwnMind, readHidden, hiddenPathFor, describeOwnMindItem, gitlabGet,
+  collectGithub, collectGitlab, decide, render, contextNote, userSeesHookMessages, isDue, checkPendingItems, readGitHosts, recheckPendingItemsIfDue, collectOwnMind, readHidden, hiddenPathFor, describeOwnMindItem, gitlabGet,
 } from '../hooks/lib/pending-items.js';
 
 const T = (key, p = {}) => `${key}${JSON.stringify(p)}`;
@@ -355,6 +355,29 @@ test('contextNote: the model gets every new item with its link, which the senten
   // The note carries the new items only: it has to say where the model reads the whole list.
   assert.ok(note.includes('action "list"') && note.includes('/pending-items'), note);
   assert.equal(contextNote('', [a]), '');
+});
+
+test('contextNote: in the desktop app, which does not show hook messages, Claude is told to say the reminder', () => {
+  const a = named('github:e/a#1', 'assigned', 'Jane Doe', 'Monthly cap');
+  const shown = contextNote('the sentence', [a], { userSees: true });
+  assert.ok(shown.includes('was just shown') && shown.includes('do not need to repeat'), shown);
+  const unseen = contextNote('the sentence', [a], { userSees: false });
+  assert.ok(unseen.includes('does not show it to them') && unseen.includes('top of your next reply') && unseen.includes('every line'), unseen);
+  assert.ok(unseen.includes('do not repeat it in later replies'), unseen);
+  assert.ok(!unseen.includes('do not need to repeat') && unseen.includes('the sentence') && unseen.includes('action "list"'), unseen);
+  assert.equal(userSeesHookMessages({ CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' }), false);
+  assert.equal(userSeesHookMessages({ CLAUDE_CODE_ENTRYPOINT: 'cli' }), true);
+  assert.equal(userSeesHookMessages({}), true);
+  // The default follows the environment the hook runs in, so the test sets it rather than inheriting it.
+  const saved = process.env.CLAUDE_CODE_ENTRYPOINT;
+  try {
+    process.env.CLAUDE_CODE_ENTRYPOINT = 'claude-desktop';
+    assert.ok(contextNote('the sentence', [a]).includes('does not show it to them'));
+    process.env.CLAUDE_CODE_ENTRYPOINT = 'cli';
+    assert.ok(contextNote('the sentence', [a]).includes('was just shown'));
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CODE_ENTRYPOINT; else process.env.CLAUDE_CODE_ENTRYPOINT = saved;
+  }
 });
 
 test('isDue: an hour after the last check, or never checked', () => {

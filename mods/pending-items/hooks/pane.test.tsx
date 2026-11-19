@@ -433,17 +433,17 @@ test('the header switch turns the pane opening by itself off and on', async ($, 
   const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
   // The label is a Button of its own, with no Text inside for a desktop to drop the colour of.
   const label = (await ui.findAll({ type: 'Button' })).find((b: any) => keyOf(b) === 'auto')
-  expect(textOf(label)).toBe('自動提醒')
+  expect(textOf(label)).toBe('有新待辦時自動打開')
   expect((label.children ?? []).every((c: any) => typeof c === 'string')).toBe(true)
   expect(await switchOf(ui)).toEqual(SHOWN_ON)
   await ui.press({ key: 'auto' })
   expect(kept.autoOpen).toBe(false)
-  expect(w.toasts).toEqual(['已關閉自動提醒'])
+  expect(w.toasts).toEqual(['有新待辦時不會自動打開'])
   expect(await switchOf(ui)).toEqual(SHOWN_OFF)
   // The track with its knob is pressable too.
   await ui.press({ key: 'auto-knob' })
   expect(kept.autoOpen).toBe(true)
-  expect(w.toasts[1]).toBe('已開啟自動提醒')
+  expect(w.toasts[1]).toBe('有新待辦時會自動打開')
   expect(await switchOf(ui)).toEqual(SHOWN_ON)
   await ui.unmount()
 })
@@ -494,6 +494,10 @@ test('the model can switch it off, on, or show the pane once, through the pane t
   expect(described.slice(described.indexOf('action "show"'), described.indexOf('action "list"'))).toContain('打開 OwnMind 待辦事項')
   // One short sentence is for the three that change or open something, never for the list.
   expect(described).toContain('After "off", "on" or "show", tell the user the result in one short sentence')
+  // The switch's new label is named, and the words people already use for it still work.
+  expect(described).toContain('labelled 有新待辦時自動打開')
+  expect(described.slice(described.indexOf('action "off"'), described.indexOf('action "on"'))).toContain('關掉自動提醒')
+  expect(described.slice(described.indexOf('action "on"'), described.indexOf('action "show"'))).toContain('打開自動提醒')
   expect(w.tools[0].inputSchema.properties.action.enum).toEqual(['off', 'on', 'show', 'list'])
   const call = (action: string) => ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action })
   const off = await call('off')
@@ -501,7 +505,7 @@ test('the model can switch it off, on, or show the pane once, through the pane t
   expect(String(off.result)).toContain('no longer opens by itself')
   expect(String(off.result)).toContain('reminder')
   // The person sees it happen, in their own language.
-  expect(w.toasts).toEqual(['已關閉自動提醒'])
+  expect(w.toasts).toEqual(['有新待辦時不會自動打開'])
   const back = await call('on')
   expect(kept.autoOpen).toBe(true)
   expect(String(back.result)).toContain('opens by itself again')
@@ -549,7 +553,7 @@ test('the list is read afresh, most urgent first, and says so when nothing was e
   expect(lines[2]).toContain('[assigned] api: Later one (')
 })
 
-test('with one project there is no select, and the switch shares the refresh button\'s row', async ($, on) => {
+test('with one project there is no select, and the switch still has a row of its own above the refresh button', async ($, on) => {
   const state = JSON.stringify({ ...JSON.parse(STATE), items: TWO })
   world(on as any, {}, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
   await begin($)
@@ -557,7 +561,10 @@ test('with one project there is no select, and the switch shares the refresh but
   expect((await ui.findAll({ type: 'Select' })).length).toBe(0)
   const has = (row: any, key: string): boolean => (row.children ?? []).some((c: any) => typeof c !== 'string' && (keyOf(c) === key || has(c, key)))
   const rows = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props?.flexDirection === 'row' && has(b, 'refresh'))
-  expect(rows.some((r: any) => has(r, 'auto') && has(r, 'auto-knob'))).toBe(true)
+  // The label is a whole phrase now, too long to share the refresh button's row in a narrow pane.
+  expect(rows.some((r: any) => has(r, 'auto'))).toBe(false)
+  const own = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props?.flexDirection === 'row' && has(b, 'auto') && has(b, 'auto-knob'))
+  expect(own.length).toBeGreaterThan(0)
   await ui.unmount()
 })
 

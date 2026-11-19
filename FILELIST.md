@@ -1,19 +1,37 @@
 # OwnMind 檔案結構
 
-## v1.33.10 修改（2026-11-19，剛裝好 OwnMind 就升級，不會再被「有別的更新正在進行」擋下；8 個套件安全更新）
+## v1.33.11 修改（2026-11-19，剛裝好 OwnMind 就升級，不會再被「有別的更新正在進行」擋下；8 個套件安全更新）
 
 新增檔：
 ```
-openspec/changes/v1.33.10-preflight-leaves-no-update-lock/   — proposal、tasks
+openspec/changes/v1.33.11-preflight-leaves-no-update-lock/   — proposal、tasks
 tests/mcp-preflight-skips-update.test.js                     — 一般啟動的 MCP 會查新版並佔住更新鎖；自我檢查啟動的 MCP 不查新版、不佔鎖
 ```
 
 修改檔：
 ```
 mcp/index.js                                            — OWNMIND_PREFLIGHT=1（安裝最後的自我檢查）啟動時不跑每日自動更新，只記一筆 update_skipped reason=preflight
-package.json、package-lock.json                         — 版號 1.33.10；body-parser 2.4.0、ip-address 10.7.6、qs 6.17.1
+package.json、package-lock.json                         — 版號 1.33.11；body-parser 2.4.0、ip-address 10.7.6、qs 6.17.1
 mcp/package.json、mcp/package-lock.json                 — @modelcontextprotocol/sdk 1.32.0 等 7 個套件
 client/package.json、client/package-lock.json           — vite
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.11
+CHANGELOG.md                                            — v1.33.11
+```
+
+## v1.33.10 修改（2026-11-19，開關改名為「有新待辦時自動打開」；在 Claude 桌面版，Claude 會在對話開頭講出待辦提醒）
+
+新增檔：
+```
+openspec/changes/v1.33.10-pending-items-switch-label/   — proposal、tasks
+```
+
+修改檔：
+```
+mods/pending-items/hooks/register.tsx                   — 開關名稱與切換提示改成「有新待辦時自動打開／會自動打開／不會自動打開」；開關一律自己一列；pane 工具說明帶上新舊兩種說法
+mods/pending-items/hooks/pane.test.tsx                  — 新的開關名稱與提示、只有一個專案時開關也自己一列
+hooks/lib/pending-items.js                              — 在 Claude 桌面版，交給 AI 的提醒附註改成請 AI 在第一則回覆的第一行講出提醒
+tests/pending-items.test.js                             — 桌面版與終端機兩種附註的檢查
+package.json、package-lock.json                         — 版號 1.33.10
 README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.10
 CHANGELOG.md                                            — v1.33.10
 ```

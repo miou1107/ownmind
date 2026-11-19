@@ -2,5 +2,5 @@
 - [x] Failing test first: tests/mcp-preflight-skips-update.test.js (preflight case red, control green)
 - [x] mcp/index.js skips the auto-update on a preflight start
 - [x] tests/bootstrap-archive-mode.e2e.mjs passes locally
-- [x] README (three languages), CHANGELOG, FILELIST, version 1.33.10
+- [x] README (three languages), CHANGELOG, FILELIST, version 1.33.11
 - [ ] All seven GitHub checks green on the PR

@@ -430,9 +430,11 @@ export const listText = (v: View) => {
   ].join('\n')
 }
 
-const AUTO_LABEL = '自動提醒'
-const AUTO_OFF_DONE = '已關閉自動提醒'
-const AUTO_ON_DONE = '已開啟自動提醒'
+// The label says what the switch does (a colleague could not tell what 「自動提醒」 reminded of),
+// and each toast repeats it with the state it is now in.
+const AUTO_LABEL = '有新待辦時自動打開'
+const AUTO_OFF_DONE = '有新待辦時不會自動打開'
+const AUTO_ON_DONE = '有新待辦時會自動打開'
 // No surface has a switch element, so the switch is drawn from what each one does paint.
 // A desktop Button draws its label alone and drops the colours of any Text inside it, so on a
 // graphical surface the track is a Box, whose background is painted, around a plain Button
@@ -472,9 +474,9 @@ export const register: Register = on => {
     // reach for it when the person asks, in whatever words, to stop the pane popping up.
     await $.tool.register({
       name: 'pane',
-      description: 'The OwnMind 待辦事項 side pane (pending items; it used to be called 待處理單據) lists the issues, PRs/MRs, task cards and bug reports waiting on the user, and opens by itself when a conversation starts with new ones; the switch at its top that turns that on and off is labelled 自動提醒. '
-        + 'action "off": the user asks to stop it popping up (關掉自動提醒, 關掉 OwnMind 待辦事項, 關掉待處理單據, 不要再跳 issue 提醒, 待辦事項的面板先關掉). '
-        + 'action "on": the user wants it to open by itself again (打開自動提醒, 恢復自動提醒, 恢復 issue 提醒). '
+      description: 'The OwnMind 待辦事項 side pane (pending items; it used to be called 待處理單據) lists the issues, PRs/MRs, task cards and bug reports waiting on the user, and opens by itself when a conversation starts with new ones; the switch at its top that turns that on and off is labelled 有新待辦時自動打開 (it used to be called 自動提醒). '
+        + 'action "off": the user asks to stop it popping up (關掉自動提醒, 不要自動打開待辦事項, 關掉 OwnMind 待辦事項, 關掉待處理單據, 不要再跳 issue 提醒, 待辦事項的面板先關掉). '
+        + 'action "on": the user wants it to open by itself again (打開自動提醒, 恢復自動提醒, 有新待辦時自動打開, 恢復 issue 提醒). '
         + 'action "show": open it once now, changing nothing, and only when the user names the side pane itself: by its title, or by sidebar, 側邊欄 or 面板 (打開 OwnMind 待辦事項, 打開待處理單據, 用 sidebar 看我有哪些待辦事項). '
         + 'action "list": the user asks what is waiting on them, or to handle the items, without naming the side pane (我有哪些待辦事項, 看一下我有哪些 issue 要處理). It returns the list as text and leaves the pane closed: answer in the conversation from what it returns. '
         + '"off" only stops the pane opening by itself, on this computer: the one-line reminder at the start of a conversation stays, and the user can still open the pane. '
@@ -517,7 +519,7 @@ export const register: Register = on => {
       const v = await refresh($)
       const shown = await showPane($, v.items)
       // 打開 with the pane's name shows it once; the person may take it for switching the reminder back on.
-      const offNote = (await read($, auto)) ? '' : ' The 自動提醒 switch is still off: the pane will not open by itself until the user switches it on.'
+      const offNote = (await read($, auto)) ? '' : ' The 有新待辦時自動打開 switch is still off: the pane will not open by itself until the user switches it on.'
       return {
         result: shown.isPlaced
           ? `The pane is open and lists ${v.items.length} items.${offNote}`
@@ -686,14 +688,13 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" gap="sm">
-        {/* The pane's own title bar already names it, so it starts with the controls. Beside the
-            select, the switch and the refresh button do not fit a narrow pane (the last one was
-            cut off), so with a select the switch has a row of its own. */}
-        {groups.length > 1 && <Box flexDirection="row" alignItems="center"><Box flexGrow={1} />{autoSwitch}</Box>}
+        {/* The pane's own title bar already names it, so it starts with the controls. The switch
+            label is a whole phrase, too long to share a narrow pane's row with the select or the
+            refresh button (an earlier shared row cut the button off), so it has a row of its own. */}
+        <Box flexDirection="row" alignItems="center"><Box flexGrow={1} />{autoSwitch}</Box>
         <Box flexDirection="row" alignItems="center" gap="sm">
           {groups.length > 1 && <Box flexGrow={1}><Select key="project" value={pick} options={options} onSelect={(value: string) => update($, filter, () => value)} /></Box>}
           {groups.length <= 1 && <Box flexGrow={1} />}
-          {groups.length <= 1 && autoSwitch}
           <Button key="refresh" onPress={() => checkNow($)}>{isBusy ? '更新中…' : '更新'}</Button>
         </Box>
         {v.items.length === 0 && (

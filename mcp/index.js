@@ -2190,7 +2190,7 @@ async function runAutoUpdate() {
 // second releaser here would mean two programs could each believe they were tidying up
 // after themselves while one of them released the other's lock.
 //
-// v1.33.10 — a preflight start (OWNMIND_PREFLIGHT=1, see sendMcpHeartbeat) does not update.
+// v1.33.11 — a preflight start (OWNMIND_PREFLIGHT=1, see sendMcpHeartbeat) does not update.
 // The self-check kills this process the moment it has counted the tools, and on an archive
 // install that kill can land while the update holds `.update-lock` and waits for the server.
 // The signal handlers below exit without running the update's `finally`, so the lock stayed
