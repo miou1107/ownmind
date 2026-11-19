@@ -113,6 +113,14 @@ describe('LIST_USERS_SQL rules behind the column', () => {
     assert.doesNotMatch(sql, /ARRAY_AGG/);
   });
 
+  it('reports the newest clean finished install, so a fixed reinstall can show yellow (issue #200)', () => {
+    assert.match(LIST_USERS_SQL, /AS last_clean_install_at/);
+    const clause = LIST_USERS_SQL.slice(LIST_USERS_SQL.indexOf('AS last_install_error_at'), LIST_USERS_SQL.indexOf('AS last_clean_install_at'));
+    assert.match(clause, /trigger_kind IN \('post_install', 'post_upgrade', 'manual'\)/);
+    assert.match(clause, /AND NOT \(CASE WHEN jsonb_typeof\(c\.summary->'fail'\) = 'number'/);
+    assert.match(LIST_USERS_SQL, /i\.last_clean_install_at\n/);
+  });
+
   it('still never returns the password hash or the full key', () => {
     assert.doesNotMatch(sql, /password_hash/);
     assert.doesNotMatch(sql, /SELECT \*/);

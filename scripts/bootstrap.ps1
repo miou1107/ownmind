@@ -443,7 +443,7 @@ $HasGit = ($null -ne $gitCmd)
 # Download the archive and unpack it into $OwnmindDir. Used whenever there is no git, or the
 # directory has to be rebuilt without git. Exits the script on failure.
 function Install-FromArchive {
-  param([object[]]$ArgList)
+  param([object[]]$ArgList, [string]$Reason = 'git is not installed')
   # The same two inputs install.ps1 takes: positional KEY URL, or the OWNMIND_API_KEY and
   # OWNMIND_API_URL variables. Flag-like arguments are not a key.
   $positional = @($ArgList | Where-Object { $_ -and ("$_" -notlike '-*') })
@@ -460,7 +460,7 @@ function Install-FromArchive {
     exit 1
   }
   $partial = "$OwnmindDir.partial"
-  Log-Info archive_mode "git is not installed; installing from the release archive"
+  Log-Info archive_mode "$Reason; installing from the release archive"
   if (Test-Path -LiteralPath $partial) {
     Log-Info clear_partial "Removing the unfinished download from an earlier attempt ($partial)"
     try {
@@ -509,6 +509,28 @@ $InstallArgs = $args
 $positionalArgs = @($InstallArgs | Where-Object { $_ -and ("$_" -notlike '-*') })
 $HasInstallArgs = ($positionalArgs.Count -ge 2) -or (($env:OWNMIND_API_KEY -or $env:OWNMIND_INSTALL_KEY) -and $env:OWNMIND_API_URL)
 
+# Issue #200: git is there but the clone failed, most often a company network that blocks GitHub
+# while the OwnMind server is reachable. The release archive comes from the OwnMind server first,
+# so with the key and URL in hand the install carries on from the archive instead of stopping at
+# "check the network". Without them the archive cannot be fetched and the network question stays.
+# A failed clone can leave a partly written folder; nothing else is in it (an old folder, if any,
+# was moved aside first) and the archive is moved into that path, so it is cleared.
+function Complete-AfterCloneFailure {
+  if (-not $HasInstallArgs) {
+    Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+    exit 1
+  }
+  if (Test-Path -LiteralPath $OwnmindDir) {
+    Remove-Item -LiteralPath $OwnmindDir -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $OwnmindDir) {
+      Log-Err clear_partial "Could not remove the folder the failed clone left at $OwnmindDir"
+      Write-Host 'FIX:clear_partial:Remove-Item -Recurse -Force "$env:USERPROFILE\.ownmind"'
+      exit 1
+    }
+  }
+  Install-FromArchive $InstallArgs -Reason 'git could not download OwnMind from GitHub'
+}
+
 # Branch 1: no install
 if (-not (Test-Path "$OwnmindDir")) {
   if (-not $HasGit) {
@@ -520,8 +542,9 @@ if (-not (Test-Path "$OwnmindDir")) {
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
     Log-Err git_clone "git clone failed (check network or GitHub access)"
-    Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
-    exit 1
+    Complete-AfterCloneFailure
+    Write-OwnMindNext
+    exit 0
   }
   Log-Ok clone "Clone complete"
   Set-Location "$OwnmindDir"
@@ -575,8 +598,10 @@ if (-not (Test-Path "$OwnmindDir\.git")) {
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
     Log-Err git_clone "Re-clone failed; old data preserved at $Bak"
-    Write-OwnMindAsk -Code no_network -Literal "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
-    exit 1
+    Complete-AfterCloneFailure
+    Log-Ok done "Repair complete (old data preserved at $Bak; backups older than 7 days are swept on next upgrade)"
+    Write-OwnMindNext
+    exit 0
   }
   Set-Location "$OwnmindDir"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs

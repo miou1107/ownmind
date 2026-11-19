@@ -26,14 +26,14 @@ const SH = readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
 const WIN_PATH = ['C:', 'Users', 'Vin', '.ownmind', 'mcp', 'start.cmd'].join(String.fromCharCode(92));
 
 /** Pull one `MCP_ENTRY=$(node -e "..." "$VAR")` body out of install.sh and run it for real. */
-function runMcpEntryBlock(afterMarker, pathArg) {
+function runMcpEntryBlock(afterMarker, ...argv) {
   const from = SH.indexOf(afterMarker);
   assert.ok(from > 0, `install.sh no longer contains ${afterMarker}`);
   const open = SH.indexOf('node -e "', from);
   const close = SH.indexOf('"', open + 'node -e "'.length);
   assert.ok(open > from && close > open, 'could not find the MCP_ENTRY node block');
   const script = SH.slice(open + 'node -e "'.length, close);
-  return JSON.parse(execFileSync(process.execPath, ['-e', script, pathArg], { encoding: 'utf8' }));
+  return JSON.parse(execFileSync(process.execPath, ['-e', script, ...argv], { encoding: 'utf8' }));
 }
 
 describe('install.sh builds the MCP entry without destroying a Windows path', () => {
@@ -44,7 +44,9 @@ describe('install.sh builds the MCP entry without destroying a Windows path', ()
   });
 
   it('the non-Windows branch round-trips its path too', () => {
-    const entry = runMcpEntryBlock('MCP_ENTRY_PATH_WIN=', '/home/vin/.ownmind/mcp/index.js');
+    // Issue #200: the second argument is the Node to launch it with: bare `node` unless the
+    // machine's only Node is the private runtime (see private-node-config-shapes.test.js).
+    const entry = runMcpEntryBlock('MCP_ENTRY_PATH_WIN=', '/home/vin/.ownmind/mcp/index.js', 'node');
     assert.equal(entry.command, 'node');
     assert.deepEqual(entry.args, ['/home/vin/.ownmind/mcp/index.js']);
   });

@@ -943,8 +943,20 @@ function schedulerQueryResult(r) {
     'Requires Windows + PowerShell');
 }
 
-async function checkScheduler() {
-  if (PLATFORM === 'darwin') {
+/**
+ * Issue #200 — a machine whose owner turned usage collection off has nothing to schedule.
+ * install.sh / install.ps1 skip the schedule when ~/.ownmind/.no-usage-scanner exists, so the
+ * check below used to report every such machine as a failure, every run, and the admin got a
+ * warning about a choice the owner made on purpose.
+ */
+const SCHEDULER_OPTED_OUT_DETAIL =
+  'usage collection is turned off on this machine (.no-usage-scanner), so nothing is scheduled';
+
+async function checkScheduler({ ownmindDir = OWNMIND_DIR, platform = PLATFORM } = {}) {
+  if (fs.existsSync(path.join(ownmindDir, '.no-usage-scanner'))) {
+    return pass('scheduler', SCHEDULER_OPTED_OUT_DETAIL);
+  }
+  if (platform === 'darwin') {
     try {
       const { stdout } = await execFileAsync('launchctl', ['list'], { timeout: TIMEOUT_MS });
       if (stdout.includes('com.ownmind.usage-scanner')) {
@@ -956,10 +968,10 @@ async function checkScheduler() {
       return fail('scheduler', `launchctl failed: ${sanitizePath(e?.message)}`, 'Check launchctl');
     }
   }
-  if (PLATFORM === 'linux') {
+  if (platform === 'linux') {
     return checkSchedulerLinux();
   }
-  if (PLATFORM === 'win32') {
+  if (platform === 'win32') {
     // v1.17.66: passing a shell flag used to wrap the command in cmd.exe, which would eat
     // the `|` and produce a false "Select-Object is not recognized" failure (hit on both
     // Alice's and Bob's machines). Now we go through safeSpawn — no shell, with windowsHide.
@@ -1376,7 +1388,7 @@ async function runAllChecks({ quick = false, trigger } = {}) {
   // can report the current version because a separate mechanism pulled the working tree
   // forward, while install.sh aborted before it produced anything. Bug report #15.
   checks.push(await safeCheck('install_complete', checkInstallComplete));
-  checks.push(await safeCheck('scheduler', checkScheduler));
+  checks.push(await safeCheck('scheduler', () => checkScheduler()));
   // v1.26.81 — the one that asks whether the product's central feature works at all.
   checks.push(await safeCheck('memory_load', () => checkMemoryLoad({ apiUrl, apiKey, trigger })));
   // v1.26.72 — last, because it runs a real scan and is the slowest. Also the only one
@@ -1862,7 +1874,7 @@ module.exports = {
   // v1.32.12 — the Linux branch, exported for the same reason as the Windows ones below:
   // the machines where a missing user bus turns a healthy timer into a daily false alarm
   // are not the machines this test suite usually runs on.
-  checkSchedulerLinux, userBusState, NO_USER_BUS_DETAIL, NO_SYSTEMCTL_DETAIL,
+  checkSchedulerLinux, userBusState, NO_USER_BUS_DETAIL, SCHEDULER_OPTED_OUT_DETAIL, NO_SYSTEMCTL_DETAIL,
   // v1.26.162 — state=Ready said the task exists; nothing read what its last run returned.
   taskRunFailed,
   // v1.32.15 — a timed-out Windows query is "cannot tell", not a broken task.

@@ -425,9 +425,18 @@ else
   # the same: it is identity off Windows, and one uniform rule is cheaper to hold than an
   # exception nobody remembers is safe.
   MCP_ENTRY_PATH_WIN="$(to_win_path "$OWNMIND_DIR/mcp/index.js")"
+  # Issue #200: a Mac whose only Node is the private runtime (OWNMIND_PRIVATE_NODE=1) has no
+  # `node` on the PATH an editor starts MCP servers with. Section 2a already names that
+  # runtime by its absolute path for Claude Code; this entry is the one Cursor gets, and it
+  # kept bare `node`, so Cursor's OwnMind server never started on such a machine. Every other
+  # machine keeps bare `node`, which lets an nvm user switch versions without re-installing.
+  MCP_ENTRY_NODE='node'
+  if [ "${OWNMIND_PRIVATE_NODE:-}" = 1 ] && [ -n "${OWNMIND_NODE:-}" ]; then
+    MCP_ENTRY_NODE="$OWNMIND_NODE"
+  fi
   MCP_ENTRY=$(node -e "
-    console.log(JSON.stringify({ command: 'node', args: [process.argv[1]] }));
-  " "$MCP_ENTRY_PATH_WIN")
+    console.log(JSON.stringify({ command: process.argv[2], args: [process.argv[1]] }));
+  " "$MCP_ENTRY_PATH_WIN" "$MCP_ENTRY_NODE")
 fi
 
 # --- 2. Claude Code MCP 設定 ---
@@ -925,8 +934,15 @@ if [ "$OWNMIND_GIT_WORKS" = 1 ]; then
   fi
   git config --global core.hooksPath "$HOME/.ownmind/git-hooks"
   echo "[ OK ] Set git global hooks path: $HOME/.ownmind/git-hooks"
+  rm -f "$HOME/.ownmind/git-hooks/.hooks-path-pending"
+  # Issue #200: the path was set here, so a later empty path is the owner's choice and
+  # scripts/update.sh must not fill it in again (archive installs on machines with git).
+  : > "$HOME/.ownmind/git-hooks/.hooks-path-settled" 2>/dev/null || true
 else
   echo "[WARN] git is not usable on this machine (no developer tools); skipping the global git hooks path"
+  # Issue #200: scripts/update.sh sets the path on a later auto-update once git works. This
+  # file is what tells it the path was skipped here rather than removed by the owner.
+  : > "$HOME/.ownmind/git-hooks/.hooks-path-pending" 2>/dev/null || true
 fi
 # END global-hooks-path
 

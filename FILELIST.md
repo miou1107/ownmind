@@ -17,6 +17,40 @@ CHANGELOG.md
 README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條
 ```
 
+## 未發版修改（2026-11-19，零接觸安裝的後續修正，issue #200）
+
+新增檔：
+```
+tests/usage-collection-opt-out-schedule.test.js         — new: with .no-usage-scanner the self-check passes the scheduler item and the daily repair (sh and ps1) leaves the schedule off
+tests/late-git-hooks-path.test.js                       — new: update.sh sets core.hooksPath once git works while the skip is pending; leaves a path somebody set alone; the Windows twin is pinned
+tests/session-start-time-budget.test.js                 — new: the session-start hooks fit Claude Code's 10-second limit (timeout 7, guarded fallback, announcements in the background, enforcement sync alongside)
+```
+
+修改檔：
+```
+install.sh                                              — the MCP entry Cursor gets names the private Node like the Claude Code entry; writes git-hooks/.hooks-path-pending when git is not usable, and .hooks-path-settled once it sets the path
+install.ps1                                             — writes .hooks-path-pending when sh.exe is missing; removes it once the path is set
+scripts/bootstrap.sh, scripts/bootstrap.ps1             — a failed git clone with the key and URL falls back to the server's release archive (first install and repair); archive log line names the reason
+scripts/update.sh, scripts/update.ps1                   — late-hooks-path block: sets the global git hooks path on a later update once git (Git for Windows on Windows) works; update.ps1 also installs the hook files; a release-archive install counts as pending only until .hooks-path-settled exists
+scripts/install-helpers/self-check.cjs                  — scheduler item passes when .no-usage-scanner exists; checkScheduler takes ownmindDir and platform for tests
+scripts/install-helpers/ensure-scanner-schedule.sh, .ps1 — OK:schedule:opted_out when .no-usage-scanner exists, instead of registering the schedule again
+hooks/lib/conditional-sync.js                           — SESSION_START_BUDGET_MS (5s) and an optional budgetMs: past it the cache on disk is served
+hooks/lib/conditional-sync-cli.js                       — enforcement bundle and memory sync run side by side under the budget; the iron-rule list request is bounded by what is left
+hooks/ownmind-session-start.sh                          — sync helper timeout 7 (was 10); direct-request fallback only when the helper gave up within 2s; announcements fetched in the background; the memory-file sync after the output runs in the background
+hooks/ownmind-session-start.js                          — enforcement sync alongside the memory sync, which uses the budget
+tests/bootstrap-clone-failure.test.js                   — the archive fallback runs for real against a local server (first install and repair); the no-network cases pin OWNMIND_SOURCE=server
+tests/bootstrap-archive-mode.test.js, tests/bootstrap-archive-mode-ps1.test.js — archive log line with the reason; the Windows fallback shape
+tests/private-node-config-shapes.test.js                — the Cursor entry uses the private Node only with OWNMIND_PRIVATE_NODE=1
+tests/conditional-sync.test.js                          — budget cases: hanging server with and without a cache, stale cache, fast server, no budget keeps the old timeouts
+src/routes/admin-users-list.js                          — last_clean_install_at: the newest finished install whose self-check counted no failure
+client/src/pages/Admin/last-load.js                     — a clean reinstall newer than the install error shows yellow 裝好了，還沒載入過 instead of red (product owner chose yellow, 2026-11-19)
+client/src/i18n/zh.json, en.json, ja.json, en.override.json, ja.override.json — team.load.reinstalled_detail(_nomachine)
+tests/team-last-load-state.test.js, tests/admin-users-last-load.test.js, tests/admin-users-last-load-real-db.test.js — the reinstall cases
+tests/install-mcp-entry-path.test.js                    — the non-Windows MCP entry block takes the Node to launch with as its second argument
+tests/admin-api-key-reveal.test.js, tests/team-users-select-shape.test.js — the user list query window widened to 3000 characters for the longer statement
+CHANGELOG.md, FILELIST.md                               — this change
+```
+
 ## v1.33.11 修改（2026-11-19，剛裝好 OwnMind 就升級，不會再被「有別的更新正在進行」擋下；8 個套件安全更新）
 
 新增檔：

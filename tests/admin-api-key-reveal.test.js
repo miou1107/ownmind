@@ -69,7 +69,9 @@ function get(app, path) {
 describe('the user list no longer carries anyone\'s full key', () => {
   // The list query lives in admin-users-list.js; admin.js only mounts its handler.
   const src = readFileSync(join(repoRoot, 'src/routes/admin-users-list.js'), 'utf8');
-  const select = src.match(/SELECT[\s\S]{0,1800}ORDER BY u\.created_at DESC/)[0];
+  // 3000: the team page's install columns (issue #200 added last_clean_install_at) made the
+  // statement longer than the old 1800-character window, which then matched a later subquery.
+  const select = src.match(/SELECT[\s\S]{0,3000}ORDER BY u\.created_at DESC/)[0];
 
   it('returns an eight-character prefix, not api_key', () => {
     assert.match(select, /LEFT\(u\.api_key, 8\) AS api_key_prefix/);
