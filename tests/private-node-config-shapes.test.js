@@ -516,6 +516,23 @@ describe('the installers hand the private Node to the helpers only when it is th
     assert.equal(run({ OWNMIND_PRIVATE_NODE: '1', OWNMIND_NODE: MAC_NODE }), `--node-bin|${MAC_NODE}|${MAC_NODE}|`);
   });
 
+  // Issue #200, item 1: MCP_ENTRY is what Cursor's mcp.json gets. It kept bare `node` after the
+  // Claude Code entry learned the private runtime, so on a Mac with no Node of its own Cursor
+  // never started the OwnMind server.
+  it('install.sh: the MCP entry Cursor gets names the private Node under the same gate', { skip: IS_WIN }, () => {
+    const block = sh.match(/\n  MCP_ENTRY_PATH_WIN="[\s\S]*?\n  " "\$MCP_ENTRY_PATH_WIN" "\$MCP_ENTRY_NODE"\)\n/);
+    assert.ok(block, 'MCP_ENTRY block not found');
+    const script = `set -u\nto_win_path() { printf '%s' "$1"; }\nOWNMIND_DIR=/h/.ownmind\n${block[0]}\nprintf '%s' "$MCP_ENTRY"\n`;
+    const run = (env) => JSON.parse(execBashScript(script, { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } }));
+    assert.deepEqual(run({}), { command: 'node', args: ['/h/.ownmind/mcp/index.js'] });
+    assert.deepEqual(run({ OWNMIND_NODE: MAC_NODE }), { command: 'node', args: ['/h/.ownmind/mcp/index.js'] });
+    assert.deepEqual(run({ OWNMIND_PRIVATE_NODE: '1', OWNMIND_NODE: MAC_NODE }),
+      { command: MAC_NODE, args: ['/h/.ownmind/mcp/index.js'] });
+    // And it is the entry the Cursor section writes.
+    const cursor = sh.slice(sh.indexOf('# --- 5. Cursor'), sh.indexOf('# Cursor hooks'));
+    assert.match(cursor, /const entry = \$MCP_ENTRY;/);
+  });
+
   it('install.ps1: 2.1, 2.2 and 4c pass @NodeBinArgs, built from OWNMIND_PRIVATE_NODE', () => {
     assert.match(ps, /if \(\$env:OWNMIND_PRIVATE_NODE -eq '1' -and \$env:OWNMIND_NODE\) \{ \$NodeBinArgs = @\('--node-bin', \$env:OWNMIND_NODE\) \}/);
     for (const v of ['AddHookHelper', 'AddStopHookHelper', 'PreHookHelper', 'EnsureHook']) {

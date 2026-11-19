@@ -403,6 +403,47 @@ if [ -d "$GIT_HOOK_DIR" ]; then
   fi
 fi
 
+# --- 2a3. Set the global git hooks path once git works (issue #200) ---
+#
+# install.sh skips `core.hooksPath` on a machine where git is not usable (a Mac without the
+# developer tools, a Linux box without git) and installs the hook files all the same. If the
+# owner installs git later, nothing ever came back to set the path, so the checks before every
+# commit (the leaked-credential one among them) never ran, and the owner had no way to notice.
+#
+# Pending means install.sh said so (.hooks-path-pending), or this is a release-archive install
+# (.release) that has never been settled: every machine without git was installed that way
+# before the pending file existed. .hooks-path-settled is written once the path is set here or
+# found already set, and install.sh writes it whenever it sets the path itself; after that an
+# empty global path is the owner's choice and is left alone.
+# Only an unset global path is filled in: a path somebody set since is theirs, and is left alone.
+# BEGIN late-hooks-path
+HOOKS_PATH_PENDING="$GIT_HOOK_DIR/.hooks-path-pending"
+HOOKS_PATH_SETTLED="$GIT_HOOK_DIR/.hooks-path-settled"
+if [ -f "$GIT_HOOK_DIR/pre-commit" ] \
+   && { [ -f "$HOOKS_PATH_PENDING" ] || { [ -f "$OWNMIND_DIR/.release" ] && [ ! -f "$HOOKS_PATH_SETTLED" ]; }; }; then
+  OWNMIND_GIT_NOW_USABLE=0
+  if [ -f "$OWNMIND_DIR/scripts/install-helpers/preflight.sh" ]; then
+    # shellcheck source=/dev/null
+    . "$OWNMIND_DIR/scripts/install-helpers/preflight.sh"
+    ownmind_git_usable && OWNMIND_GIT_NOW_USABLE=1
+  fi
+  if [ "$OWNMIND_GIT_NOW_USABLE" = 1 ]; then
+    if [ -z "$(git config --global --get core.hooksPath 2>/dev/null || true)" ]; then
+      if git config --global core.hooksPath "$GIT_HOOK_DIR"; then
+        echo "[ OK ] git is usable now; set git global hooks path: $GIT_HOOK_DIR"
+        rm -f "$HOOKS_PATH_PENDING"
+        : > "$HOOKS_PATH_SETTLED" 2>/dev/null || true
+      else
+        echo "[WARN] could not set git global hooks path to $GIT_HOOK_DIR"
+      fi
+    else
+      rm -f "$HOOKS_PATH_PENDING"
+      : > "$HOOKS_PATH_SETTLED" 2>/dev/null || true
+    fi
+  fi
+fi
+# END late-hooks-path
+
 # --- 2b. Sync usage scanner (needs shared/ module; kept under $OWNMIND_DIR for execution) ---
 # P6 launchd / systemd invokes $OWNMIND_DIR/hooks/ownmind-usage-scanner.js.
 if [ -f "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" ]; then

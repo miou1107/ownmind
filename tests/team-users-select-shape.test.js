@@ -29,7 +29,7 @@ describe('GET /api/admin/users — response shape', () => {
   it("SELECT list includes must_change_password so the team page's 密碼狀態 column can render", () => {
     // Grep for the listUsers handler's SELECT: it lives on the router.get('/users', ...) route.
     // Anchor on the FROM users ORDER BY clause the handler uses.
-    const selectRegion = src.match(/SELECT[\s\S]{0,1800}ORDER BY u\.created_at DESC/);
+    const selectRegion = src.match(/SELECT[\s\S]{0,3000}ORDER BY u\.created_at DESC/);
     assert.ok(selectRegion, 'listUsers SELECT ... ORDER BY u.created_at DESC not found');
     assert.match(
       selectRegion[0],
@@ -42,7 +42,7 @@ describe('GET /api/admin/users — response shape', () => {
     // Belt-and-suspenders. If someone widens the SELECT to `SELECT * FROM users`
     // to fix must_change_password quickly, the password hash would ship over the
     // wire in a payload that admins routinely have open in browser devtools.
-    const selectRegion = src.match(/SELECT[\s\S]{0,1800}ORDER BY u\.created_at DESC/);
+    const selectRegion = src.match(/SELECT[\s\S]{0,3000}ORDER BY u\.created_at DESC/);
     assert.ok(selectRegion);
     assert.doesNotMatch(
       selectRegion[0],

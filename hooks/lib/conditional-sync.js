@@ -38,6 +38,17 @@ export const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind', 'cache', '
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;  // 24 hours
 const SYNC_TOKEN_TIMEOUT_MS = 3000;
 const INIT_TIMEOUT_MS = 8000;
+/**
+ * Issue #200, item 6 — how long a session start may wait on the server for memories.
+ *
+ * Claude Code gives the whole SessionStart hook 10 seconds. Unbounded, this sync could spend 3s
+ * on the sync token and then 8s on the full init: 11s, past the limit, so on a slow network the
+ * hook was cut off and the session started with no memories at all, even with a cache on disk.
+ * The hooks pass this budget; past it, the cache on disk is served instead.
+ */
+export const SESSION_START_BUDGET_MS = 5000;
+/** The least time worth giving a full init when there is no cache to fall back to. */
+const MIN_INIT_WITHOUT_CACHE_MS = 1500;
 
 /**
  * Read the local cache; returns { sync_token, saved_at, account, data } or null.
@@ -149,10 +160,10 @@ export async function fetchSyncTokenLight(apiUrl, apiKey, fetchFn = globalThis.f
  *
  * @returns {Promise<{ sync_token: string, lessons_waiting?: number, handoffs?: object[], consolidation?: object }|null>}
  */
-export async function fetchSyncTokenInfo(apiUrl, apiKey, fetchFn = globalThis.fetch) {
+export async function fetchSyncTokenInfo(apiUrl, apiKey, fetchFn = globalThis.fetch, timeoutMs = SYNC_TOKEN_TIMEOUT_MS) {
   if (!apiUrl || !apiKey) return null;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SYNC_TOKEN_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const url = `${apiUrl.replace(/\/$/, '')}/api/memory/sync-token`;
     const res = await fetchFn(url, {
@@ -212,10 +223,10 @@ export function stripLiveFields(data) {
  *
  * @returns {Promise<{ sync_token, data }|null>}
  */
-export async function fetchInitFull(apiUrl, apiKey, fetchFn = globalThis.fetch) {
+export async function fetchInitFull(apiUrl, apiKey, fetchFn = globalThis.fetch, timeoutMs = INIT_TIMEOUT_MS) {
   if (!apiUrl || !apiKey) return null;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), INIT_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const url = `${apiUrl.replace(/\/$/, '')}/api/memory/init?compact=true`;
     const res = await fetchFn(url, {
@@ -279,6 +290,10 @@ export async function runConditionalSync({
   fetchFn = globalThis.fetch,
   fsModule = fs,
   now = Date.now(),
+  // Optional total wait on the server, in ms (SESSION_START_BUDGET_MS from the hooks). Omitted,
+  // the two requests keep their own timeouts, which is what a background caller wants.
+  budgetMs,
+  clock = Date.now,
 }) {
   // v1.26.82 — the account is passed in, so a cache written under a different key is
   // refused rather than served. member-5 installed somebody else's key once; without this the
@@ -288,6 +303,9 @@ export async function runConditionalSync({
   // either; the offline fallback keeps its old behaviour of serving whatever is there.
   const account = apiKey ? { apiUrl, apiKey } : undefined;
   const cache = readCache(cachePath, fsModule, account);
+  const budgeted = Number.isFinite(budgetMs);
+  const startedAt = clock();
+  const remaining = () => budgetMs - (clock() - startedAt);
 
   // step 1: expired after 24hr → force refresh outright, don't waste a sync-token call.
   const cacheStale24hr = cache && cache.saved_at &&
@@ -295,15 +313,21 @@ export async function runConditionalSync({
 
   if (!cacheStale24hr && cache) {
     // step 2: compare against server sync_token.
-    const info = await fetchSyncTokenInfo(apiUrl, apiKey, fetchFn);
+    const tokenTimeout = budgeted ? Math.min(SYNC_TOKEN_TIMEOUT_MS, budgetMs) : SYNC_TOKEN_TIMEOUT_MS;
+    const info = await fetchSyncTokenInfo(apiUrl, apiKey, fetchFn, tokenTimeout);
     if (info && cache.sync_token === info.sync_token) {
       return { source: 'cache_fresh', data: overlayLiveFields(cache.data, info), refreshed: false };
     }
     // When serverToken can't be obtained, shouldRefreshCache returns true → full init.
   }
 
-  // step 3: full init download.
-  const fullInit = await fetchInitFull(apiUrl, apiKey, fetchFn);
+  // step 3: full init download. Under a budget it gets what is left; with a cache to fall back
+  // on and nothing left, the download is skipped, and with no cache it still gets a short try.
+  let initTimeout = INIT_TIMEOUT_MS;
+  if (budgeted) {
+    initTimeout = Math.max(remaining(), cache ? 0 : MIN_INIT_WITHOUT_CACHE_MS);
+  }
+  const fullInit = initTimeout > 0 ? await fetchInitFull(apiUrl, apiKey, fetchFn, initTimeout) : null;
   if (fullInit) {
     writeCache(fullInit, cachePath, fsModule, account);
     return { source: 'init_refreshed', data: fullInit.data || fullInit, refreshed: true };

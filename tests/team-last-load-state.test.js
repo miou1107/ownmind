@@ -101,6 +101,40 @@ describe('lastLoadState — red', () => {
   });
 });
 
+// Issue #200: a colleague whose first install failed and whose reinstall worked has fixed it;
+// only the new conversation is missing. The product owner chose yellow for that (2026-11-19).
+describe('lastLoadState — clean reinstall after an install error', () => {
+  it('is yellow 裝好了，還沒載入過 with the machine and the reinstall date', () => {
+    const s = lastLoadState(row({
+      first_install_at: at(10, 22, 15, 0), last_install_error_at: at(10, 22, 15, 2),
+      last_clean_install_at: at(10, 22, 15, 15), last_machine: 'MacBook-Air',
+    }), NOW);
+    assert.equal(s.light, 'yellow');
+    assert.equal(s.labelKey, 'team.load.never');
+    assert.equal(s.pill, true);
+    assert.equal(s.tipKey, 'team.load.tip.yellow');
+    assert.deepEqual(s.detail, { key: 'team.load.reinstalled_detail', params: { machine: 'MacBook-Air', date: '10/22' } });
+  });
+
+  it('without a known machine the second line has the date only', () => {
+    const s = lastLoadState(row({ last_install_error_at: at(10, 22, 15, 2), last_clean_install_at: at(10, 22, 15, 15) }), NOW);
+    assert.deepEqual(s.detail, { key: 'team.load.reinstalled_detail_nomachine', params: { date: '10/22' } });
+  });
+
+  it('a clean install older than the error does not hide the error: red', () => {
+    const s = lastLoadState(row({ last_clean_install_at: at(10, 22, 15, 0), last_install_error_at: at(10, 22, 15, 40) }), NOW);
+    assert.equal(s.light, 'red');
+  });
+
+  it('loaded after the reinstall: green as before', () => {
+    const s = lastLoadState(row({
+      last_install_error_at: at(10, 22, 15, 2), last_clean_install_at: at(10, 22, 15, 15),
+      last_memory_load_at: at(10, 22, 15, 20),
+    }), NOW);
+    assert.equal(s.light, 'green');
+  });
+});
+
 describe('lastLoadState — none and deactivated', () => {
   it('no install and no load: muted 還沒安裝, no dot (not a fourth light)', () => {
     const s = lastLoadState(row(), NOW);

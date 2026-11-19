@@ -779,6 +779,13 @@ if (-not $shPath) {
   Write-Host "       Cause: your git is not Git for Windows (VS Code bundled / WinGet Microsoft.Git / Scoop git-minimal do not ship sh.exe)" -ForegroundColor Yellow
   Write-Host "       Fix:   install Git for Windows -> https://git-scm.com/download/win" -ForegroundColor Yellow
   Write-Host "       Skipping git hooks install" -ForegroundColor Yellow
+  # Issue #200: update.ps1 installs the hooks and sets the path on a later auto-update once
+  # Git for Windows is there. This file tells it they were skipped here, not removed by the owner.
+  $hooksPending = Join-Path $HOME ".ownmind\git-hooks\.hooks-path-pending"
+  try {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $hooksPending) | Out-Null
+    [System.IO.File]::WriteAllText($hooksPending, "")
+  } catch { }
 } else {
   Write-Host "[INFO] sh.exe detected: $shPath" -ForegroundColor Gray
   if (Copy-AsLf -Src $PreCommitSrc -Dest $PreCommitBat) {
@@ -838,6 +845,8 @@ if (-not $shPath) {
   }
   git config --global core.hooksPath $gitHooksPath
   Write-Host "[ OK ] Set git global hooks path: $gitHooksPath"
+  Remove-Item -LiteralPath (Join-Path $gitHooksPath ".hooks-path-pending") -Force -ErrorAction SilentlyContinue
+  try { [System.IO.File]::WriteAllText((Join-Path $gitHooksPath ".hooks-path-settled"), "") } catch { }
 }
 
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---

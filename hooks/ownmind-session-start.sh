@@ -540,16 +540,45 @@ fi
 # helper 內建 fallback：fetch 失敗 → 用 cache、cache 也沒 → 印空 string
 # The key in the environment (OWNMIND_HOOK_KEY), not as an argument: `ps` shows arguments
 # to every account on the machine.
-INIT_DATA=$(OWNMIND_HOOK_KEY="$API_KEY" timeout 10 node "$LIB_DIR/conditional-sync-cli.js" \
+#
+# Issue #200, item 6: Claude Code stops this whole hook at 10 seconds. The helper waits at most
+# 5s on the server for memories (SESSION_START_BUDGET_MS) and then serves the cache on disk;
+# the outer `timeout 7` only catches a helper that hangs. It used to be `timeout 10` followed by
+# a 5-second curl, which alone could run past the limit, so on a slow network the session
+# started with no memories even when a cache was there.
+#
+# The announcements request runs in the background meanwhile, for the same reason.
+CLIENT_VERSION=$(node -p "require('$OWNMIND_DIR_WIN/package.json').version" 2>/dev/null || echo "")
+BROADCAST_URL="${API_URL}/api/broadcast/active?tool=claude-code"
+[ -n "$CLIENT_VERSION" ] && BROADCAST_URL="${BROADCAST_URL}&client_version=${CLIENT_VERSION}"
+BROADCAST_FILE="$(mktemp "${TMPDIR:-/tmp}/ownmind-broadcast.XXXXXX" 2>/dev/null || true)"
+BROADCAST_PID=""
+if [ -n "$BROADCAST_FILE" ]; then
+  if [ -n "$CLIENT_VERSION" ]; then
+    ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 \
+      -H "X-Ownmind-Version: ${CLIENT_VERSION}" "${BROADCAST_URL}" > "$BROADCAST_FILE" 2>/dev/null &
+  else
+    ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 "${BROADCAST_URL}" > "$BROADCAST_FILE" 2>/dev/null &
+  fi
+  BROADCAST_PID=$!
+fi
+
+SYNC_STARTED=$SECONDS
+INIT_DATA=$(OWNMIND_HOOK_KEY="$API_KEY" timeout 7 node "$LIB_DIR/conditional-sync-cli.js" \
   "$API_URL" 2>/dev/null)
 
-if [ -z "$INIT_DATA" ]; then
-  # conditional-sync 完全失敗（無網 + 無 cache）→ fallback 到 v1.17.x 直接 curl
-  INIT_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 5 \
+# The helper produced nothing: fall back to one direct request (the pre-v1.18 path), but only
+# when the helper gave up quickly (it could not load, for instance). One that spent its budget
+# on a slow network already tried the server; asking again would push the hook past Claude
+# Code's limit and lose the session start altogether.
+if [ -z "$INIT_DATA" ] && [ $((SECONDS - SYNC_STARTED)) -le 2 ]; then
+  INIT_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 \
     "${API_URL}/api/memory/init?compact=true" 2>/dev/null)
 fi
 
 if [ -z "$INIT_DATA" ]; then
+  [ -n "$BROADCAST_PID" ] && kill "$BROADCAST_PID" 2>/dev/null
+  [ -n "$BROADCAST_FILE" ] && rm -f "$BROADCAST_FILE"
   log_event "init_fail" "status" "api_timeout"
   exit 0
 fi
@@ -561,17 +590,13 @@ log_event "init" "status" "ok" ${HOOK_SESSION_ID:+"session_id" "$HOOK_SESSION_ID
 # --- v1.17.0 P3: 抓當前應顯示的廣播（fail-silent，不擋 SessionStart）---
 # v1.17.18: 帶 client_version 讓 server semver filter 生效
 # （否則 broadcast-filter.js 的 min/max_version 過濾會跳過 → 已升級用戶仍見舊升級廣播）
-CLIENT_VERSION=$(node -p "require('$OWNMIND_DIR_WIN/package.json').version" 2>/dev/null || echo "")
-BROADCAST_URL="${API_URL}/api/broadcast/active?tool=claude-code"
-if [ -n "$CLIENT_VERSION" ]; then
-  BROADCAST_URL="${BROADCAST_URL}&client_version=${CLIENT_VERSION}"
-  BROADCAST_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 \
-    -H "X-Ownmind-Version: ${CLIENT_VERSION}" \
-    "${BROADCAST_URL}" 2>/dev/null)
-else
-  BROADCAST_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 3 \
-    "${BROADCAST_URL}" 2>/dev/null)
+# Started in the background before the memory sync (issue #200); collected here.
+BROADCAST_DATA=""
+if [ -n "$BROADCAST_PID" ]; then
+  wait "$BROADCAST_PID" 2>/dev/null
+  BROADCAST_DATA="$(cat "$BROADCAST_FILE" 2>/dev/null)"
 fi
+[ -n "$BROADCAST_FILE" ] && rm -f "$BROADCAST_FILE"
 # 空值 / 失敗一律當 "[]"（就是沒廣播）
 [ -z "$BROADCAST_DATA" ] && BROADCAST_DATA="[]"
 
@@ -588,15 +613,20 @@ OWNMIND_HOOK_START_SOURCE="$HOOK_START_SOURCE" timeout 5 node "$LIB_DIR/session-
 # --- v1.17.8: delta sync 本地記憶 md 檔（A+C 方案，不阻塞，fail-silent）---
 # 把雲端 iron_rule/project/feedback 同步到 $CLAUDE_PROJECT_DIR 的 auto-memory dir，
 # 避免 AI 讀到過期快照。CLAUDE_PROJECT_DIR 未設時 node script 自己 exit 0。
+# Issue #200: in the background, with no output, because the memories are already printed
+# above. In the foreground its 4-second request could push a slow-network start past Claude
+# Code's 10-second limit for this hook; sync-memory-files.js writes files and prints nothing.
 if [ -n "$CLAUDE_PROJECT_DIR" ]; then
-  SYNC_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 4 \
-    "${API_URL}/api/memory/sync?types=iron_rule,project,feedback" 2>/dev/null)
-  if [ -n "$SYNC_DATA" ]; then
-    echo "$SYNC_DATA" | node "$LIB_DIR/sync-memory-files.js" 2>/dev/null
-  else
-    node "$LIB_DIR/sync-memory-files.js" --fail 2>/dev/null
-    log_event "memory_sync_fail"
-  fi
+  (
+    SYNC_DATA=$(ownmind_curl_auth "$API_KEY" | curl -K - -sf --max-time 4 \
+      "${API_URL}/api/memory/sync?types=iron_rule,project,feedback" 2>/dev/null)
+    if [ -n "$SYNC_DATA" ]; then
+      echo "$SYNC_DATA" | node "$LIB_DIR/sync-memory-files.js" 2>/dev/null
+    else
+      node "$LIB_DIR/sync-memory-files.js" --fail 2>/dev/null
+      log_event "memory_sync_fail"
+    fi
+  ) >/dev/null 2>&1 &
 fi
 
 exit 0

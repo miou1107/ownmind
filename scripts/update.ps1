@@ -392,6 +392,63 @@ if (Test-Path $GitHookDir) {
   }
 }
 
+# --- 2a3. Install the git hooks and set the global hooks path once Git for Windows is there ---
+#
+# Issue #200. install.ps1 skips the git hooks entirely when sh.exe is missing (no Git for
+# Windows), because hooks that cannot run would break every commit. If the owner installs Git
+# for Windows later, nothing came back for them, so the checks before every commit (the
+# leaked-credential one among them) never ran and the owner had no way to notice.
+#
+# Pending means install.ps1 said so (.hooks-path-pending), or this is a release-archive install
+# (.release) that has never been settled: every machine without git was installed that way
+# before the pending file existed. .hooks-path-settled is written once the path is set here or
+# found already set (install.ps1 writes it too); after that an empty path is the owner's choice.
+# Only an unset global path is filled in: a path somebody set since is theirs, and is left alone.
+# BEGIN late-hooks-path
+$hooksPendingFile = Join-Path $GitHookDir ".hooks-path-pending"
+$hooksSettledFile = Join-Path $GitHookDir ".hooks-path-settled"
+$hooksPending = (Test-Path -LiteralPath $hooksPendingFile) -or ((Test-Path -LiteralPath (Join-Path $OwnMindDir ".release")) -and -not (Test-Path -LiteralPath $hooksSettledFile))
+$lateGit = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
+if ($hooksPending -and $lateGit) {
+  # Same lookup as install.ps1's Test-ShAvailable: on PATH, or beside Git for Windows' git.exe.
+  $lateSh = Get-Command sh.exe -CommandType Application -ErrorAction SilentlyContinue
+  if (-not $lateSh) {
+    $lateGitDir = Split-Path -Parent $lateGit.Path
+    foreach ($c in @((Join-Path $lateGitDir "..\usr\bin\sh.exe"), (Join-Path $lateGitDir "sh.exe"))) {
+      if (Test-Path -LiteralPath $c) { $lateSh = $c; break }
+    }
+  }
+  $currentHooksPath = (git config --global --get core.hooksPath | Out-String).Trim()
+  if ($lateSh -and -not $currentHooksPath) {
+    New-Item -ItemType Directory -Force -Path $GitHookDir | Out-Null
+    $passthroughNames = @("pre-push", "post-checkout", "post-merge")
+    $lateNames = @("pre-commit", "post-commit", "commit-msg", "pre-merge-commit") + $passthroughNames
+    foreach ($n in $lateNames) {
+      $dest = Join-Path $GitHookDir $n
+      if (Test-Path -LiteralPath $dest) { continue }
+      $srcName = if ($passthroughNames -contains $n) { "ownmind-git-passthrough" } else { "ownmind-git-$n" }
+      $src = Join-Path $OwnMindDir "hooks\$srcName"
+      if (-not (Test-Path -LiteralPath $src)) { continue }
+      # LF, always: these run under sh.exe, and CRLF makes the shebang line unusable.
+      [System.IO.File]::WriteAllText($dest, [System.IO.File]::ReadAllText($src).Replace("`r`n", "`n"))
+    }
+    if (Test-Path -LiteralPath (Join-Path $GitHookDir "pre-commit")) {
+      git config --global core.hooksPath $GitHookDir
+      if ($LASTEXITCODE -eq 0) {
+        Write-Host "[ OK ] Git for Windows is installed now; installed git hooks and set git global hooks path: $GitHookDir"
+        Remove-Item -LiteralPath $hooksPendingFile -Force -ErrorAction SilentlyContinue
+        try { [System.IO.File]::WriteAllText($hooksSettledFile, "") } catch { }
+      } else {
+        Write-Host "[WARN] could not set git global hooks path to $GitHookDir"
+      }
+    }
+  } elseif ($currentHooksPath) {
+    Remove-Item -LiteralPath $hooksPendingFile -Force -ErrorAction SilentlyContinue
+    try { [System.IO.File]::WriteAllText($hooksSettledFile, "") } catch { }
+  }
+}
+# END late-hooks-path
+
 # --- 2b. usage scanner ---
 $ScannerJs = Join-Path $OwnMindDir "hooks\ownmind-usage-scanner.js"
 if (Test-Path $ScannerJs) { Write-Host "[ OK ] Usage scanner ready" }

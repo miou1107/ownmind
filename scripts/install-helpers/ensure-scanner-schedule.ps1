@@ -22,7 +22,8 @@
 #   exit 1 — the task is absent or disabled and could not be restored
 #
 # Output is prefixed for machine reading, matching bootstrap.ps1:
-#   OK:schedule:already_registered | OK:schedule:repaired | ERROR:schedule:<why>
+#   OK:schedule:already_registered | OK:schedule:repaired | OK:schedule:opted_out
+#   | ERROR:schedule:<why>
 
 $ErrorActionPreference = 'Continue'
 
@@ -54,6 +55,15 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 $ScriptDir = $PSScriptRoot
 $InstallDir = Join-Path $env:USERPROFILE '.ownmind'
 $TaskName = 'OwnMind Usage Scanner'
+
+# Issue #200 - the owner turned usage collection off (.no-usage-scanner). install.ps1 skips
+# the task for that file and the scanner wrapper exits at once when it is there; this repair
+# used to register the task again on the next auto-update. Nothing to schedule, nothing to
+# repair.
+if (Test-Path (Join-Path $InstallDir '.no-usage-scanner')) {
+  Write-Host "OK:schedule:opted_out"
+  exit 0
+}
 
 # Best-effort reporting, same pattern update.ps1 uses. A missing helper must never stop
 # the repair itself.

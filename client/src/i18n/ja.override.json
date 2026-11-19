@@ -9,6 +9,8 @@
   "team.load.never": "インストール済み、未読み込み",
   "team.load.never_detail": "{machine}、{date} にインストール",
   "team.load.never_detail_nomachine": "{date} にインストール",
+  "team.load.reinstalled_detail": "{machine}、{date} に再インストール",
+  "team.load.reinstalled_detail_nomachine": "{date} に再インストール",
   "team.load.not_installed": "未インストール",
   "team.load.tip.green": "このパソコンはメモリを読み込みました。OwnMind は正常に動作しています。",
   "team.load.tip.yellow": "インストールは完了していますが、メモリを読み込んだことは一度もありません。新しい会話を開くと緑になります。1 日たっても黄色のままなら、新しい会話を開いたかどうか本人に確認してください。",

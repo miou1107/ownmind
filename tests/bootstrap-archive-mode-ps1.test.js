@@ -37,7 +37,8 @@ test('a machine without git is no longer turned away', () => {
   assert.doesNotMatch(bootstrap, /preflight_missing_git/,
     'bootstrap.ps1 must not exit when git is missing; it installs from the release archive instead');
   assert.doesNotMatch(bootstrap, /git is not on PATH/);
-  assert.match(bootstrap, /Log-Info archive_mode "git is not installed; installing from the release archive"/);
+  assert.match(bootstrap, /\[string\]\$Reason = 'git is not installed'/);
+  assert.match(bootstrap, /Log-Info archive_mode "\$Reason; installing from the release archive"/);
   // Same lookup as before: a profile alias named git is not a program these scripts can run.
   assert.match(bootstrap, /\$gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue\n\$HasGit = \(\$null -ne \$gitCmd\)/);
   assert.match(bootstrap, /if \(-not \$HasGit\) \{\n\s+Install-FromArchive \$InstallArgs\n\s+Write-OwnMindNext\n\s+exit 0/);
@@ -83,7 +84,23 @@ test('the sentences the person reads are byte-identical to the shell side', () =
     assert.ok(fetchReleaseSh.includes(sentence) || bootstrapSh.includes(sentence), `${sentence} is not on the shell side`);
     assert.ok(bootstrap.includes(sentence), `${sentence} is missing on the Windows side`);
   }
-  assert.match(bootstrap, /git is not installed; installing from the release archive/);
+  assert.match(bootstrap, /git is not installed/);
+});
+
+// Issue #200, item 2 - the same fallback as bootstrap.sh: a failed clone with the key and URL in
+// hand carries on from the server archive. The shell side is exercised for real in
+// bootstrap-clone-failure.test.js; this pins the Windows twin to the same shape.
+test('a failed clone falls back to the server archive when the key and URL are there', () => {
+  const fn = bootstrap.slice(bootstrap.indexOf('function Complete-AfterCloneFailure'), bootstrap.indexOf('# Branch 1: no install'));
+  assert.match(fn, /if \(-not \$HasInstallArgs\) \{[\s\S]*?ASK:no_network[\s\S]*?exit 1/);
+  assert.match(fn, /Install-FromArchive \$InstallArgs -Reason 'git could not download OwnMind from GitHub'/);
+  for (const marker of ['git clone failed (check network or GitHub access)', 'Re-clone failed; old data preserved at $Bak']) {
+    const at = bootstrap.indexOf(marker);
+    assert.ok(at > 0, marker);
+    const after = bootstrap.slice(at, at + 200);
+    assert.match(after, /Complete-AfterCloneFailure/, `${marker} is followed by the fallback`);
+    assert.doesNotMatch(after.split('Complete-AfterCloneFailure')[0], /exit 1/);
+  }
 });
 
 test('the download uses retry, a TLS 1.2 opt-in, in-process headers, and never sends the key to GitHub', () => {

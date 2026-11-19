@@ -297,7 +297,8 @@ describe('a hook in ~/.ownmind/git-hooks that is not OwnMind\'s is never overwri
     // Run only the pass-through block of update.sh, with its variables pointed at the temp dir.
     const src = read('scripts/update.sh');
     const start = src.indexOf('  PASSTHROUGH_SRC="$OWNMIND_DIR/hooks/ownmind-git-passthrough"');
-    const end = src.indexOf('# --- 2b. Sync usage scanner');
+    // Ends where the late hooks-path block begins (issue #200), which has its own test.
+    const end = src.indexOf('# --- 2a3. Set the global git hooks path');
     assert.ok(start > 0 && end > start, 'pass-through block not found in update.sh');
     const block = src.slice(start, end).replace(/\nfi\s*$/, '\n');
     const scriptFile = path.join(root, 'block.sh');
