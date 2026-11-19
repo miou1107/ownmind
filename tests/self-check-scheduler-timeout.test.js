@@ -69,7 +69,9 @@ describe('v1.32.15 — a scheduler query that ran out of time', () => {
     // branch cannot be run here. Read it instead: a failed query must be handed to the
     // function above rather than mapped to a result on the spot.
     const source = fs.readFileSync(selfCheckPath, 'utf8');
-    const start = source.indexOf("if (PLATFORM === 'win32') {", source.indexOf('async function checkScheduler()'));
+    // Issue #200: checkScheduler takes { ownmindDir, platform } so tests can pick the branch;
+    // the Windows branch reads the `platform` parameter.
+    const start = source.indexOf("if (platform === 'win32') {", source.indexOf('async function checkScheduler('));
     const branch = source.slice(start, source.indexOf('const allLines', start));
     assert.match(branch, /if \(!r\.ok\) return schedulerQueryResult\(r\);/);
   });

@@ -6,7 +6,8 @@
 //
 //   green   this member's computer has loaded memories (and no install error came after)
 //   yellow  installed, but no load yet — opening a new conversation turns it green
-//   red     the install reported an error, and nothing has loaded since
+//   red     the install reported an error, and nothing has loaded or reinstalled cleanly since
+//           (a clean reinstall after the error is yellow: installed, not loaded yet; issue #200)
 //   none    no install and no load yet, or the account is deactivated
 //
 // The Chinese wording behind these keys (team.col.last_load, team.load.* in zh.json) was shown
@@ -29,7 +30,8 @@ const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).g
 
 /**
  * @param {object} row  A /api/admin/users row (last_memory_load_at, last_machine,
- *                      first_install_at, last_install_error_at, deactivated_at).
+ *                      first_install_at, last_install_error_at, last_clean_install_at,
+ *                      deactivated_at).
  * @param {Date} now
  * @returns {{
  *   light: 'green'|'yellow'|'red'|'none',
@@ -45,11 +47,24 @@ export function lastLoadState(row, now = new Date()) {
   const load = parse(row.last_memory_load_at);
   const error = parse(row.last_install_error_at);
   const installed = parse(row.first_install_at);
+  const reinstalled = parse(row.last_clean_install_at);
   const machine = row.last_machine || null;
 
   // An error counts only while nothing has loaded since: a member who loaded memories after
   // a failed install is working, so the older error must not turn the light red.
   if (error && (!load || error.getTime() > load.getTime())) {
+    // Issue #200: a reinstall that finished cleanly after the error means the colleague fixed
+    // it and only has not opened a new conversation yet. That is the yellow state, not red.
+    if (reinstalled && reinstalled.getTime() > error.getTime()) {
+      const date = md(reinstalled);
+      return {
+        ...base, light: 'yellow', pill: true, tipKey: 'team.load.tip.yellow',
+        labelKey: 'team.load.never',
+        detail: machine
+          ? { key: 'team.load.reinstalled_detail', params: { machine, date } }
+          : { key: 'team.load.reinstalled_detail_nomachine', params: { date } },
+      };
+    }
     return {
       ...base, light: 'red', pill: true, tipKey: 'team.load.tip.red',
       labelKey: 'team.load.error',

@@ -29,7 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { runConditionalSync } from './conditional-sync.js';
+import { runConditionalSync, SESSION_START_BUDGET_MS } from './conditional-sync.js';
 // v1.18.5: syncToAllTools switched to dynamic import (line 116 below).
 // Reason: iron-rule-sync.js → iron-rule-frontmatter.js → js-yaml.
 // User install only runs npm install in ~/.ownmind/mcp/ — root deps aren't installed, so js-yaml is missing.
@@ -52,14 +52,14 @@ function logSyncResult(message) {
  * Additionally call /api/memory/sync?types=iron_rule to get the full iron_rule list
  * (the init endpoint compact mode only sends iron_rules_digest as a string, not an array).
  */
-async function fetchIronRuleList(apiUrl, apiKey) {
+async function fetchIronRuleList(apiUrl, apiKey, timeoutMs = 5000) {
   if (!apiUrl || !apiKey) return [];
   try {
     const url = `${apiUrl.replace(/\/$/, '')}/api/memory/sync?types=iron_rule`;
     const res = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return [];
     const body = await res.json();
@@ -143,11 +143,17 @@ async function main() {
   // window and its own failure modes; letting either one decide whether rules reach this
   // machine would mean an unrelated outage quietly switches enforcement off. They are
   // independent, so they fail independently.
-  await syncEnforcementBundle(apiUrl, apiKey);
-
+  //
+  // Issue #200, item 6: the two run side by side. One after the other they could take 5s for the
+  // bundle and then the whole memory budget, and Claude Code stops the hook at 10s. The bundle
+  // never throws (it logs its own outcome), so waiting for both changes nothing else.
+  const startedAt = Date.now();
   let result;
   try {
-    result = await runConditionalSync({ apiUrl, apiKey });
+    [, result] = await Promise.all([
+      syncEnforcementBundle(apiUrl, apiKey),
+      runConditionalSync({ apiUrl, apiKey, budgetMs: SESSION_START_BUDGET_MS }),
+    ]);
   } catch (err) {
     logSyncResult(`runConditionalSync error: ${err.message}`);
     await writeStdoutAsync('');
@@ -171,7 +177,10 @@ async function main() {
 
       // v1.18.0-rc2 B1 fix: init endpoint compact doesn't send the iron_rules array, so we
       // additionally call /api/memory/sync for the full list.
-      const ironRules = await fetchIronRuleList(apiUrl, apiKey);
+      // Bounded by what is left of the session-start wait (at least 1s): this request happens
+      // before the memories are printed, so its time is the colleague's time too.
+      const left = SESSION_START_BUDGET_MS + 1000 - (Date.now() - startedAt);
+      const ironRules = await fetchIronRuleList(apiUrl, apiKey, Math.max(1000, Math.min(5000, left)));
       if (ironRules.length > 0) {
         const results = syncToAllTools(ironRules);
         const written = results.filter(r => r.written).map(r => r.target);

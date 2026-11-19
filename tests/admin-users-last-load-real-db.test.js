@@ -53,7 +53,8 @@ test('GET /api/admin/users last-load fields against a real database', async (t) 
         (6, 'nosum@example.com',  'NoSum',  'key-6', 'user', NOW() - INTERVAL '4 days'),
         (7, 'none@example.com',   'None',   'key-7', 'user', NOW() - INTERVAL '3 days'),
         (8, 'fast@example.com',   'Fast',   'key-8', 'user', NOW() - INTERVAL '2 days'),
-        (9, 'erronly@example.com','ErrOnly','key-9', 'user', NOW() - INTERVAL '1 days');
+        (9, 'erronly@example.com','ErrOnly','key-9', 'user', NOW() - INTERVAL '1 days'),
+        (10, 'reinst@example.com','Reinst', 'key-10', 'user', NOW() - INTERVAL '1 days');
 
       INSERT INTO activity_logs (user_id, ts, event, source) VALUES
         (1, NOW() - INTERVAL '2 hours', 'init', 'hook'),
@@ -72,7 +73,9 @@ test('GET /api/admin/users last-load fields against a real database', async (t) 
         (4, NOW() - INTERVAL '4 days', 'post_install', 'MBP', '{"pass":5,"warn":0,"fail":0}'),
         (5, NOW() - INTERVAL '1 day',  'install_started', 'M5', NULL),
         (6, NOW() - INTERVAL '1 day',  'post_install', 'M6', NULL),
-        (9, NOW() - INTERVAL '1 day',  'error_fetch', 'M9', NULL);
+        (9, NOW() - INTERVAL '1 day',  'error_fetch', 'M9', NULL),
+        (10, NOW() - INTERVAL '2 hours', 'post_install', 'M10', '{"pass":3,"warn":0,"fail":2}'),
+        (10, NOW() - INTERVAL '1 hour',  'post_install', 'M10', '{"pass":5,"warn":0,"fail":0}');
     `);
 
     const rows = await new Promise((resolve, reject) => {
@@ -85,7 +88,7 @@ test('GET /api/admin/users last-load fields against a real database', async (t) 
     const now = Date.now();
     const HOUR = 3_600_000;
 
-    assert.equal(rows.length, 9);
+    assert.equal(rows.length, 10);
     // The existing fields are still there and the full key still is not.
     assert.equal(by.green.api_key_prefix, 'key-1');
     assert.equal(by.green.must_change_password, false);
@@ -99,6 +102,13 @@ test('GET /api/admin/users last-load fields against a real database', async (t) 
 
     // 1: the beacon (5 days ago) is earlier than the finished row (5 days ago + 1 minute).
     assert.ok(ms(by.green.first_install_at) > now - 5 * 24 * HOUR + 30_000, 'first_install_at skips the beacon');
+
+    // 10 (issue #200): a failed install, then a clean reinstall an hour later.
+    assert.ok(ms(by.reinst.last_clean_install_at) > ms(by.reinst.last_install_error_at));
+    // 3: only the failed one, so nothing clean to report.
+    assert.equal(by.red.last_clean_install_at, null);
+    // 6: a finished install with no summary counts as clean.
+    assert.ok(by.nosum.last_clean_install_at);
 
     // 2: installed, never loaded.
     assert.equal(by.yellow.last_memory_load_at, null);
@@ -135,7 +145,7 @@ test('GET /api/admin/users last-load fields against a real database', async (t) 
     assert.equal(by.erronly.first_install_at, null);
 
     // Newest member first, as before.
-    assert.deepEqual(rows.map((r) => r.id), [9, 8, 7, 6, 5, 4, 3, 2, 1]);
+    assert.deepEqual(rows.map((r) => r.id), [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
 
     // The planner can find a member's rows through the (user_id, ...) indexes. A table this
     // small may still get a sequential scan, so when the plain plan has one the check is

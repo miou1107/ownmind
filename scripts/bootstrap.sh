@@ -296,7 +296,7 @@ install_from_archive() {
     echo "FIX:rerun_with_args:curl -fsSL <API_URL>/install.sh | bash -s -- <KEY> <API_URL>"
     exit 1
   fi
-  log_info archive_mode "git is not installed; installing from the release archive"
+  log_info archive_mode "${OWNMIND_ARCHIVE_REASON:-git is not installed}; installing from the release archive"
   if [ -e "$partial" ]; then
     log_info clear_partial "Removing the unfinished download from an earlier attempt ($partial)"
     rm -rf "$partial" || { log_err clear_partial "Could not remove $partial"; echo "FIX:clear_partial:rm -rf ~/.ownmind.partial"; exit 1; }
@@ -317,6 +317,30 @@ install_from_archive() {
   log_ok done "Fresh install complete (release archive)"
 }
 
+# Issue #200: git is there but the clone failed, most often a company network that blocks
+# GitHub while the OwnMind server is reachable. The release archive comes from the OwnMind
+# server first, so with the key and URL in hand the install carries on from the archive instead
+# of stopping at "check the network" (which no network check fixes). Without them the archive
+# cannot be fetched, and the network question stays. The failed clone may leave a partly
+# written folder behind; nothing else is in it (the old folder, if any, was moved aside first),
+# and the archive is moved into that path, so it is cleared.
+#
+# ownmind_clone_failed_fallback "$@"  — exits the script either way.
+ownmind_clone_failed_fallback() {
+  if [ -n "$(ownmind_install_args "$@")" ]; then
+    if [ -e "$OWNMIND_DIR" ] && ! rm -rf "$OWNMIND_DIR"; then
+      log_err clear_partial "Could not remove the folder the failed clone left at $OWNMIND_DIR"
+      echo "FIX:clear_partial:rm -rf ~/.ownmind"
+      exit 1
+    fi
+    OWNMIND_ARCHIVE_REASON="git could not download OwnMind from GitHub"
+    install_from_archive "$@"
+    return 0
+  fi
+  ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
+  exit 1
+}
+
 log_info detect "Checking OwnMind installation ($OWNMIND_DIR)"
 
 # Branch 1: no install
@@ -332,8 +356,9 @@ if [ ! -d "$OWNMIND_DIR" ]; then
   if ! git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done \
     || [ ! -d "$OWNMIND_DIR/.git" ]; then
     log_err git_clone "git clone failed (check network or GitHub access)"
-    ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
-    exit 1
+    ownmind_clone_failed_fallback "$@"
+    ownmind_print_next
+    exit 0
   fi
   log_ok clone "Clone complete"
   cd "$OWNMIND_DIR"
@@ -384,8 +409,10 @@ if [ ! -d "$OWNMIND_DIR/.git" ]; then
   if ! git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done \
     || [ ! -d "$OWNMIND_DIR/.git" ]; then
     log_err git_clone "Re-clone failed; old data preserved at $BAK"
-    ownmind_ask_line no_network "ASK:no_network:The installer could not reach the OwnMind server or GitHub. Check that this computer is online, then paste the same install message to the AI again."
-    exit 1
+    ownmind_clone_failed_fallback "$@"
+    log_ok done "Repair complete (old data preserved at $BAK; backups older than 7 days are swept on next upgrade)"
+    ownmind_print_next
+    exit 0
   fi
   cd "$OWNMIND_DIR"
   bash install.sh "$@" || { log_err install "install.sh failed (missing API_KEY/URL or other error)"; echo "FIX:retry_install:$(ownmind_retry_cmd)"; exit 1; }

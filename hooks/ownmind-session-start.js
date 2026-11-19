@@ -16,7 +16,7 @@ import { readCredentials, getClientVersion, resolveProjectName } from '../shared
 import { roleForProfile, fetchBugReportNotifications } from './lib/bug-report-notifications.js';
 import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import { queueUpdateBanner } from '../shared/update-banner.js';
-import { runConditionalSync } from './lib/conditional-sync.js';
+import { runConditionalSync, SESSION_START_BUDGET_MS } from './lib/conditional-sync.js';
 // From the CLI module, which is where this function already lives. Importing it is safe: that
 // file runs main() only when it is process.argv[1]. Importing rather than restating it is the
 // point — a second copy of the fetch-and-cache rule is how the two platforms drifted apart in
@@ -380,18 +380,22 @@ async function main() {
   // Ahead of the init sync and not gated on it, matching the CLI: the two have separate
   // freshness windows and separate failure modes, and letting either decide the other would
   // mean an unrelated outage quietly switching enforcement off.
-  try {
-    await syncEnforcementBundle(apiUrl, apiKey);
-  } catch { /* never block the load; syncEnforcementBundle already logs its own outcome */ }
+  //
+  // Issue #200, item 6: started together with the memory sync rather than awaited before it, so
+  // the two waits overlap instead of adding up past Claude Code's 10-second limit for this hook.
+  const enforcement = syncEnforcementBundle(apiUrl, apiKey)
+    .catch(() => { /* never block the load; syncEnforcementBundle already logs its own outcome */ });
 
   // v1.26.83 — conditional sync rather than an unconditional full download. Skips the
   // payload when the server's sync_token matches the cache (~95% of sessions), and stamps
   // the cache with the account so another account's memories can never be served from it.
+  // Issue #200 — bounded to SESSION_START_BUDGET_MS; past it the cache on disk is served.
   let initData;
   try {
-    const result = await runConditionalSync({ apiUrl, apiKey });
+    const result = await runConditionalSync({ apiUrl, apiKey, budgetMs: SESSION_START_BUDGET_MS });
     initData = result?.data || null;
   } catch { initData = null; }
+  await enforcement;
 
   if (!initData) {
     reportEvent(apiUrl, apiKey, 'init_fail', { status: 'api_timeout' });

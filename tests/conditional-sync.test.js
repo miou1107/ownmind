@@ -305,3 +305,83 @@ describe('v1.18.0 — runConditionalSync end-to-end', () => {
     assert.equal(r.source, 'cache_fallback');
   });
 });
+
+/**
+ * Issue #200, item 6 — a session start waits at most SESSION_START_BUDGET_MS on the server.
+ *
+ * Claude Code stops the SessionStart hook at 10 seconds. Unbounded, the sync could spend 3s on
+ * the sync token and 8s on the full init; on a slow network the hook was cut off and the session
+ * started with no memories even though a cache was on disk.
+ */
+describe('issue #200 — runConditionalSync under a session-start budget', () => {
+  beforeEach(setup);
+  afterEach(cleanup);
+
+  /** A server that never answers: every request waits until its timeout aborts it. */
+  function hangingFetch(calls) {
+    return (url, opts) => new Promise((resolve, reject) => {
+      calls.push({ url, at: Date.now() });
+      opts.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+  }
+  const account = { apiUrl: 'http://api', apiKey: 'K' };
+
+  it('the hooks use a 5-second budget', async () => {
+    const { SESSION_START_BUDGET_MS } = await import('../hooks/lib/conditional-sync.js');
+    assert.equal(SESSION_START_BUDGET_MS, 5000);
+  });
+
+  it('a hanging server with a cache on disk: the cache is served within the budget', async () => {
+    writeCache({ sync_token: 'X', data: { iron_rules: [{ id: 1 }] } }, cachePath, undefined, account);
+    const calls = [];
+    const started = Date.now();
+    const r = await runConditionalSync({ ...account, cachePath, fetchFn: hangingFetch(calls), budgetMs: 400 });
+    const took = Date.now() - started;
+    assert.equal(r.source, 'cache_fallback');
+    assert.deepEqual(r.data, { iron_rules: [{ id: 1 }] });
+    assert.ok(took < 700, `served after ${took}ms; the budget was 400ms`);
+  });
+
+  it('a stale cache goes straight to the init, which gets the whole budget, then the cache', async () => {
+    writeCache({ sync_token: 'X', data: { iron_rules: [{ id: 1 }] } }, cachePath, undefined, account);
+    const stale = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    stale.saved_at = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+    fs.writeFileSync(cachePath, JSON.stringify(stale));
+    const calls = [];
+    const started = Date.now();
+    const r = await runConditionalSync({ ...account, cachePath, fetchFn: hangingFetch(calls), budgetMs: 300 });
+    assert.equal(r.source, 'cache_fallback');
+    assert.ok(Date.now() - started < 600);
+    assert.equal(calls.length, 1, 'only the init was asked');
+  });
+
+  it('no cache at all: the init still gets a short try past an exhausted budget', async () => {
+    const calls = [];
+    const r = await runConditionalSync({ ...account, cachePath, fetchFn: hangingFetch(calls), budgetMs: 0 });
+    assert.equal(r.source, 'error');
+    assert.equal(calls.length, 1, 'the init was tried once');
+  });
+
+  it('a fast server is unaffected by the budget', async () => {
+    const fakeFetch = makeFetch([
+      ['sync-token', () => okJson({ sync_token: 'NEW' })],
+      ['init', () => okJson({ sync_token: 'NEW', data: { iron_rules: [{ id: 2 }] } })],
+    ]);
+    const r = await runConditionalSync({ ...account, cachePath, fetchFn: fakeFetch, budgetMs: 5000 });
+    assert.equal(r.source, 'init_refreshed');
+  });
+
+  it('without a budget the old timeouts stand (background callers)', async () => {
+    // The no-cache path goes straight to init; aborting it at 8s is the default. Checked by
+    // reading the timeout the request was armed with rather than waiting 8 seconds.
+    const seen = [];
+    const realSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = (fn, ms, ...rest) => { seen.push(ms); return realSetTimeout(fn, 0, ...rest); };
+    try {
+      await runConditionalSync({ ...account, cachePath, fetchFn: hangingFetch([]) });
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
+    assert.ok(seen.includes(8000), `timeouts armed: ${seen}`);
+  });
+});

@@ -23,7 +23,7 @@ test('a machine without git is no longer turned away', () => {
     'bootstrap.sh must not exit when git is missing; it installs from the release archive instead');
   assert.doesNotMatch(bootstrap, /command -v git[^\n]*\n[^\n]*\n[^\n]*exit 1/,
     'no unconditional exit 1 right after the git check');
-  assert.match(bootstrap, /log_info archive_mode "git is not installed; installing from the release archive"/);
+  assert.match(bootstrap, /log_info archive_mode "\$\{OWNMIND_ARCHIVE_REASON:-git is not installed\}; installing from the release archive"/);
 });
 
 test('the git path is still there, unchanged in shape', () => {

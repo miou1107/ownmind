@@ -24,7 +24,8 @@
 #   exit 1  — the schedule is not alive and could not be restored
 #
 # Output is prefixed for machine reading, matching bootstrap.sh:
-#   OK:schedule:already_registered | OK:schedule:repaired | ERROR:schedule:<why>
+#   OK:schedule:already_registered | OK:schedule:repaired | OK:schedule:opted_out
+#   | ERROR:schedule:<why>
 #
 # Env overrides (tests):
 #   OWNMIND_DIR — install path (default: $HOME/.ownmind)
@@ -51,6 +52,15 @@ fail() {
   report_error "scanner_schedule_repair_failed" "$1"
   exit 1
 }
+
+# Issue #200 — the owner turned usage collection off (~/.ownmind/.no-usage-scanner). install.sh
+# skips the schedule for that file, and run-scanner.sh exits at once when it is there; this
+# repair used to put the schedule straight back on the next auto-update. A machine with
+# collection off has nothing to schedule, so there is nothing to repair.
+if [ -f "$OWNMIND_DIR/.no-usage-scanner" ]; then
+  echo "OK:schedule:opted_out"
+  exit 0
+fi
 
 case "$OWNMIND_OS" in
   darwin*)

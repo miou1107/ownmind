@@ -22,7 +22,8 @@ export const LIST_USERS_SQL = `
          m.last_memory_load_at,
          lm.last_machine,
          i.first_install_at,
-         i.last_install_error_at
+         i.last_install_error_at,
+         i.last_clean_install_at
   FROM users u
   LEFT JOIN LATERAL (
     -- ts is the client's clock: a fast clock must not show a load in the future.
@@ -52,7 +53,15 @@ export const LIST_USERS_SQL = `
                 OR (c.trigger_kind = 'post_install'
                     AND CASE WHEN jsonb_typeof(c.summary->'fail') = 'number'
                              THEN (c.summary->>'fail')::numeric > 0 ELSE FALSE END)
-           ) AS last_install_error_at
+           ) AS last_install_error_at,
+           -- Issue #200: the newest finished install whose self-check counted no failure. A
+           -- reinstall that worked after an error is newer than the error, and the team page
+           -- shows it as installed (yellow) instead of failed (red) until memories load.
+           MAX(c.ts) FILTER (
+             WHERE c.trigger_kind IN ('post_install', 'post_upgrade', 'manual')
+               AND NOT (CASE WHEN jsonb_typeof(c.summary->'fail') = 'number'
+                             THEN (c.summary->>'fail')::numeric > 0 ELSE FALSE END)
+           ) AS last_clean_install_at
     FROM install_check_logs c
     WHERE c.user_id = u.id
   ) i ON TRUE

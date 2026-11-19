@@ -9,6 +9,8 @@
   "team.load.never": "Installed, nothing loaded yet",
   "team.load.never_detail": "{machine}, installed {date}",
   "team.load.never_detail_nomachine": "Installed {date}",
+  "team.load.reinstalled_detail": "{machine}, reinstalled {date}",
+  "team.load.reinstalled_detail_nomachine": "Reinstalled {date}",
   "team.load.not_installed": "Not installed yet",
   "team.load.tip.green": "This computer has loaded memories. OwnMind is working on their side.",
   "team.load.tip.yellow": "Installed, but memories have never been loaded. Opening a new conversation turns it green; if it is still yellow a day later, ask them whether they opened a new conversation.",
