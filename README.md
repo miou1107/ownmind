@@ -4,7 +4,7 @@ Personalized persistent memory for AI
 
 **Website**: https://miou1107.github.io/ownmind/
 
-**Current version: v1.33.10** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.33.11** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -42,6 +42,7 @@ AI is powerful but **has no long-term memory by design**, and different models (
 
 ### Pain Point 1: Re-explaining preferences in every new conversation
 
+- **Upgrading right after an install is no longer refused as "another update is running"** — on 2026-11-19 the clean-install check on GitHub kept failing on Linux and held back the 2026-11-12 dependency update. The install's last step starts the OwnMind MCP once to check that it works and closes it right away; the MCP used to look for a new release as soon as it started, holding the update lock while it waited for the server. Closed mid-wait, it left the lock behind for ten minutes, and any upgrade in those ten minutes was refused. That self-check start no longer looks for a release; an MCP started by Claude Code still checks once a day. Eight npm packages are updated too, including body-parser 2.4.0 with a security fix. Clients update themselves; the server needs a redeploy for its packages. `v1.33.11`
 - **The switch is now 「有新待辦時自動打開」, and the reminder reaches you in the Claude desktop app** — on 2026-11-19 a colleague could not tell what the 「自動提醒」 switch at the top right of the sidebar did, and Vin noticed he had never once seen the reminder that opens a conversation. The switch is now labelled 「有新待辦時自動打開」 (open when new items arrive) and always has a row of its own. The Claude desktop app does not show the reminder OwnMind sends when a conversation starts, so there Claude now puts it at the top of its next reply; the terminal shows it as before. Client only. `v1.33.10`
 - **The 「自動提醒」 switch now looks different on and off in the Claude desktop app** — on 2026-11-18, right after v1.33.8, Vin saw the switch as a plain black dot whether it was on or off. A desktop button draws its text only, so the green and grey backgrounds inside it were never painted. The switch is now a green track with a white knob at the right while on, and a grey track with the knob at the left while off; beside a project select it has a row of its own, so the 「更新」 button is no longer cut off. Also, 「打開 OwnMind 待辦事項」 now opens the pane, and a plain 「我有哪些待辦事項」 gets the whole list in the conversation. Client update only. `v1.33.9`
 - **The side pane is now 「OwnMind 待辦事項」, with a 「自動提醒」 switch at the top** — on 2026-11-18, right after v1.33.7, Vin tried the pane and wanted the 「關閉自動跳出」 button to be a switch; he also found that his usual 「看一下我有哪些 issue 要處理」 made Claude open the pane instead of listing the issues in the conversation. The pane is now titled 「OwnMind 待辦事項」 and its header has a 「自動提醒」 switch: while it is on, the pane opens by itself when a conversation starts with new items; while it is off, it does not. Telling Claude 「關掉自動提醒」 or 「打開自動提醒」 flips it too. Claude opens the pane only when you name it, as in 「用 sidebar 看我有哪些待辦事項」; a plain 「我有哪些待辦事項」 is answered in the conversation. Client update only. `v1.33.8`

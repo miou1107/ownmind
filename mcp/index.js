@@ -2189,15 +2189,27 @@ async function runAutoUpdate() {
 // in a `finally` on every path — including the one where it never acquired it. Keeping a
 // second releaser here would mean two programs could each believe they were tidying up
 // after themselves while one of them released the other's lock.
-runAutoUpdate().catch((e) => {
-  try {
-    logEvent('update_failed', {
-      source: 'mcp',
-      step: 'outer',
-      error: e?.code || e?.message || String(e).slice(0, 120),
-    });
-  } catch {}
-});
+//
+// v1.33.11 — a preflight start (OWNMIND_PREFLIGHT=1, see sendMcpHeartbeat) does not update.
+// The self-check kills this process the moment it has counted the tools, and on an archive
+// install that kill can land while the update holds `.update-lock` and waits for the server.
+// The signal handlers below exit without running the update's `finally`, so the lock stayed
+// on disk until it went stale ten minutes later, and every update in those ten minutes -
+// including the upgrade a person runs right after installing - failed with `lock_held`.
+// tests/mcp-preflight-skips-update.test.js holds both halves: a normal start still updates.
+if (process.env.OWNMIND_PREFLIGHT === '1') {
+  try { logEvent('update_skipped', { source: 'mcp', reason: 'preflight' }); } catch {}
+} else {
+  runAutoUpdate().catch((e) => {
+    try {
+      logEvent('update_failed', {
+        source: 'mcp',
+        step: 'outer',
+        error: e?.code || e?.message || String(e).slice(0, 120),
+      });
+    } catch {}
+  });
+}
 
 // --- Emergency shutdown: persist the session log ---
 async function emergencySessionLog(reason = 'mcp_shutdown') {
