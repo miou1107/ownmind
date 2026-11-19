@@ -1,20 +1,98 @@
 # OwnMind 檔案結構
 
+## v1.33.9 修改（2026-11-18，「自動提醒」開關在 Claude 桌面版分得出開和關；問「我有哪些待辦事項」Claude 會在對話裡列出清單）
+
+新增檔：
+```
+openspec/changes/v1.33.9-pending-items-switch-colour/   — proposal、tasks
+```
+
+修改檔：
+```
+mods/pending-items/hooks/register.tsx                   — 開關改成有底色的方塊加白色圓點（綠底、圓點在右是開，灰底、圓點在左是關），「自動提醒」四個字和開關都可以按；有專案選單時開關自己一列；pane 工具多一個 list 動作，把清單用文字交給 AI；「打開 OwnMind 待辦事項」改成打開 sidebar
+mods/pending-items/hooks/pane.test.tsx                  — 開與關的底色和圓點位置、終端機上的畫法、開關自己一列、list 動作回傳的清單
+hooks/lib/pending-items.js                              — 交給 AI 的提醒附註寫明完整清單用 list 動作取得
+tests/pending-items.test.js                             — 提醒附註最後一句的檢查
+package.json、package-lock.json                         — 版號 1.33.9
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.9
+CHANGELOG.md                                            — v1.33.9
+```
+
+## v1.33.8 修改（2026-11-18，sidebar 改名為「OwnMind 待辦事項」，最上方改成「自動提醒」開關；講到 sidebar 才打開）
+
+新增檔：
+```
+openspec/changes/v1.33.8-pending-items-rename/          — proposal、tasks
+```
+
+修改檔：
+```
+mods/pending-items/hooks/register.tsx                   — sidebar 標題改成「OwnMind 待辦事項」；最上方的按鈕改成「自動提醒」開關（用文字加底色畫出軌道與圓點）；切換後的提示改成「已開啟自動提醒」「已關閉自動提醒」；pane 工具的說明改成講到 sidebar 才打開，兩個名稱都認得
+mods/pending-items/hooks/pane.test.tsx                  — 開關開與關各長什麼樣、切換後的提示、工具說明裡「講到 sidebar 才打開」的規則
+hooks/lib/pending-items.js                              — 交給 AI 的提醒附註改用新名稱
+package.json、package-lock.json                         — 版號 1.33.8
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.8
+CHANGELOG.md                                            — v1.33.8
+```
+
+## v1.33.7 修改（2026-11-18，「待處理單據」面板有新單才自己打開，可以關閉自動跳出；對話提醒縮成一句話）
+
+新增檔：
+```
+openspec/changes/v1.33.7-pending-items-auto-open/       — proposal、tasks
+```
+
+修改檔：
+```
+hooks/lib/pending-items.js                              — decide 多回傳 added（上次查過之後才出現的單）與 total，狀態檔多記 known（每台主機上次查到的單）；render 改成一句話，最多點名兩張；contextNote 把新進的單與連結交給 AI；自己開的單標 own；讀回應時指定 utf8，中文不會斷在半個字
+hooks/ownmind-session-start.js、hooks/lib/session-start-output.js、hooks/ownmind-prompt-inject.js — 改用 checkPendingItems 回傳的 context
+hooks/lib/fetch-project-tasks.js、hooks/lib/release-check.js、hooks/lib/hook-context-fetch.js、hooks/ownmind-touch-report.js — 讀回應時指定 utf8
+hooks/locales/{zh,en,ja}.json、{en,ja}.override.json   — pendingItems.* 改成一句話用的十二條文案（new、allWithNew、all、rest、pair、name.*、expired.*）
+mods/pending-items/hooks/register.tsx                   — 只有出現還沒在面板上看過的單才自己打開（看過的單記在 $.store 的 seen）；最上方多一個「關閉自動跳出／開啟自動跳出」按鈕（$.store 的 autoOpen，只存在這台電腦）；註冊給 Claude 用的 pane 工具（off、on、show）
+mods/pending-items/hooks/pane.test.tsx                  — 只為沒看過的單打開、新提交測試沒過算新單、關閉後不打開但指令照開、按鈕切換與提示、pane 工具三種動作、面板開著時進來的單算看過
+mods/pending-items/types/index.d.ts                     — Item.mark、auto
+tests/pending-items.test.js                             — 一句話提醒的各種情況、added 與 total、主機一次沒回應不會把舊單當新單、舊版狀態檔
+package.json、package-lock.json                         — 版號 1.33.7
+README.md、docs/README.zh-TW.md、docs/README.ja.md      — 最新改動加一條，開頭的目前版本改成 v1.33.7
+CHANGELOG.md                                            — v1.33.7
+```
+
+## v1.33.6 修改（2026-11-12，「待處理單據」面板：卡片可以隱藏，OwnMind 的單改在對話裡處理）
+
+新增檔：
+```
+hooks/pending-items-show.js                             — 印出一張 OwnMind 任務卡或問題回報的完整內容；面板在使用者送出「查看 OwnMind 任務卡 #3」時執行，把內容交給 Claude
+openspec/changes/v1.33.6-pending-items-hide/            — proposal、tasks
+```
+
+修改檔：
+```
+hooks/lib/pending-items.js                              — hiddenPathFor、readHidden：讀狀態檔旁邊的 pending-items-hidden.json，decide 不把隱藏的單列進提醒與面板清單；每張單都帶 person（自己與機器人也算）；describeOwnMindItem：一張任務卡或問題回報的完整內容，別人寫的內文逐行加上引用記號
+mods/pending-items/hooks/register.tsx                   — 卡片：頭像、標題、單號一列，日期一列，滑鼠移上去右下角出現 🔕（先跳確認框再寫進隱藏清單）；頭像提示顯示全名；標籤移除；PR 單號顯示成 !206；OwnMind 卡片點標題把查看的句子放進輸入框，送出時附上完整內容
+mods/pending-items/hooks/pane.test.tsx                  — 隱藏要先問、選取消不動、選隱藏後卡片消失並寫檔；頭像提示與不被擠壓；沒有標籤；OwnMind 標題放進輸入框、送出時附上內容
+mods/pending-items/types/index.d.ts                     — person 改成每張卡片都有
+mcp/index.js                                            — ownmind_bug_report_status：管理員在對話裡記錄問題回報的處理結果
+src/routes/bug-reports.js                               — 問題回報通知帶回報人的名字（reporter_name）
+tests/pending-items.test.js                             — 隱藏的單不列進提醒與面板清單；每張單都帶人名；讀單張任務卡與問題回報；問題回報處理結果的工具
+```
+
 ## v1.33.4 修改（2026-11-12，開對話時列出 GitHub、GitLab 上等你處理的單，#203）
 
 新增檔：
 ```
-hooks/lib/pending-items.js                              — collectGithub（gh api graphql 一次查三種：指派給我的 issue、請我審的 PR、我開的 PR 的測試結果與留言數）、collectGitlab（~/.ownmind/git-hosts.json 的每台 GitLab）、decide（當天第一次全列，之後只列新的；只看別人留的最新留言，自己的回覆與機器人不算；查不到的主機舊單只留在面板、標成過時；登入被拒且之前查得到才算過期）、render（最多 10 行）、checkPendingItems（所有主機一起查，總共最多等 2.5 秒）、recheckPendingItemsIfDue（超過 60 分鐘才再查）；清單存在 ~/.ownmind/state/pending-items.json；OWNMIND_PENDING_ITEMS=off 關閉
+hooks/lib/pending-items.js                              — collectGithub（gh api graphql 一次查三種：指派給我的 issue、請我審的 PR、我開的 PR 的測試結果與留言數）、collectGitlab（~/.ownmind/git-hosts.json 的每台 GitLab；projectLabels 指定哪些標籤代表產品）、每張單帶 project（GitHub 是 repo 名稱，GitLab 是產品標籤或 repo 名稱）、decide（當天第一次全列，之後只列新的；只看別人留的最新留言，自己的回覆與機器人不算；查不到的主機舊單只留在面板、標成過時；登入被拒且之前查得到才算過期）、render（最多 10 行）、checkPendingItems（所有主機一起查，總共最多等 2.5 秒）、recheckPendingItemsIfDue（超過 60 分鐘才再查）；清單存在 ~/.ownmind/state/pending-items.json；OWNMIND_PENDING_ITEMS=off 關閉
+hooks/pending-items-check.js                            — 面板的重新整理按鈕執行它：立刻查一次 GitHub、GitLab，改寫 ~/.ownmind/state/pending-items.json
 tests/pending-items.test.js                             — 三種查詢的對應、登入過期與逾時的分別、當天第一次與之後的差別、留言基準、10 行上限、每小時補查
 mods/pending-items/.claude-plugin/plugin.json           — Claude Code 外掛的名稱與版本
 mods/pending-items/hooks/hooks.json                     — 指向 register.tsx
-mods/pending-items/hooks/register.tsx                   — 「待處理單據」面板：每分鐘讀 ~/.ownmind/state/pending-items.json，一張單一列（狀態、可點的標題、單號），最下面寫最後檢查時間；有單時開對話自動打開，/pending-items 也能打開
-mods/pending-items/hooks/pane.test.tsx                  — 有單時面板自動打開並列出連結；沒有清單檔時不打開
+mods/pending-items/hooks/register.tsx                   — 「待處理單據」面板：每分鐘讀 ~/.ownmind/state/pending-items.json，依專案分組（色點、GitHub／GitLab 圖示、張數，點名稱收合並記住），專案選單篩選，重新整理按鈕跑 hooks/pending-items-check.js；卡片是標題連結、單號、幾天前（超過 14 天變橘色），只有待審核、測試未通過、待回覆加標籤；有單時開對話自動打開，/pending-items 也能打開
+mods/pending-items/hooks/pane.test.tsx                  — 分組、圖示、天數、標籤只在不同狀況出現；收合與專案選單；重新整理按鈕跑檢查程式；沒有清單檔時不打開
 mods/pending-items/types/index.d.ts                     — 面板讀的資料型別
 mods/pending-items/tsconfig.json
 scripts/privacy-scan.js                                 — 這個 repo 是公開的：檢查暫存區新增的每一行，對照 repo 外的 ~/.ownmind/privacy-terms.txt 與範例網域以外的信箱，只印檔名與行號；npm run privacy:scan
 tests/privacy-scan.test.js
 openspec/changes/v1.33.4-pending-items-reminder/        — proposal、spec、tasks
+openspec/changes/v1.33.5-pending-items-board/          — proposal、tasks
 ```
 
 修改檔：

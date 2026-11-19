@@ -1,39 +1,143 @@
 import { test, expect } from 'claude-code/testing'
+import { HIDE_GLYPH, initials, requestFor, requestedIn } from './register'
 
 // Invented repositories only: this repository is public.
+const now = new Date().toISOString()
 const STATE = JSON.stringify({
   day: '2026-11-13',
   lastCheckAt: '2026-11-13T15:40:00+08:00',
   items: [
-    { key: 'github:example/api#401', kind: 'review', title: 'Monthly quota cap', url: 'https://github.com/example/api/pull/401', ref: 'example/api PR #401' },
-    { key: 'github:example/web#50', kind: 'failing', title: 'Skip button', url: 'https://github.com/example/web/pull/50', ref: 'example/web PR #50' },
+    { key: 'github:example/api#401', kind: 'review', title: 'Monthly quota cap', url: 'https://github.com/example/api/pull/401', ref: 'example/api PR #401', project: 'api', host: 'github', at: now, person: 'Jane Doe' },
+    { key: 'github:example/api#12', kind: 'assigned', title: 'Old report', url: 'https://github.com/example/api/issues/12', ref: 'example/api issue #12', project: 'api', host: 'github', at: '2020-01-01T00:00:00Z' },
+    { key: 'gitlab:https://git.example.com:g/p#112', kind: 'failing', title: 'Price warning', url: 'https://git.example.com/g/p/-/issues/112', ref: 'g/p!112', project: 'Billing', host: 'gitlab:https://git.example.com', at: now, person: 'reviewer' },
+    // Written before items carried a project: the pane takes the repository's name from the ref.
+    { key: 'github:example/web#50', kind: 'assigned', title: 'Skip button', url: 'https://github.com/example/web/issues/50', ref: 'example/web issue #50' },
   ],
 })
 
-const stub = (o: any, fsRead: (path: string) => any) => {
+const cards = async (ui: any) => (await ui.findAll({ type: 'Button' })).filter((b: any) => String(b.key ?? b.props?.key ?? '').startsWith('card:'))
+
+const PANE = { plugin: 'pending-items', component: 'Pane', requestId: 'pending-items', props: { bodyColumns: 60 } } as const
+
+const stub = (o: any, fsRead: (path: string) => any, hasTools = false) => {
   const v = (x: any) => () => ({ value: x })
   o('session.start', () => ({ cwd: '/tmp' }))
   o('command.register', v({ command: 'x' }))
   o('clock.every', v({}))
+  o('clock.after', v({}))
+  if (!hasTools) o('tool.register', v({ tool: 'mcp__pending-items__pane' }))
   o('env.get', v('/home/test'))
   o('fs.read', (_: any, e: any) => fsRead(String(e.path ?? '')))
 }
 
-test('the pane lists every waiting item with a link, and opens itself when there are any', async ($, on) => {
-  const o = on as any
-  const opened: any[] = []
+const start = async ($: any, o: any, opened: any[] = []) => {
   o('ui.open', (_: any, e: any) => { opened.push(e); return { value: { isPlaced: true } } })
   stub(o, p => (p.endsWith('pending-items.json') ? { value: STATE } : { deny: 'missing' }))
-  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  await $.session.start({ source: 'startup', cwd: '/tmp' })
+}
+
+test('the pane groups cards by project, with the place logo and the age; no card carries a label', async ($, on) => {
+  const opened: any[] = []
+  await start($, on, opened)
   expect(opened.length).toBe(1)
   for (const surface of ['desktop', 'terminal'] as const) {
-    const ui: any = await ($ as any).ui.mount({ plugin: 'pending-items', surface, component: 'Pane', requestId: 'pending-items', props: { bodyColumns: 60 } })
-    expect(await ui.find({ type: 'Text', text: /待處理單據　2 張/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /測試未通過/ })).toBeDefined()
-    expect(await ui.find({ type: 'Link' })).toBeDefined()
+    const ui: any = await ($ as any).ui.mount({ ...PANE, surface })
+    // api (2 items) first, then Billing and web; each group has its fold button.
+    expect(await ui.find({ key: 'fold:github:api' })).toBeDefined()
+    expect(await ui.find({ key: 'fold:gitlab:Billing' })).toBeDefined()
+    expect(await ui.find({ key: 'fold:github:web' })).toBeDefined()
+    expect((await cards(ui)).length).toBe(4)
+    // No card carries a label: the caption-sized pill is gone.
+    expect((await ui.findAll({ type: 'Text' })).filter((x: any) => x.props?.size === 'caption').length).toBe(0)
+    expect(await ui.find({ type: 'Text', text: /^今天$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^\d+ 天前$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^#12$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^!112$/ })).toBeDefined()
+    // A GitHub pull request is numbered as a merge request is.
+    expect(await ui.find({ type: 'Text', text: /^!401$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /最後檢查時間/ })).toBeDefined()
+    if (surface === 'desktop') {
+      // Three place logos, and a circle with initials for each card that names who is waiting.
+      expect((await ui.findAll({ type: 'Svg' })).map((s: any) => s.props.alt).sort()).toEqual(['GitHub', 'GitHub', 'GitLab', 'Jane Doe', 'reviewer'])
+      const jane = (await ui.findAll({ type: 'Svg' })).find((s: any) => s.props.alt === 'Jane Doe')
+      expect(jane.props.source).toContain('>JD</text>')
+      // The full name is the Svg's <title>, which an interactive Svg shows as a tooltip.
+      expect(jane.props.source).toContain('<title>Jane Doe</title>')
+      expect(jane.props.isInteractive).toBe(true)
+      // The circle keeps clear of the image's edge, and sits in a box that does not shrink beside a long title.
+      expect(jane.props.source).toContain('r="9.5"')
+      const holders = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props?.flexShrink === 0 && b.children?.length === 1 && b.children[0].type === 'Svg')
+      expect(holders.length).toBe(2)
+    } else {
+      expect(await ui.find({ type: 'Text', text: /^GitLab$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^JD$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^R$/ })).toBeDefined()
+    }
     await ui.unmount()
   }
+})
+
+test('a project folds and unfolds from its header, and the select shows one project', async ($, on) => {
+  await start($, on)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'fold:github:api' })
+  expect((await cards(ui)).length).toBe(2)
+  await ui.press({ key: 'fold:github:api' })
+  expect((await cards(ui)).length).toBe(4)
+  await ui.select({ key: 'project', value: 'gitlab:Billing' })
+  expect((await cards(ui)).length).toBe(1)
+  expect(await ui.find({ key: 'fold:github:api' })).toBeUndefined()
+  await ui.select({ key: 'project', value: '' })
+  expect((await cards(ui)).length).toBe(4)
+  await ui.unmount()
+})
+
+test('the refresh button runs the check script and rereads the list', async ($, on) => {
+  const o = on as any
+  const runs: string[][] = []
+  o('process.run', (_: any, e: any) => { runs.push([...e.argv]); return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } })
+  await start($, o)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'refresh' })
+  expect(runs.length).toBe(1)
+  expect(runs[0]![1]).toBe('/home/test/.ownmind/hooks/pending-items-check.js')
+  expect(await ui.find({ key: 'refresh', text: /^更新$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a chosen project whose items are all done falls back to every project', async ($, on) => {
+  const o = on as any
+  let state = STATE
+  o('ui.open', () => ({ value: { isPlaced: true } }))
+  o('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.select({ key: 'project', value: 'gitlab:Billing' })
+  expect((await cards(ui)).length).toBe(1)
+  // The Billing item is done: the next check no longer lists it.
+  const s = JSON.parse(STATE)
+  s.items = s.items.filter((i: any) => i.project !== 'Billing')
+  state = JSON.stringify(s)
+  await ui.press({ key: 'refresh' })
+  expect((await cards(ui)).length).toBe(3)
+  expect(await ui.find({ key: 'fold:github:api' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('pressing a card title opens the item in the browser', async ($, on) => {
+  const o = on as any
+  const runs: string[][] = []
+  o('process.run', (_: any, e: any) => { runs.push([...e.argv]); return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } })
+  await start($, o)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  await ui.press({ key: 'card:github:example/api#401:review' })
+  expect(runs).toEqual([['open', 'https://github.com/example/api/pull/401']])
+  // The title is the card's only link: one such button per card, the number and the age plain text.
+  const opened = (await ui.findAll({ type: 'Button' })).filter((b: any) => !/^(hide|fold):|^(refresh|auto|auto-knob)$/.test(String(b.key ?? b.props?.key ?? '')))
+  expect(opened.length).toBe(4)
+  await ui.unmount()
 })
 
 test('no state file: the pane stays closed and says nothing has been checked yet', async ($, on) => {
@@ -43,7 +147,478 @@ test('no state file: the pane stays closed and says nothing has been checked yet
   stub(o, () => ({ deny: 'missing' }))
   await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
   expect(opened.length).toBe(0)
-  const ui: any = await ($ as any).ui.mount({ plugin: 'pending-items', surface: 'desktop', component: 'Pane', requestId: 'pending-items', props: { bodyColumns: 60 } })
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Text', text: /還沒有查過/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('initials: two letters for a full name, one for a login or a CJK name', async () => {
+  expect(initials('Jane Doe')).toBe('JD')
+  expect(initials('member4')).toBe('M')
+  expect(initials('jane-doe')).toBe('JD')
+  expect(initials('王小明')).toBe('王')
+  expect(initials('  ')).toBe('')
+  expect(initials('(Jane) Doe')).toBe('JD')
+  expect(initials('ßanna Straße')).toBe('SS')
+  expect(initials('🇹🇼 Taiwan')).toBe('T')
+})
+
+test('OwnMind task cards and bug reports get their own groups with the OwnMind logo', async ($, on) => {
+  const o = on as any
+  const state = JSON.stringify({ lastCheckAt: now, items: [
+    { key: 'ownmind:task#3', kind: 'task', title: 'Write the guide', url: 'https://om.example.com/dashboard/inbox/tasks', ref: 'task #3', project: 'web', host: 'ownmind', at: now },
+    { key: 'ownmind:bug#32', kind: 'resolved', title: 'Login loop', url: 'https://om.example.com/dashboard/inbox/reports', ref: 'bug #32', project: '#reports', host: 'ownmind', at: now },
+  ] })
+  o('ui.open', () => ({ value: { isPlaced: true } }))
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui: any = await ($ as any).ui.mount({ ...PANE, surface })
+    expect(await ui.find({ key: 'fold:ownmind:web' })).toBeDefined()
+    expect(await ui.find({ key: 'fold:ownmind:#reports' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^問題回報$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^#32$/ })).toBeDefined()
+    if (surface === 'desktop') {
+      expect((await ui.findAll({ type: 'Svg' })).map((s: any) => s.props.alt)).toEqual(['OwnMind', 'OwnMind'])
+    } else {
+      expect((await ui.findAll({ type: 'Text', text: /^OwnMind$/ })).length).toBe(2)
+    }
+    await ui.unmount()
+  }
+})
+
+test('hiding a card asks first; a yes drops the card for good, a no keeps it', async ($, on) => {
+  const o = on as any
+  const asked: any[] = []
+  const written: Record<string, string> = {}
+  let answer = '取消'
+  o('tool.call', (_: any, e: any) => {
+    asked.push(e)
+    return { result: { questions: e.questions, answers: { [e.questions[0].question]: answer } } }
+  })
+  o('fs.write', (_: any, e: any) => { written[e.path] = e.text; return { value: undefined } })
+  o('ui.open', () => ({ value: { isPlaced: true } }))
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: STATE } : written[p] ? { value: written[p] } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  // One hide mark per card, drawn as a glyph.
+  const marks = (await ui.findAll({ type: 'Button' })).filter((b: any) => String(b.key ?? b.props?.key ?? '').startsWith('hide:'))
+  expect(marks.length).toBe(4)
+  // The mark is the button's only text: a desktop draws a `label` in place of its children.
+  for (const m of marks) expect(m.props?.label ?? m.text).toBe(HIDE_GLYPH)
+  // On the desktop each mark waits in a hidden box, shown on hover. The box is in the flow, inside
+  // a slot of fixed width, so it never lies over the title and showing it moves nothing.
+  const boxes = await ui.findAll({ type: 'Box' })
+  const reveals = boxes.filter((b: any) => b.props?.display === 'none')
+  expect(reveals.length).toBe(4)
+  for (const r of reveals) expect(r.props.position).toBeUndefined()
+  const slots = boxes.filter((b: any) => b.props?.width === 3 && b.props?.flexShrink === 0)
+  expect(slots.length).toBe(4)
+  await ui.press({ key: 'hide:github:example/api#401:review' })
+  expect(asked.length).toBe(1)
+  expect(asked[0].tool).toBe('AskUserQuestion')
+  expect(asked[0].questions[0].question).toContain('Monthly quota cap')
+  expect(asked[0].questions[0].options.map((x: any) => x.label)).toEqual(['隱藏', '取消'])
+  expect((await cards(ui)).length).toBe(4)
+  expect(Object.keys(written).length).toBe(0)
+  answer = '隱藏'
+  await ui.press({ key: 'hide:github:example/api#401:review' })
+  expect((await cards(ui)).length).toBe(3)
+  expect(await ui.find({ key: 'card:github:example/api#401:review' })).toBeUndefined()
+  const file = Object.keys(written)[0]!
+  expect(file).toBe('/home/test/.ownmind/state/pending-items-hidden.json')
+  expect(JSON.parse(written[file]!).hidden.map((h: any) => [h.key, h.title])).toEqual([['github:example/api#401', 'Monthly quota cap']])
+  // A second item is added to the list, not written over it.
+  await ui.press({ key: 'hide:github:example/api#12:assigned' })
+  expect(JSON.parse(written[file]!).hidden.map((h: any) => h.key)).toEqual(['github:example/api#401', 'github:example/api#12'])
+  expect((await cards(ui)).length).toBe(2)
+  await ui.unmount()
+})
+
+test('an item hidden earlier has no card, and a pane with nothing else left stays closed', async ($, on) => {
+  const o = on as any
+  const opened: any[] = []
+  const one = JSON.stringify({ lastCheckAt: now, items: [JSON.parse(STATE).items[0]] })
+  const hidden = JSON.stringify({ hidden: [{ key: 'github:example/api#401', title: 'Monthly quota cap', at: now }] })
+  o('ui.open', (_: any, e: any) => { opened.push(e); return { value: { isPlaced: true } } })
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: one } : p.endsWith('pending-items-hidden.json') ? { value: hidden } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  expect(opened.length).toBe(0)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await cards(ui)).length).toBe(0)
+  expect(await ui.find({ type: 'Text', text: /目前沒有等你處理的單/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('an OwnMind title puts a request in the prompt box, and sending it hands the model the item in full', async ($, on) => {
+  const o = on as any
+  const state = JSON.stringify({ lastCheckAt: now, items: [
+    { key: 'ownmind:task#3', kind: 'task', title: 'Write the guide', url: 'https://om.example.com/dashboard/inbox/tasks', ref: 'task #3', project: 'web', host: 'ownmind', at: now, person: 'Jane Doe' },
+    { key: 'ownmind:bug#32', kind: 'bug', title: 'Login loop', url: 'https://om.example.com/dashboard/inbox/bugs', ref: 'bug #32', project: '#reports', host: 'ownmind', at: now, person: 'Sam Wu' },
+  ] })
+  const fills: any[] = []
+  const runs: string[][] = []
+  const sent: any[] = []
+  let draft = ''
+  o('prompt.fill', (_: any, e: any) => { fills.push(e); return { isFilled: true } })
+  o('prompt.read', () => ({ value: { text: draft, cursor: draft.length } }))
+  o('prompt.submit', (_: any, e: any) => { sent.push(e); return { text: e.text } })
+  o('process.run', (_: any, e: any) => { runs.push([...e.argv]); return { value: { exitCode: 0, stdout: '[OwnMind] Task card #3. Title: Write the guide\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } })
+  o('ui.open', () => ({ value: { isPlaced: true } }))
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+
+  // The title asks in the conversation; it does not open a web page.
+  await ui.press({ key: 'card:ownmind:task#3:task' })
+  expect(runs.length).toBe(0)
+  expect(fills.length).toBe(1)
+  expect(fills[0].text).toBe(requestFor('ownmind:task#3'))
+  expect(fills[0].text).toContain('#3')
+  expect(fills[0].mode ?? 'replace').toBe('replace')
+  // With a draft already in the box, the request goes after it.
+  draft = 'half a sentence'
+  await ui.press({ key: 'card:ownmind:bug#32:bug' })
+  expect(fills[1].mode).toBe('append')
+  expect(fills[1].text).toBe(`\n${requestFor('ownmind:bug#32')}`)
+  await ui.unmount()
+
+  // Sending the request runs the script that reads the item and attaches what it printed.
+  const asPerson = { origin: { kind: 'composer' } }
+  await ($ as any).prompt.submit({ text: requestFor('ownmind:task#3'), ...asPerson })
+  expect(runs.length).toBe(1)
+  expect(runs[0]!.slice(1)).toEqual(['/home/test/.ownmind/hooks/pending-items-show.js', 'task', '3'])
+  expect(sent[0].context).toEqual(['[OwnMind] Task card #3. Title: Write the guide'])
+  // Any other prompt goes through untouched, and nothing is run for it.
+  await ($ as any).prompt.submit({ text: 'What is waiting on me today?', ...asPerson })
+  expect(runs.length).toBe(1)
+  expect(sent[1].context ?? []).toEqual([])
+  // The same words from anyone but the person at the prompt box run nothing: a background
+  // task's notice, another session, another plugin, a slash command.
+  for (const other of [{ origin: { kind: 'task-notification' } }, { origin: { kind: 'peer' } }, { origin: { kind: 'plugin', name: 'x' } }, { origin: { kind: 'sdk' } }, {}, { ...asPerson, isMeta: true }]) {
+    await ($ as any).prompt.submit({ text: requestFor('ownmind:bug#32'), ...other })
+  }
+  expect(runs.length).toBe(1)
+  expect(sent.slice(2).every((e: any) => (e.context ?? []).length === 0)).toBe(true)
+
+  expect(requestFor('github:example/api#401')).toBe('')
+  expect(requestedIn(requestFor('ownmind:bug#32'))).toEqual({ kind: 'bug', id: '32' })
+  // After a draft, on a line of its own, as the pane appends it.
+  expect(requestedIn(`half a sentence\n${requestFor('ownmind:task#12')}`)).toEqual({ kind: 'task', id: '12' })
+  // A mention inside other text is not a request, nor is a number too long to be an id.
+  expect(requestedIn(`the review says ${requestFor('ownmind:task#12')} was attached`)).toBeNull()
+  expect(requestedIn(requestFor('ownmind:task#12345678901234567890'))).toBeNull()
+  expect(requestedIn('OwnMind #3')).toBeNull()
+})
+
+test('a hidden list that cannot be read is never written over', async ($, on) => {
+  const o = on as any
+  const written: Record<string, string> = {}
+  const toasts: string[] = []
+  o('tool.call', (_: any, e: any) => ({ result: { questions: e.questions, answers: { [e.questions[0].question]: e.questions[0].options[0].label } } }))
+  o('fs.write', (_: any, e: any) => { written[e.path] = e.text; return { value: undefined } })
+  o('fs.exists', (_: any, e: any) => ({ value: String(e.path).endsWith('pending-items-hidden.json') }))
+  o('ui.toast', (_: any, e: any) => { toasts.push(String(e.text ?? '')); return { value: undefined } })
+  o('ui.open', () => ({ value: { isPlaced: true } }))
+  // Half written by another window: the earlier items are in there somewhere.
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: STATE } : p.endsWith('pending-items-hidden.json') ? { value: '{"hidden":[{"key":"github:example/web#50"' } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'hide:github:example/api#401:review' })
+  expect(Object.keys(written).length).toBe(0)
+  expect(toasts.length).toBe(1)
+  expect((await cards(ui)).length).toBe(4)
+  await ui.unmount()
+})
+
+test('a hidden list written as bare keys still hides, and keeps those keys when another is added', async ($, on) => {
+  const o = on as any
+  const written: Record<string, string> = {}
+  o('tool.call', (_: any, e: any) => ({ result: { questions: e.questions, answers: { [e.questions[0].question]: e.questions[0].options[0].label } } }))
+  o('fs.write', (_: any, e: any) => { written[e.path] = e.text; return { value: undefined } })
+  o('ui.open', () => ({ value: { isPlaced: true } }))
+  stub(o, p => (p.endsWith('pending-items.json') ? { value: STATE } : p.endsWith('pending-items-hidden.json') ? { value: written[p] ?? '{"hidden":["github:example/web#50"]}' } : { deny: 'missing' }))
+  await ($ as any).session.start({ source: 'startup', cwd: '/tmp' })
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await cards(ui)).length).toBe(3)
+  await ui.press({ key: 'hide:github:example/api#401:review' })
+  expect(JSON.parse(Object.values(written)[0]!).hidden.map((h: any) => h.key)).toEqual(['github:example/web#50', 'github:example/api#401'])
+  expect((await cards(ui)).length).toBe(2)
+  await ui.unmount()
+})
+
+// What the engine keeps for the mod between conversations, and what the pane was asked to do.
+const world = (o: any, kept: Record<string, unknown>, read: (path: string) => any = p => (p.endsWith('pending-items.json') ? { value: STATE } : { deny: 'missing' })) => {
+  const seenBy = { opened: [] as any[], toasts: [] as string[], tools: [] as any[], placed: { isPlaced: true } as any }
+  o('ui.open', (_: any, e: any) => { seenBy.opened.push(e); return { value: seenBy.placed } })
+  o('tool.register', (_: any, e: any) => { seenBy.tools.push(e); return { value: { tool: `mcp__pending-items__${e.name}` } } })
+  o('ui.toast', (_: any, e: any) => { seenBy.toasts.push(String(e.text ?? '')); return { value: undefined } })
+  o('store.get', (_: any, e: any) => ({ value: kept[e.key] }))
+  o('store.set', (_: any, e: any) => { kept[e.key] = e.value; return { value: undefined } })
+  stub(o, read, true)
+  return seenBy
+}
+// The pane is opened without the session start waiting on it: give it a moment.
+const begin = async ($: any) => {
+  await $.session.start({ source: 'startup', cwd: '/tmp' })
+  await new Promise(resolve => setTimeout(resolve, 20))
+}
+
+test('the pane opens by itself only when it lists an item it has not shown before', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  let state = STATE
+  const w = world(on as any, kept, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  expect(w.opened.length).toBe(1)
+  expect((kept.seen as string[]).length).toBe(4)
+  // The next conversation lists the same four: nothing opens.
+  await begin($)
+  expect(w.opened.length).toBe(1)
+  // A fifth item came in: the pane opens for it, once.
+  const more = JSON.parse(STATE)
+  more.items.push({ key: 'github:example/api#77', kind: 'assigned', title: 'New one', url: 'https://github.com/example/api/issues/77', ref: 'example/api issue #77', project: 'api', host: 'github', at: now, person: 'Sam Wu' })
+  state = JSON.stringify(more)
+  await begin($)
+  expect(w.opened.length).toBe(2)
+  await begin($)
+  expect(w.opened.length).toBe(2)
+})
+
+test('a broken PR that breaks again on a new commit counts as new', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  const one = (signal: string) => JSON.stringify({ lastCheckAt: now, items: [{ key: 'github:example/api#9', kind: 'failing', signal, title: 'Fix', url: '', ref: 'example/api PR #9', host: 'github', at: now, person: 'Me Myself' }] })
+  let state = one('aaa')
+  const w = world(on as any, kept, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  await begin($)
+  expect(w.opened.length).toBe(1)
+  state = one('bbb')
+  await begin($)
+  expect(w.opened.length).toBe(2)
+})
+
+test('switched off, the pane stays closed on new items; the command still opens it', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: false }
+  const w = world(on as any, kept)
+  await begin($)
+  expect(w.opened.length).toBe(0)
+  expect(kept.seen).toBeUndefined()
+  await ($ as any).command.run({ command: 'pending-items', args: '' })
+  expect(w.opened.length).toBe(1)
+  // Seen now: switching it back on does not open the pane for these four again.
+  kept.autoOpen = true
+  await begin($)
+  expect(w.opened.length).toBe(1)
+})
+
+// On a graphical surface the switch is the label and, beside it, a coloured track around the
+// knob: green with the knob at the right while on, grey with the knob at the left while off.
+// A desktop Button draws its label alone, so the colour has to be the Box's, not a Text's.
+const KNOB_ON = '\u2003\u26aa\ufe0f'
+const KNOB_OFF = '\u26aa\ufe0f\u2003'
+const textOf = (n: any): string => (typeof n === 'string' ? n : (n?.children?.length ? n.children.map(textOf).join('') : String(n?.props?.label ?? n?.text ?? '')))
+const keyOf = (n: any) => String(n?.key ?? n?.props?.key ?? '')
+const switchOf = async (ui: any) => {
+  const track = (await ui.findAll({ type: 'Box' })).find((b: any) => (b.children ?? []).some((c: any) => keyOf(c) === 'auto-knob'))
+  const knob = (track?.children ?? []).find((c: any) => keyOf(c) === 'auto-knob')
+  return { background: track?.props?.backgroundColor, border: track?.props?.borderColor, knob: textOf(knob) }
+}
+const SHOWN_ON = { background: '#34c759', border: '#34c759', knob: KNOB_ON }
+const SHOWN_OFF = { background: '#8e8e93', border: '#8e8e93', knob: KNOB_OFF }
+
+test('the header switch turns the pane opening by itself off and on', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  const w = world(on as any, kept)
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  // The label is a Button of its own, with no Text inside for a desktop to drop the colour of.
+  const label = (await ui.findAll({ type: 'Button' })).find((b: any) => keyOf(b) === 'auto')
+  expect(textOf(label)).toBe('自動提醒')
+  expect((label.children ?? []).every((c: any) => typeof c === 'string')).toBe(true)
+  expect(await switchOf(ui)).toEqual(SHOWN_ON)
+  await ui.press({ key: 'auto' })
+  expect(kept.autoOpen).toBe(false)
+  expect(w.toasts).toEqual(['已關閉自動提醒'])
+  expect(await switchOf(ui)).toEqual(SHOWN_OFF)
+  // The track with its knob is pressable too.
+  await ui.press({ key: 'auto-knob' })
+  expect(kept.autoOpen).toBe(true)
+  expect(w.toasts[1]).toBe('已開啟自動提醒')
+  expect(await switchOf(ui)).toEqual(SHOWN_ON)
+  await ui.unmount()
+})
+
+test('with a project select the switch has a row of its own, so the refresh button is not cut off', async ($, on) => {
+  world(on as any, {})
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  const rows = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props?.flexDirection === 'row')
+  const has = (row: any, key: string): boolean => (row.children ?? []).some((c: any) => typeof c !== 'string' && (keyOf(c) === key || has(c, key)))
+  const withRefresh = rows.filter((r: any) => has(r, 'refresh'))
+  expect(withRefresh.length).toBeGreaterThan(0)
+  expect(withRefresh.some((r: any) => has(r, 'project'))).toBe(true)
+  expect(withRefresh.some((r: any) => has(r, 'auto'))).toBe(false)
+  await ui.unmount()
+})
+
+test('the terminal draws the switch as text: the knob on an inverse run while on, a dim one while off', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  world(on as any, kept)
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'terminal' })
+  const run = async () => {
+    const button = (await ui.findAll({ type: 'Button' })).find((b: any) => keyOf(b) === 'auto')
+    const last = (button.children ?? []).filter((c: any) => typeof c !== 'string').at(-1)
+    return { text: textOf(last), inverse: last?.props?.inverse === true, dim: last?.props?.dimColor === true }
+  }
+  expect(await run()).toEqual({ text: '\u00a0\u00a0\u00a0\u25cf\u00a0', inverse: true, dim: false })
+  await ui.press({ key: 'auto' })
+  expect(await run()).toEqual({ text: '\u00a0\u25cf\u00a0\u00a0\u00a0', inverse: false, dim: true })
+  await ui.unmount()
+})
+
+test('the model can switch it off, on, or show the pane once, through the pane tool', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: true, seen: [] }
+  const w = world(on as any, kept, () => ({ deny: 'missing' }))
+  await begin($)
+  expect(w.opened.length).toBe(0)
+  // In the prompt's tool list from the start, or the model never learns it can do this.
+  expect(w.tools.map((t: any) => [t.name, t.isDeferred])).toEqual([['pane', false]])
+  // A plain "what is waiting on me" is the person's usual way to ask Claude to list and handle
+  // the items in the conversation, so only a request that names the side pane opens it.
+  const described = String(w.tools[0].description)
+  expect(described).toContain('only when the user names the side pane itself')
+  expect(described).toContain('leaves the pane closed: answer in the conversation')
+  // The pane's title after 打開 means "show it now", never "switch the reminder back on".
+  expect(described.slice(described.indexOf('action "on"'), described.indexOf('action "show"'))).not.toContain('OwnMind 待辦事項')
+  expect(described.slice(described.indexOf('action "show"'), described.indexOf('action "list"'))).toContain('打開 OwnMind 待辦事項')
+  // One short sentence is for the three that change or open something, never for the list.
+  expect(described).toContain('After "off", "on" or "show", tell the user the result in one short sentence')
+  expect(w.tools[0].inputSchema.properties.action.enum).toEqual(['off', 'on', 'show', 'list'])
+  const call = (action: string) => ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action })
+  const off = await call('off')
+  expect(kept.autoOpen).toBe(false)
+  expect(String(off.result)).toContain('no longer opens by itself')
+  expect(String(off.result)).toContain('reminder')
+  // The person sees it happen, in their own language.
+  expect(w.toasts).toEqual(['已關閉自動提醒'])
+  const back = await call('on')
+  expect(kept.autoOpen).toBe(true)
+  expect(String(back.result)).toContain('opens by itself again')
+  expect(w.toasts.length).toBe(2)
+  await call('show')
+  expect(w.opened.length).toBe(1)
+  expect(kept.autoOpen).toBe(true)
+  expect((await call('sideways')).deny).toBeDefined()
+})
+
+test('asked what is waiting, the tool hands the model the list as text and leaves the pane closed', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: false }
+  const w = world(on as any, kept)
+  await begin($)
+  const listed = String((await ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action: 'list' })).result)
+  expect(w.opened.length).toBe(0)
+  expect(kept.seen).toBeUndefined()
+  const lines = listed.split('\n')
+  expect(lines[0]).toContain("Items in the user's list: 4")
+  expect(lines[0]).toContain('did not open the pane')
+  expect(lines.length).toBe(5)
+  for (const line of lines.slice(1)) expect(line).toMatch(/^- \[(assigned|review|failing|comment|task|bug|resolved)\] .+ https?:\/\/\S+$/)
+})
+
+const TWO = [
+  { key: 'github:example/api#1', kind: 'assigned', title: 'Later\none', url: 'https://github.com/example/api/issues/1', ref: 'example/api issue #1', project: 'api', host: 'github', at: now, person: 'Sam Wu' },
+  { key: 'github:example/api#2', kind: 'review', title: 'Review first', url: 'https://github.com/example/api/pull/2', ref: 'example/api PR #2', project: 'api', host: 'github', at: now, person: 'Jane Doe' },
+]
+
+test('the list is read afresh, most urgent first, and says so when nothing was ever checked', async ($, on) => {
+  let state = ''
+  world(on as any, {}, p => (p.endsWith('pending-items.json') && state ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  const list = async () => String((await ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action: 'list' })).result)
+  expect(await list()).toContain('Nothing has been checked')
+  // Written after the conversation started: the tool reads the file, not what the pane last drew.
+  state = JSON.stringify({ ...JSON.parse(STATE), items: TWO })
+  const lines = (await list()).split('\n')
+  expect(lines.length).toBe(3)
+  expect(lines[1]).toContain('[review] ')
+  expect(lines[1]).toContain('Review first')
+  expect(lines[1]).toContain('from Jane Doe')
+  expect(lines[1]).toContain(`last changed ${now.slice(0, 10)}`)
+  // A title with a line break stays on its own line of the list.
+  expect(lines[2]).toContain('[assigned] api: Later one (')
+})
+
+test('with one project there is no select, and the switch shares the refresh button\'s row', async ($, on) => {
+  const state = JSON.stringify({ ...JSON.parse(STATE), items: TWO })
+  world(on as any, {}, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.findAll({ type: 'Select' })).length).toBe(0)
+  const has = (row: any, key: string): boolean => (row.children ?? []).some((c: any) => typeof c !== 'string' && (keyOf(c) === key || has(c, key)))
+  const rows = (await ui.findAll({ type: 'Box' })).filter((b: any) => b.props?.flexDirection === 'row' && has(b, 'refresh'))
+  expect(rows.some((r: any) => has(r, 'auto') && has(r, 'auto-knob'))).toBe(true)
+  await ui.unmount()
+})
+
+test('showing the pane through the tool counts its items as shown; a pane no window drew does not', async ($, on) => {
+  const kept: Record<string, unknown> = { autoOpen: false }
+  const w = world(on as any, kept)
+  await begin($)
+  const call = (action: string) => ($ as any).tool.call({ tool: 'mcp__pending-items__pane', action })
+  // Nobody is looking at this conversation: the pane waits undrawn, and the model is told why.
+  w.placed = { isPlaced: false, reason: 'no-surface' }
+  const waiting = await call('show')
+  expect(String(waiting.result)).toContain('not drawn yet (no-surface)')
+  expect(kept.seen).toBeUndefined()
+  w.placed = { isPlaced: true }
+  const shown = await call('show')
+  expect(String(shown.result)).toContain('lists 4 items')
+  // Shown once while the switch is off: the model is told the reminder itself is still off.
+  expect(String(shown.result)).toContain('switch is still off')
+  expect((kept.seen as string[]).length).toBe(4)
+})
+
+test('an item that comes in while the pane stands open does not open it again next time', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  let state = STATE
+  const o = on as any
+  const w = world(o, kept, p => (p.endsWith('pending-items.json') ? { value: state } : { deny: 'missing' }))
+  o('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  const more = JSON.parse(STATE)
+  more.items.push({ key: 'github:example/api#77', kind: 'assigned', title: 'New one', url: 'https://github.com/example/api/issues/77', ref: 'example/api issue #77', project: 'api', host: 'github', at: now, person: 'Sam Wu' })
+  state = JSON.stringify(more)
+  // The hourly check brought a fifth item; the open pane draws it.
+  await ui.press({ key: 'refresh' })
+  expect((await cards(ui)).length).toBe(5)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(kept.seen as string[]).toContain('github:example/api#77:assigned:')
+  await ui.unmount()
+  await begin($)
+  expect(w.opened.length).toBe(1)
+})
+
+test('a switch made in another conversation reaches this pane\'s button', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  const o = on as any
+  world(o, kept)
+  o('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  await begin($)
+  const ui: any = await ($ as any).ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await switchOf(ui)).toEqual(SHOWN_ON)
+  kept.autoOpen = false
+  await ui.press({ key: 'refresh' })
+  expect(await switchOf(ui)).toEqual(SHOWN_OFF)
+  await ui.unmount()
+})
+
+test('a list written just after the conversation starts still opens the pane', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  let reads = 0
+  // The session start's own check has not written the list when the mod first looks.
+  const w = world(on as any, kept, p => (p.endsWith('pending-items.json') && reads++ > 0 ? { value: STATE } : { deny: 'missing' }))
+  await begin($)
+  expect(w.opened.length).toBe(1)
 })

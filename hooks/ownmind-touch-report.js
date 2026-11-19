@@ -55,6 +55,7 @@ export function postJson(url, apiKey, body) {
       },
       timeout: TIMEOUT_MS,
     }, (res) => {
+      res.setEncoding('utf8'); // a piece can end in the middle of a character
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => resolve({ status: res.statusCode, body: data }));

@@ -24,6 +24,7 @@ export function getJson(url, apiKey, timeout = SERVER_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { headers: { Authorization: `Bearer ${apiKey}` }, timeout }, (res) => {
+      res.setEncoding('utf8'); // a piece can end in the middle of a character
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => resolve({ status: res.statusCode, body: data }));

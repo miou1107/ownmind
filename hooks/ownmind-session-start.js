@@ -487,8 +487,8 @@ async function main() {
     }
   } catch { /* never block session start */ }
 
-  const pendingText = (await pendingItems).text;
-  if (pendingText) lines.push(contextNote(pendingText));
+  const { text: pendingText, context: pendingContext } = await pendingItems;
+  if (pendingText) lines.push(pendingContext || contextNote(pendingText));
   // What the person sees: the missing-skill notice, then the items waiting on them.
   const systemMessage = [skillNotice, pendingText].filter(Boolean).join('\n\n');
 

@@ -1,0 +1,7 @@
+- [x] Switch drawn as a coloured Box track around a knob Button on graphical surfaces
+- [x] Switch on a row of its own when the project select is shown
+- [x] `pane` tool: 打開 + pane title means show; new `list` action
+- [x] Model note in hooks/lib/pending-items.js says where the whole list is
+- [x] Tests: mods/pending-items/hooks/pane.test.tsx, tests/pending-items.test.js
+- [x] Seen on the desktop surface before release (the owner's screenshot of the dev pane, on state)
+- [x] README (three languages), CHANGELOG, FILELIST, version 1.33.9
