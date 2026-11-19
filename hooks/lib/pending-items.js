@@ -766,7 +766,7 @@ export async function recheckPendingItemsIfDue({ statePath = defaultStatePath(),
 
 /**
  * Whether the person sees a hook's systemMessage. The Claude desktop app does not draw the
- * SessionStart or UserPromptSubmit systemMessage anywhere (2026-11-19: Vin had never once seen
+ * SessionStart or UserPromptSubmit systemMessage anywhere (2026-11-19: the owner had never once seen
  * the reminder, though it was sent at the start of his conversations), so there the reminder
  * reaches the person only if Claude says it.
  */
