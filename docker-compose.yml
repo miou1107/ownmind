@@ -3,6 +3,8 @@ services:
     build: .
     container_name: ownmind-api
     restart: unless-stopped
+    # Cap memory so a leak restarts this container instead of starving the shared host
+    mem_limit: 512m
     ports:
       - "127.0.0.1:3100:3000"
     env_file:
@@ -22,6 +24,7 @@ services:
     image: pgvector/pgvector:pg16
     container_name: ownmind-db
     restart: unless-stopped
+    mem_limit: 1g
     environment:
       POSTGRES_DB: ownmind
       POSTGRES_USER: ownmind

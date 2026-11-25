@@ -1,5 +1,11 @@
 # OwnMind 檔案結構
 
+## v1.33.13 修改（2026-11-25，OwnMind 伺服器的程式和資料庫各有記憶體上限）
+
+docker-compose.yml                                       — mem_limit 512m for api, 1g for db
+package.json, package-lock.json                         — version 1.33.13
+README.md, docs/README.zh-TW.md, docs/README.ja.md      — current version v1.33.13 and a latest-changes entry
+
 ## 測試工具修改（2026-11-19，開發者的終端機設了 OwnMind 鑰匙，跑測試也不會連到自己的帳號）
 
 沒有版號：只動測試工具，使用者看到的東西一個字都沒有變。
