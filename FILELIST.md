@@ -2,7 +2,7 @@
 
 ## v1.33.13 修改（2026-11-25，OwnMind 伺服器的程式和資料庫各有記憶體上限）
 
-docker-compose.yml                                       — mem_limit 512m for api, 1g for db
+docker-compose.yml                                       — mem_limit and memswap_limit 512m for api, 1g for db
 package.json, package-lock.json                         — version 1.33.13
 README.md, docs/README.zh-TW.md, docs/README.ja.md      — current version v1.33.13 and a latest-changes entry
 
